@@ -3,7 +3,10 @@ PaperTrading Platform - API v1 Router
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, portfolios, positions, trades, market_data, watchlists, analytics, alerts
+from app.api.v1.endpoints import (
+    auth, portfolios, positions, trades, market_data, 
+    watchlists, analytics, alerts, ml_features
+)
 from app.api.v1.websockets import market_stream_router, portfolio_stream_router
 
 api_router = APIRouter()
@@ -17,6 +20,7 @@ api_router.include_router(market_data.router, prefix="/market", tags=["Market Da
 api_router.include_router(watchlists.router, prefix="/watchlists", tags=["Watchlists"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])
+api_router.include_router(ml_features.router, prefix="/ml/features", tags=["ML Features"])
 
 # Include WebSocket routers
 api_router.include_router(market_stream_router, tags=["WebSocket - Market"])
