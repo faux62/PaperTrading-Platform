@@ -1,30 +1,507 @@
 """
 PaperTrading Platform - Trade Endpoints
+
+API endpoints for order management, trade execution, and trade history.
 """
-from fastapi import APIRouter
+from datetime import datetime
+from decimal import Decimal
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.database import get_db
+from app.db.models.trade import TradeType, OrderType, TradeStatus
+from app.db.repositories.trade import TradeRepository
+from app.core.trading.order_manager import OrderManager, OrderRequest
+from app.core.trading.execution import OrderExecutor, MarketCondition
+from app.core.trading.pnl_calculator import PnLCalculator, TimeFrame
 
 router = APIRouter()
 
 
-@router.get("/")
-async def list_trades():
-    """List trade history."""
-    return {"message": "List trades - TODO"}
+# ==================== SCHEMAS ====================
+
+class OrderCreateRequest(BaseModel):
+    """Request to create a new order."""
+    portfolio_id: int = Field(..., description="Portfolio ID")
+    symbol: str = Field(..., min_length=1, max_length=20, description="Stock symbol")
+    trade_type: TradeType = Field(..., description="BUY or SELL")
+    quantity: Decimal = Field(..., gt=0, description="Number of shares")
+    order_type: OrderType = Field(default=OrderType.MARKET, description="Order type")
+    limit_price: Optional[Decimal] = Field(None, gt=0, description="Limit price for limit orders")
+    stop_price: Optional[Decimal] = Field(None, gt=0, description="Stop price for stop orders")
+    notes: Optional[str] = Field(None, max_length=500, description="Order notes")
+
+    class Config:
+        use_enum_values = True
 
 
-@router.post("/")
-async def create_trade():
-    """Execute a new trade (paper)."""
-    return {"message": "Create trade - TODO"}
+class OrderExecuteRequest(BaseModel):
+    """Request to execute a pending order."""
+    current_price: Decimal = Field(..., gt=0, description="Current market price")
+    market_condition: Optional[str] = Field(
+        default="normal",
+        description="Market condition: normal, volatile, low_liquidity, high_volume"
+    )
 
 
-@router.get("/{trade_id}")
-async def get_trade(trade_id: int):
-    """Get trade by ID."""
-    return {"message": f"Get trade {trade_id} - TODO"}
+class TradeResponse(BaseModel):
+    """Trade/Order response."""
+    id: int
+    portfolio_id: int
+    symbol: str
+    exchange: Optional[str]
+    trade_type: str
+    order_type: str
+    status: str
+    quantity: Decimal
+    price: Optional[Decimal]
+    executed_price: Optional[Decimal]
+    executed_quantity: Optional[Decimal]
+    total_value: Optional[Decimal]
+    commission: Optional[Decimal]
+    realized_pnl: Optional[Decimal]
+    created_at: datetime
+    executed_at: Optional[datetime]
+    notes: Optional[str]
+
+    class Config:
+        from_attributes = True
 
 
-@router.delete("/{trade_id}")
-async def cancel_trade(trade_id: int):
-    """Cancel pending trade."""
-    return {"message": f"Cancel trade {trade_id} - TODO"}
+class OrderResultResponse(BaseModel):
+    """Order operation result."""
+    success: bool
+    order_id: Optional[int]
+    message: str
+    errors: List[str] = []
+
+
+class TradeSummaryResponse(BaseModel):
+    """Trade summary statistics."""
+    total_trades: int
+    buy_trades: int
+    sell_trades: int
+    total_volume: Decimal
+    realized_pnl: Decimal
+    avg_trade_size: Decimal
+    most_traded_symbols: List[dict]
+    period_days: int
+
+
+class PnLResponse(BaseModel):
+    """P&L response."""
+    portfolio_id: int
+    realized_total: Decimal
+    realized_gross_profit: Decimal
+    realized_gross_loss: Decimal
+    realized_win_rate: Decimal
+    unrealized_total: Decimal
+    total_pnl: Decimal
+    total_pnl_pct: Decimal
+    current_value: Decimal
+    time_frame: str
+
+
+# ==================== ENDPOINTS ====================
+
+@router.get("/", response_model=List[TradeResponse])
+async def list_trades(
+    portfolio_id: int = Query(..., description="Portfolio ID"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    trade_type: Optional[str] = Query(None, description="Filter by trade type (buy/sell)"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List trades/orders for a portfolio.
+    
+    Supports filtering by status, trade type, and symbol.
+    """
+    repo = TradeRepository(db)
+    
+    # Convert string filters to enums
+    status_enum = None
+    if status:
+        try:
+            status_enum = TradeStatus(status.lower())
+        except ValueError:
+            raise HTTPException(400, f"Invalid status: {status}")
+    
+    trade_type_enum = None
+    if trade_type:
+        try:
+            trade_type_enum = TradeType(trade_type.lower())
+        except ValueError:
+            raise HTTPException(400, f"Invalid trade type: {trade_type}")
+    
+    trades = await repo.get_by_portfolio(
+        portfolio_id=portfolio_id,
+        status=status_enum,
+        trade_type=trade_type_enum,
+        symbol=symbol,
+        limit=limit,
+        offset=offset
+    )
+    
+    return [
+        TradeResponse(
+            id=t.id,
+            portfolio_id=t.portfolio_id,
+            symbol=t.symbol,
+            exchange=t.exchange,
+            trade_type=t.trade_type.value,
+            order_type=t.order_type.value,
+            status=t.status.value,
+            quantity=t.quantity,
+            price=t.price,
+            executed_price=t.executed_price,
+            executed_quantity=t.executed_quantity,
+            total_value=t.total_value,
+            commission=t.commission,
+            realized_pnl=t.realized_pnl,
+            created_at=t.created_at,
+            executed_at=t.executed_at,
+            notes=t.notes
+        )
+        for t in trades
+    ]
+
+
+@router.post("/orders", response_model=OrderResultResponse)
+async def create_order(
+    request: OrderCreateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new order.
+    
+    The order will be validated against portfolio constraints
+    and placed in PENDING status.
+    """
+    order_manager = OrderManager(db)
+    
+    try:
+        order_request = OrderRequest(
+            portfolio_id=request.portfolio_id,
+            symbol=request.symbol.upper(),
+            trade_type=request.trade_type if isinstance(request.trade_type, TradeType) else TradeType(request.trade_type),
+            quantity=request.quantity,
+            order_type=request.order_type if isinstance(request.order_type, OrderType) else OrderType(request.order_type),
+            limit_price=request.limit_price,
+            stop_price=request.stop_price,
+            notes=request.notes
+        )
+        
+        result = await order_manager.create_order(order_request)
+        await db.commit()
+        
+        return OrderResultResponse(
+            success=result.success,
+            order_id=result.order_id,
+            message=result.message,
+            errors=result.errors
+        )
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(400, str(e))
+
+
+@router.post("/orders/{order_id}/execute", response_model=TradeResponse)
+async def execute_order(
+    order_id: int,
+    request: OrderExecuteRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Execute a pending order at given price.
+    
+    Simulates market execution with slippage based on market conditions.
+    """
+    repo = TradeRepository(db)
+    executor = OrderExecutor(db)
+    
+    # Get the order
+    trade = await repo.get_by_id(order_id)
+    if not trade:
+        raise HTTPException(404, f"Order {order_id} not found")
+    
+    if trade.status != TradeStatus.PENDING:
+        raise HTTPException(400, f"Order is not pending (status: {trade.status.value})")
+    
+    # Parse market condition
+    try:
+        market_condition = MarketCondition(request.market_condition or "normal")
+    except ValueError:
+        market_condition = MarketCondition.NORMAL
+    
+    # Execute
+    result = await executor.execute_order(
+        trade,
+        request.current_price,
+        market_condition
+    )
+    
+    if not result.success:
+        raise HTTPException(400, result.message)
+    
+    await db.commit()
+    
+    # Refresh trade
+    await db.refresh(trade)
+    
+    return TradeResponse(
+        id=trade.id,
+        portfolio_id=trade.portfolio_id,
+        symbol=trade.symbol,
+        exchange=trade.exchange,
+        trade_type=trade.trade_type.value,
+        order_type=trade.order_type.value,
+        status=trade.status.value,
+        quantity=trade.quantity,
+        price=trade.price,
+        executed_price=trade.executed_price,
+        executed_quantity=trade.executed_quantity,
+        total_value=trade.total_value,
+        commission=trade.commission,
+        realized_pnl=trade.realized_pnl,
+        created_at=trade.created_at,
+        executed_at=trade.executed_at,
+        notes=trade.notes
+    )
+
+
+@router.get("/orders/{order_id}", response_model=TradeResponse)
+async def get_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get order/trade by ID."""
+    repo = TradeRepository(db)
+    trade = await repo.get_by_id(order_id)
+    
+    if not trade:
+        raise HTTPException(404, f"Order {order_id} not found")
+    
+    return TradeResponse(
+        id=trade.id,
+        portfolio_id=trade.portfolio_id,
+        symbol=trade.symbol,
+        exchange=trade.exchange,
+        trade_type=trade.trade_type.value,
+        order_type=trade.order_type.value,
+        status=trade.status.value,
+        quantity=trade.quantity,
+        price=trade.price,
+        executed_price=trade.executed_price,
+        executed_quantity=trade.executed_quantity,
+        total_value=trade.total_value,
+        commission=trade.commission,
+        realized_pnl=trade.realized_pnl,
+        created_at=trade.created_at,
+        executed_at=trade.executed_at,
+        notes=trade.notes
+    )
+
+
+@router.delete("/orders/{order_id}", response_model=OrderResultResponse)
+async def cancel_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Cancel a pending order.
+    
+    Only orders with PENDING status can be cancelled.
+    """
+    repo = TradeRepository(db)
+    
+    trade = await repo.get_by_id(order_id)
+    if not trade:
+        raise HTTPException(404, f"Order {order_id} not found")
+    
+    if trade.status != TradeStatus.PENDING:
+        raise HTTPException(
+            400, 
+            f"Cannot cancel order with status {trade.status.value}"
+        )
+    
+    await repo.cancel_order(order_id)
+    await db.commit()
+    
+    return OrderResultResponse(
+        success=True,
+        order_id=order_id,
+        message="Order cancelled successfully"
+    )
+
+
+@router.get("/pending", response_model=List[TradeResponse])
+async def list_pending_orders(
+    portfolio_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all pending orders, optionally filtered by portfolio."""
+    repo = TradeRepository(db)
+    trades = await repo.get_pending_orders(portfolio_id)
+    
+    return [
+        TradeResponse(
+            id=t.id,
+            portfolio_id=t.portfolio_id,
+            symbol=t.symbol,
+            exchange=t.exchange,
+            trade_type=t.trade_type.value,
+            order_type=t.order_type.value,
+            status=t.status.value,
+            quantity=t.quantity,
+            price=t.price,
+            executed_price=t.executed_price,
+            executed_quantity=t.executed_quantity,
+            total_value=t.total_value,
+            commission=t.commission,
+            realized_pnl=t.realized_pnl,
+            created_at=t.created_at,
+            executed_at=t.executed_at,
+            notes=t.notes
+        )
+        for t in trades
+    ]
+
+
+@router.get("/history/{portfolio_id}", response_model=List[TradeResponse])
+async def get_trade_history(
+    portfolio_id: int,
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get executed trade history for a portfolio."""
+    repo = TradeRepository(db)
+    trades = await repo.get_recent_trades(
+        portfolio_id=portfolio_id,
+        days=days,
+        limit=limit
+    )
+    
+    # Filter to only executed
+    executed = [t for t in trades if t.status == TradeStatus.EXECUTED]
+    
+    return [
+        TradeResponse(
+            id=t.id,
+            portfolio_id=t.portfolio_id,
+            symbol=t.symbol,
+            exchange=t.exchange,
+            trade_type=t.trade_type.value,
+            order_type=t.order_type.value,
+            status=t.status.value,
+            quantity=t.quantity,
+            price=t.price,
+            executed_price=t.executed_price,
+            executed_quantity=t.executed_quantity,
+            total_value=t.total_value,
+            commission=t.commission,
+            realized_pnl=t.realized_pnl,
+            created_at=t.created_at,
+            executed_at=t.executed_at,
+            notes=t.notes
+        )
+        for t in executed
+    ]
+
+
+@router.get("/summary/{portfolio_id}", response_model=TradeSummaryResponse)
+async def get_trade_summary(
+    portfolio_id: int,
+    days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get trading summary statistics for a portfolio."""
+    repo = TradeRepository(db)
+    summary = await repo.get_trade_summary(portfolio_id, days)
+    
+    return TradeSummaryResponse(**summary)
+
+
+@router.get("/pnl/{portfolio_id}", response_model=PnLResponse)
+async def get_portfolio_pnl(
+    portfolio_id: int,
+    time_frame: str = Query("all_time", description="day, week, month, quarter, year, ytd, all_time"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get P&L summary for a portfolio.
+    
+    Note: For accurate unrealized P&L, current prices should be provided.
+    This endpoint returns realized P&L and placeholder for unrealized.
+    """
+    calculator = PnLCalculator(db)
+    
+    # Parse time frame
+    try:
+        tf = TimeFrame(time_frame)
+    except ValueError:
+        tf = TimeFrame.ALL_TIME
+    
+    # For now, calculate with empty prices (unrealized will be 0)
+    # In production, this would fetch current prices from market data
+    prices = {}  # TODO: Integrate with market data
+    
+    try:
+        pnl = await calculator.calculate_portfolio_pnl(portfolio_id, prices, tf)
+        
+        return PnLResponse(
+            portfolio_id=portfolio_id,
+            realized_total=pnl.realized.total,
+            realized_gross_profit=pnl.realized.gross_profit,
+            realized_gross_loss=pnl.realized.gross_loss,
+            realized_win_rate=pnl.realized.win_rate,
+            unrealized_total=pnl.unrealized.total,
+            total_pnl=pnl.total_pnl,
+            total_pnl_pct=pnl.total_pnl_pct,
+            current_value=pnl.current_value,
+            time_frame=tf.value
+        )
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.get("/by-symbol/{portfolio_id}/{symbol}", response_model=List[TradeResponse])
+async def get_trades_by_symbol(
+    portfolio_id: int,
+    symbol: str,
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get trade history for a specific symbol in a portfolio."""
+    repo = TradeRepository(db)
+    trades = await repo.get_trades_by_symbol(portfolio_id, symbol, limit)
+    
+    return [
+        TradeResponse(
+            id=t.id,
+            portfolio_id=t.portfolio_id,
+            symbol=t.symbol,
+            exchange=t.exchange,
+            trade_type=t.trade_type.value,
+            order_type=t.order_type.value,
+            status=t.status.value,
+            quantity=t.quantity,
+            price=t.price,
+            executed_price=t.executed_price,
+            executed_quantity=t.executed_quantity,
+            total_value=t.total_value,
+            commission=t.commission,
+            realized_pnl=t.realized_pnl,
+            created_at=t.created_at,
+            executed_at=t.executed_at,
+            notes=t.notes
+        )
+        for t in trades
+    ]
+

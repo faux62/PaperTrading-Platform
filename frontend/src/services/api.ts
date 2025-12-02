@@ -165,6 +165,20 @@ export const portfolioApi = {
 // Trading API
 // ============================================
 export const tradingApi = {
+  createOrder: async (data: {
+    portfolio_id: number;
+    symbol: string;
+    trade_type: 'buy' | 'sell';
+    order_type: 'market' | 'limit' | 'stop' | 'stop_limit';
+    quantity: number;
+    limit_price?: number;
+    stop_price?: number;
+    notes?: string;
+  }) => {
+    const response = await api.post('/trades/orders', data);
+    return response.data;
+  },
+
   submitOrder: async (data: {
     portfolio_id: number;
     symbol: string;
@@ -189,7 +203,24 @@ export const tradingApi = {
   },
 
   getTradeHistory: async (portfolioId: number) => {
-    const response = await api.get(`/trades/history`, { params: { portfolio_id: portfolioId } });
+    const response = await api.get(`/trades/history/${portfolioId}`);
+    return response.data;
+  },
+
+  getTrades: async (portfolioId: number, status?: string) => {
+    const params: any = { portfolio_id: portfolioId };
+    if (status) params.status = status;
+    const response = await api.get('/trades/', { params });
+    return response.data;
+  },
+
+  getPnL: async (portfolioId: number, timeFrame: string = 'all_time') => {
+    const response = await api.get(`/trades/pnl/${portfolioId}`, { params: { time_frame: timeFrame } });
+    return response.data;
+  },
+
+  getTradeSummary: async (portfolioId: number, days: number = 30) => {
+    const response = await api.get(`/trades/summary/${portfolioId}`, { params: { days } });
     return response.data;
   },
 };
