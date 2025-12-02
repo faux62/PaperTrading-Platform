@@ -15,6 +15,7 @@ import Trading from './pages/Trading';
 import Markets from './pages/Markets';
 import Analytics from './pages/Analytics';
 import MLInsights from './pages/MLInsights';
+import ModelDashboard from './pages/ModelDashboard';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -150,6 +151,14 @@ function App() {
           element={
             <ProtectedRoute>
               <MLInsights />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/model-dashboard"
+          element={
+            <ProtectedRoute>
+              <ModelDashboard />
             </ProtectedRoute>
           }
         />
