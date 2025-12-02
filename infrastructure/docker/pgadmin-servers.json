@@ -1,0 +1,24 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "PaperTrading PostgreSQL",
+      "Group": "Servers",
+      "Host": "papertrading-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "papertrading",
+      "Username": "papertrading_user",
+      "SSLMode": "prefer",
+      "Comment": "Main PostgreSQL Database"
+    },
+    "2": {
+      "Name": "PaperTrading TimescaleDB",
+      "Group": "Servers",
+      "Host": "papertrading-timescale",
+      "Port": 5432,
+      "MaintenanceDB": "papertrading_ts",
+      "Username": "papertrading_user",
+      "SSLMode": "prefer",
+      "Comment": "TimescaleDB for Time-Series Data"
+    }
+  }
+}

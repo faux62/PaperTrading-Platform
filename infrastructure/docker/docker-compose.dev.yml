@@ -1,0 +1,123 @@
+version: '3.8'
+
+# =========================
+# PaperTrading Platform
+# Docker Compose - Development
+# =========================
+
+services:
+  # =========================
+  # PostgreSQL - Main Database
+  # =========================
+  postgres:
+    image: postgres:16-alpine
+    container_name: papertrading-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-papertrading}
+      POSTGRES_USER: ${POSTGRES_USER:-papertrading_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password_123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-papertrading_user} -d ${POSTGRES_DB:-papertrading}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================
+  # TimescaleDB - Time-Series Data
+  # =========================
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: papertrading-timescale
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TIMESCALE_DB:-papertrading_ts}
+      POSTGRES_USER: ${TIMESCALE_USER:-papertrading_user}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-dev_password_123}
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./init-scripts/timescale:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-papertrading_user} -d ${TIMESCALE_DB:-papertrading_ts}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================
+  # Redis - Cache & Pub/Sub
+  # =========================
+  redis:
+    image: redis:7-alpine
+    container_name: papertrading-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================
+  # Redis Commander - Redis GUI (Dev only)
+  # =========================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: papertrading-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+
+  # =========================
+  # pgAdmin - PostgreSQL GUI (Dev only)
+  # =========================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: papertrading-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@papertrading.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin-servers.json:/pgadmin4/servers.json
+    depends_on:
+      - postgres
+      - timescaledb
+
+# =========================
+# Volumes
+# =========================
+volumes:
+  postgres_data:
+    driver: local
+  timescale_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# =========================
+# Networks
+# =========================
+networks:
+  default:
+    name: papertrading-network
