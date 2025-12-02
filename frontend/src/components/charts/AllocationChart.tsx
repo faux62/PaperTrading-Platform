@@ -178,7 +178,7 @@ export const AllocationChart: React.FC<AllocationChartProps> = ({
   data,
   width = '100%',
   height = 300,
-  theme = 'light',
+  theme: _theme = 'light',
   loading = false,
   error,
   className,

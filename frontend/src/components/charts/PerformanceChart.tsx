@@ -22,7 +22,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { clsx } from 'clsx';
-import type { PerformanceChartProps, PerformanceData } from './types';
+import type { PerformanceChartProps } from './types';
 import { RechartsTooltip } from './ChartTooltip';
 
 // Format currency for axis
@@ -34,11 +34,6 @@ const formatCurrency = (value: number): string => {
     return `$${(value / 1000).toFixed(0)}K`;
   }
   return `$${value.toFixed(0)}`;
-};
-
-// Format percentage
-const formatPercent = (value: number): string => {
-  return `${(value * 100).toFixed(1)}%`;
 };
 
 // Format date for axis
@@ -94,7 +89,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({
   }, [data]);
 
   // Custom tooltip formatter
-  const tooltipFormatter = (value: number, name: string) => {
+  const tooltipFormatter = (value: number, _name: string) => {
     return formatCurrency(value);
   };
 

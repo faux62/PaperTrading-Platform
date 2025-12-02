@@ -31,8 +31,8 @@ interface RiskMetricsProps {
   className?: string;
 }
 
-// Risk level indicator
-const RiskIndicator: React.FC<{ level: 'low' | 'medium' | 'high' }> = ({ level }) => {
+// Risk level indicator (available for future use)
+const _RiskIndicator: React.FC<{ level: 'low' | 'medium' | 'high' }> = ({ level }) => {
   const colors = {
     low: 'bg-green-500',
     medium: 'bg-yellow-500',
@@ -46,6 +46,9 @@ const RiskIndicator: React.FC<{ level: 'low' | 'medium' | 'high' }> = ({ level }
     </div>
   );
 };
+
+// Keep for linting - exports
+void _RiskIndicator;
 
 // Determine risk level from VaR
 const getRiskLevel = (var95: number): 'low' | 'medium' | 'high' => {

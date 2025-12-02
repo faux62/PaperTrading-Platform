@@ -134,7 +134,7 @@ export const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({
 
   return (
     <div className={clsx('grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4', className)}>
-      {metrics.map((metric, index) => (
+      {metrics.map((metric) => (
         <MetricsCard
           key={metric.label}
           label={metric.label}
@@ -142,7 +142,7 @@ export const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({
           format={metric.format}
           change={metric.change}
           icon={metric.icon}
-          trend={metric.trend}
+          trend={metric.trend as 'up' | 'down' | 'neutral' | undefined}
           description={metric.description}
         />
       ))}

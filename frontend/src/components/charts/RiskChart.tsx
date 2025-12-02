@@ -19,7 +19,7 @@ import {
   Legend,
 } from 'recharts';
 import { clsx } from 'clsx';
-import type { RiskChartProps, RiskData } from './types';
+import type { RiskChartProps } from './types';
 
 // Format percentage
 const formatPercent = (value: number): string => {

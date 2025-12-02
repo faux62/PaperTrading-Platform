@@ -14,6 +14,7 @@ import PortfolioDetail from './pages/PortfolioDetail';
 import Trading from './pages/Trading';
 import Markets from './pages/Markets';
 import Analytics from './pages/Analytics';
+import MLInsights from './pages/MLInsights';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -141,6 +142,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Analytics />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ml-insights"
+          element={
+            <ProtectedRoute>
+              <MLInsights />
             </ProtectedRoute>
           }
         />

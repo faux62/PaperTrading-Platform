@@ -8,6 +8,7 @@ import {
   TrendingUp,
   Briefcase,
   BarChart3,
+  Brain,
   Settings,
   LogOut,
   ChevronLeft,
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { name: 'Portfolio', path: '/portfolio', icon: Briefcase },
   { name: 'Markets', path: '/markets', icon: BarChart3 },
   { name: 'Analytics', path: '/analytics', icon: BarChart3 },
+  { name: 'ML Insights', path: '/ml-insights', icon: Brain },
   { name: 'Settings', path: '/settings', icon: Settings },
 ];
 

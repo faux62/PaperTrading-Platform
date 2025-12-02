@@ -9,7 +9,6 @@
  */
 import React, { useState, useMemo } from 'react';
 import { Layout } from '../components/layout';
-import { Card } from '../components/common';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -103,7 +102,6 @@ const allocationData = [
 const Analytics: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('1Y');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedPortfolio] = useState(1);
 
   // Get number of days from time range
   const getDays = (range: TimeRange): number => {

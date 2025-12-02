@@ -9,7 +9,7 @@
  */
 import React from 'react';
 import { clsx } from 'clsx';
-import { Loading } from '../common/Loading';
+import { Spinner } from '../common/Loading';
 
 interface ChartContainerProps {
   title?: string;
@@ -67,7 +67,7 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-gray-800/80 z-10">
-            <Loading size="lg" />
+            <Spinner size="lg" />
           </div>
         )}
 

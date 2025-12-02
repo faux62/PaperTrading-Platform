@@ -32,7 +32,7 @@ const formatDate = (dateString: string): string => {
 };
 
 // Custom tooltip
-const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
+const CustomTooltip: React.FC<any> = ({ active, payload }) => {
   if (!active || !payload || payload.length === 0) {
     return null;
   }
