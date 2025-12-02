@@ -8,6 +8,7 @@ from loguru import logger
 
 from app.config import settings
 from app.api.v1.router import api_router
+from app.api.v1.websockets import market_stream_router
 from app.db.database import engine, init_db
 from app.db.redis_client import redis_client
 
@@ -64,6 +65,9 @@ def create_application() -> FastAPI:
     
     # Include API router
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+    
+    # Include WebSocket router
+    app.include_router(market_stream_router, prefix=settings.API_V1_PREFIX)
     
     # Health check endpoint
     @app.get("/health", tags=["Health"])
