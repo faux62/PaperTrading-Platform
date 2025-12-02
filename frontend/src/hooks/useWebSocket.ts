@@ -262,3 +262,62 @@ export interface MarketQuote {
   low?: number;
   open?: number;
 }
+
+// Portfolio update types
+export interface PortfolioUpdate {
+  portfolio_id: number;
+  total_value: number;
+  cash: number;
+  positions_value: number;
+  daily_pnl: number;
+  daily_pnl_percent: number;
+  total_pnl: number;
+  total_pnl_percent: number;
+  timestamp: number;
+}
+
+export interface OrderStatusUpdate {
+  order_id: number;
+  symbol: string;
+  status: 'pending' | 'filled' | 'partial' | 'cancelled' | 'rejected';
+  filled_quantity: number;
+  filled_price: number;
+  message?: string;
+  timestamp: number;
+}
+
+export interface TradeExecutionUpdate {
+  trade_id: number;
+  order_id: number;
+  symbol: string;
+  quantity: number;
+  price: number;
+  side: 'buy' | 'sell';
+  timestamp: number;
+}
+
+// Convenience hook for portfolio real-time updates
+export function usePortfolioWebSocket(options?: {
+  onPortfolioUpdate?: (update: PortfolioUpdate) => void;
+  onOrderStatus?: (update: OrderStatusUpdate) => void;
+  onTradeExecution?: (update: TradeExecutionUpdate) => void;
+}) {
+  const WS_URL = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/api/v1/ws/portfolio`;
+
+  return useWebSocket({
+    url: WS_URL,
+    onMessage: (message) => {
+      switch (message.type) {
+        case 'portfolio_update':
+          options?.onPortfolioUpdate?.(message.data as PortfolioUpdate);
+          break;
+        case 'order_status':
+          options?.onOrderStatus?.(message.data as OrderStatusUpdate);
+          break;
+        case 'trade_execution':
+          options?.onTradeExecution?.(message.data as TradeExecutionUpdate);
+          break;
+      }
+    },
+  });
+}

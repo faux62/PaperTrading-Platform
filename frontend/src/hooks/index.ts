@@ -2,9 +2,12 @@
  * Hooks Index
  * Export all custom hooks
  */
-export { useWebSocket, useMarketWebSocket } from './useWebSocket';
+export { useWebSocket, useMarketWebSocket, usePortfolioWebSocket } from './useWebSocket';
 export type { 
   WebSocketStatus, 
   WebSocketMessage, 
-  MarketQuote 
+  MarketQuote,
+  PortfolioUpdate,
+  OrderStatusUpdate,
+  TradeExecutionUpdate,
 } from './useWebSocket';
