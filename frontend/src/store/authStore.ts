@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '../types';
 import { authApi } from '../services/api';
+import { tokenStorage } from '../services/tokenStorage';
 
 interface AuthState {
   // State
@@ -44,8 +45,11 @@ export const useAuthStore = create<AuthState>()(
 
       // Setters
       setUser: (user) => set({ user, isAuthenticated: !!user }),
-      setTokens: (accessToken, refreshToken) => 
-        set({ accessToken, refreshToken, isAuthenticated: true }),
+      setTokens: (accessToken, refreshToken) => {
+        // Sync with tokenStorage for api interceptors
+        tokenStorage.setTokens(accessToken, refreshToken);
+        set({ accessToken, refreshToken, isAuthenticated: true });
+      },
       setLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
       clearError: () => set({ error: null }),
@@ -116,6 +120,8 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // Continue logout even if API call fails
         } finally {
+          // Clear token storage
+          tokenStorage.clearTokens();
           set({
             user: null,
             accessToken: null,
