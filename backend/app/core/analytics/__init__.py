@@ -35,6 +35,16 @@ from .benchmarking import (
     PeerGroupComparison,
     get_benchmark_service
 )
+from .reporting import (
+    ReportGenerator,
+    Report,
+    ReportSection,
+    ReportSchedule,
+    ReportType,
+    ReportFormat,
+    ReportFrequency,
+    get_report_generator
+)
 
 __all__ = [
     # Performance
@@ -58,6 +68,20 @@ __all__ = [
     'BenchmarkService',
     'BenchmarkInfo',
     'BenchmarkType',
+    'BenchmarkComparison',
+    'RollingBenchmarkMetric',
+    'PeerGroupComparison',
+    'get_benchmark_service',
+    # Reporting
+    'ReportGenerator',
+    'Report',
+    'ReportSection',
+    'ReportSchedule',
+    'ReportType',
+    'ReportFormat',
+    'ReportFrequency',
+    'get_report_generator'
+]
     'BenchmarkComparison',
     'RollingBenchmarkMetric',
     'PeerGroupComparison',
