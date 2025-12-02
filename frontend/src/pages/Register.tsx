@@ -1,27 +1,56 @@
 /**
- * Login Page
+ * Register Page
  */
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { TrendingUp, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
+import { clsx } from 'clsx';
+import { TrendingUp, Eye, EyeOff, ArrowRight, AlertCircle, Check } from 'lucide-react';
 import { Button, Input } from '../components/common';
 import { useAuthStore } from '../store/authStore';
 
-const Login = () => {
+const Register = () => {
   const navigate = useNavigate();
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const { register, isLoading, error, clearError } = useAuthStore();
   
   const [formData, setFormData] = useState({
     username: '',
+    email: '',
     password: '',
+    confirmPassword: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [validationError, setValidationError] = useState('');
+
+  const passwordRequirements = [
+    { test: (p: string) => p.length >= 8, text: 'At least 8 characters' },
+    { test: (p: string) => /[A-Z]/.test(p), text: 'One uppercase letter' },
+    { test: (p: string) => /[a-z]/.test(p), text: 'One lowercase letter' },
+    { test: (p: string) => /[0-9]/.test(p), text: 'One number' },
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
-    
-    const success = await login(formData.username, formData.password);
+    setValidationError('');
+
+    if (formData.password !== formData.confirmPassword) {
+      setValidationError('Passwords do not match');
+      return;
+    }
+
+    const allRequirementsMet = passwordRequirements.every((req) =>
+      req.test(formData.password)
+    );
+    if (!allRequirementsMet) {
+      setValidationError('Please meet all password requirements');
+      return;
+    }
+
+    const success = await register(
+      formData.username,
+      formData.email,
+      formData.password
+    );
     if (success) {
       navigate('/');
     }
@@ -34,10 +63,12 @@ const Login = () => {
     }));
   };
 
+  const displayError = error || validationError;
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Left Panel - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-600 via-primary-700 to-primary-900 p-12 flex-col justify-between">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-success-600 via-success-700 to-primary-900 p-12 flex-col justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
             <TrendingUp className="w-6 h-6 text-white" />
@@ -47,42 +78,50 @@ const Login = () => {
 
         <div className="space-y-6">
           <h1 className="text-4xl font-bold text-white leading-tight">
-            Master the Markets,<br />
-            Risk-Free
+            Start Your Trading<br />
+            Journey Today
           </h1>
-          <p className="text-lg text-primary-100 max-w-md">
-            Practice trading with virtual money. Learn strategies, test ideas, 
-            and build confidence before investing real capital.
+          <p className="text-lg text-success-100 max-w-md">
+            Join thousands of traders practicing with our risk-free platform. 
+            Build skills, test strategies, and track your progress.
           </p>
           
-          <div className="grid grid-cols-2 gap-4 pt-8">
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-              <p className="text-3xl font-bold text-white">$100K</p>
-              <p className="text-sm text-primary-200">Virtual Starting Capital</p>
+          <div className="space-y-4 pt-8">
+            <div className="flex items-center gap-3 text-white">
+              <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <Check className="w-4 h-4" />
+              </div>
+              <span>Free $100,000 virtual trading capital</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-              <p className="text-3xl font-bold text-white">Real-time</p>
-              <p className="text-sm text-primary-200">Market Data</p>
+            <div className="flex items-center gap-3 text-white">
+              <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <Check className="w-4 h-4" />
+              </div>
+              <span>Real-time market data & analysis</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-              <p className="text-3xl font-bold text-white">Pro</p>
-              <p className="text-sm text-primary-200">Analytics Tools</p>
+            <div className="flex items-center gap-3 text-white">
+              <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <Check className="w-4 h-4" />
+              </div>
+              <span>Advanced portfolio tracking</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-              <p className="text-3xl font-bold text-white">AI</p>
-              <p className="text-sm text-primary-200">Trading Insights</p>
+            <div className="flex items-center gap-3 text-white">
+              <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <Check className="w-4 h-4" />
+              </div>
+              <span>AI-powered trading insights</span>
             </div>
           </div>
         </div>
 
-        <p className="text-sm text-primary-300">
+        <p className="text-sm text-success-300">
           © 2024 PaperTrading Platform. All rights reserved.
         </p>
       </div>
 
-      {/* Right Panel - Login Form */}
+      {/* Right Panel - Register Form */}
       <div className="flex-1 flex items-center justify-center p-8">
-        <div className="w-full max-w-md space-y-8">
+        <div className="w-full max-w-md space-y-6">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
             <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
@@ -93,29 +132,39 @@ const Login = () => {
 
           {/* Header */}
           <div className="text-center lg:text-left">
-            <h2 className="text-2xl font-bold text-white">Welcome back</h2>
+            <h2 className="text-2xl font-bold text-white">Create your account</h2>
             <p className="text-surface-400 mt-2">
-              Sign in to continue trading
+              Start trading in minutes
             </p>
           </div>
 
           {/* Error Message */}
-          {error && (
+          {displayError && (
             <div className="flex items-center gap-3 p-4 bg-danger-500/10 border border-danger-500/30 rounded-lg">
               <AlertCircle className="w-5 h-5 text-danger-400 flex-shrink-0" />
-              <p className="text-sm text-danger-400">{error}</p>
+              <p className="text-sm text-danger-400">{displayError}</p>
             </div>
           )}
 
-          {/* Login Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Register Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
             <Input
-              label="Username or Email"
+              label="Username"
               name="username"
               type="text"
               value={formData.username}
               onChange={handleChange}
-              placeholder="Enter your username"
+              placeholder="Choose a username"
+              required
+            />
+
+            <Input
+              label="Email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="your@email.com"
               required
             />
 
@@ -126,7 +175,7 @@ const Login = () => {
                 type={showPassword ? 'text' : 'password'}
                 value={formData.password}
                 onChange={handleChange}
-                placeholder="Enter your password"
+                placeholder="Create a password"
                 required
               />
               <button
@@ -142,20 +191,68 @@ const Login = () => {
               </button>
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
-                />
-                <span className="text-sm text-surface-400">Remember me</span>
+            {/* Password Requirements */}
+            <div className="grid grid-cols-2 gap-2">
+              {passwordRequirements.map((req, idx) => (
+                <div
+                  key={idx}
+                  className={clsx(
+                    'flex items-center gap-2 text-xs',
+                    req.test(formData.password)
+                      ? 'text-success-400'
+                      : 'text-surface-500'
+                  )}
+                >
+                  <div
+                    className={clsx(
+                      'w-4 h-4 rounded-full flex items-center justify-center',
+                      req.test(formData.password)
+                        ? 'bg-success-500/20'
+                        : 'bg-surface-700'
+                    )}
+                  >
+                    {req.test(formData.password) && (
+                      <Check className="w-3 h-3" />
+                    )}
+                  </div>
+                  {req.text}
+                </div>
+              ))}
+            </div>
+
+            <Input
+              label="Confirm Password"
+              name="confirmPassword"
+              type="password"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              placeholder="Confirm your password"
+              required
+              error={
+                formData.confirmPassword &&
+                formData.password !== formData.confirmPassword
+                  ? 'Passwords do not match'
+                  : undefined
+              }
+            />
+
+            <div className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                id="terms"
+                required
+                className="mt-1 w-4 h-4 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500"
+              />
+              <label htmlFor="terms" className="text-sm text-surface-400">
+                I agree to the{' '}
+                <a href="#" className="text-primary-400 hover:text-primary-300">
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a href="#" className="text-primary-400 hover:text-primary-300">
+                  Privacy Policy
+                </a>
               </label>
-              <a
-                href="#"
-                className="text-sm text-primary-400 hover:text-primary-300 transition-colors"
-              >
-                Forgot password?
-              </a>
             </div>
 
             <Button
@@ -164,7 +261,7 @@ const Login = () => {
               loading={isLoading}
               rightIcon={<ArrowRight className="w-4 h-4" />}
             >
-              Sign In
+              Create Account
             </Button>
           </form>
 
@@ -175,7 +272,7 @@ const Login = () => {
             </div>
             <div className="relative flex justify-center text-sm">
               <span className="px-4 bg-background text-surface-400">
-                Or continue with
+                Or sign up with
               </span>
             </div>
           </div>
@@ -211,14 +308,14 @@ const Login = () => {
             </Button>
           </div>
 
-          {/* Register Link */}
+          {/* Login Link */}
           <p className="text-center text-surface-400">
-            Don't have an account?{' '}
+            Already have an account?{' '}
             <Link
-              to="/register"
+              to="/login"
               className="text-primary-400 hover:text-primary-300 font-medium transition-colors"
             >
-              Sign up free
+              Sign in
             </Link>
           </p>
         </div>
@@ -227,4 +324,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default Register;
