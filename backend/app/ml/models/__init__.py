@@ -57,6 +57,13 @@ from .registry import (
     LocalArtifactStore,
     get_registry
 )
+from .portfolio_optimizer import (
+    PortfolioOptimizer,
+    RiskParityOptimizer,
+    OptimizedPortfolio,
+    OptimizationObjective,
+    PortfolioConstraints
+)
 
 __all__ = [
     # Price Predictor
@@ -100,5 +107,11 @@ __all__ = [
     'ModelStatus',
     'ModelMetrics',
     'LocalArtifactStore',
-    'get_registry'
+    'get_registry',
+    # Portfolio Optimizer
+    'PortfolioOptimizer',
+    'RiskParityOptimizer',
+    'OptimizedPortfolio',
+    'OptimizationObjective',
+    'PortfolioConstraints'
 ]
