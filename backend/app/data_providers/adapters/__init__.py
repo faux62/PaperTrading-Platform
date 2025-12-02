@@ -57,6 +57,31 @@ from app.data_providers.adapters.stooq import (
     StooqAdapter,
     create_stooq_config,
 )
+# Remaining Global Providers
+from app.data_providers.adapters.eodhd import (
+    EODHDAdapter,
+    create_eodhd_config,
+)
+from app.data_providers.adapters.fmp import (
+    FMPAdapter,
+    create_fmp_config,
+)
+from app.data_providers.adapters.alpha_vantage import (
+    AlphaVantageAdapter,
+    create_alpha_vantage_config,
+)
+from app.data_providers.adapters.nasdaq_datalink import (
+    NasdaqDataLinkAdapter,
+    create_nasdaq_datalink_config,
+)
+from app.data_providers.adapters.marketstack import (
+    MarketstackAdapter,
+    create_marketstack_config,
+)
+from app.data_providers.adapters.stockdata import (
+    StockDataAdapter,
+    create_stockdata_config,
+)
 
 __all__ = [
     # Base
@@ -93,4 +118,17 @@ __all__ = [
     "create_investing_config",
     "StooqAdapter",
     "create_stooq_config",
+    # Remaining Global Providers
+    "EODHDAdapter",
+    "create_eodhd_config",
+    "FMPAdapter",
+    "create_fmp_config",
+    "AlphaVantageAdapter",
+    "create_alpha_vantage_config",
+    "NasdaqDataLinkAdapter",
+    "create_nasdaq_datalink_config",
+    "MarketstackAdapter",
+    "create_marketstack_config",
+    "StockDataAdapter",
+    "create_stockdata_config",
 ]

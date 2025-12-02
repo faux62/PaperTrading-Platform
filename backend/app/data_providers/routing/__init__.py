@@ -15,6 +15,12 @@ from app.data_providers.routing.eu_markets import (
     EUMarketsRouter,
     create_eu_markets_router,
 )
+from app.data_providers.routing.asia_markets import (
+    AsiaMarketsRouter,
+    create_asia_markets_router,
+    ASIA_EXCHANGES,
+    YFINANCE_ASIA_SUFFIXES,
+)
 
 __all__ = [
     # US Markets
@@ -26,4 +32,9 @@ __all__ = [
     # EU Markets
     "EUMarketsRouter",
     "create_eu_markets_router",
+    # Asia Markets
+    "AsiaMarketsRouter",
+    "create_asia_markets_router",
+    "ASIA_EXCHANGES",
+    "YFINANCE_ASIA_SUFFIXES",
 ]
