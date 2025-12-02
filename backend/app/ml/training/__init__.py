@@ -5,7 +5,8 @@ Contains training infrastructure:
 - Training pipeline orchestration
 - Cross-validation framework
 - Hyperparameter optimization
-- Model persistence
+- Backtesting framework
+- Model evaluation
 """
 from .pipeline import (
     TrainingPipeline,
@@ -29,6 +30,29 @@ from .cross_validation import (
     CombinatorialPurgedCV,
     create_cv_strategy
 )
+from .backtester import (
+    Backtester,
+    WalkForwardBacktester,
+    BacktestConfig,
+    BacktestMetrics,
+    BaseStrategy,
+    MLStrategy,
+    Order,
+    OrderSide,
+    OrderType,
+    Position,
+    Trade,
+    run_backtest
+)
+from .evaluation import (
+    ModelEvaluator,
+    EvaluationResult,
+    ClassificationMetrics,
+    RegressionMetrics,
+    TradingMetrics,
+    MetricType,
+    compare_models
+)
 
 __all__ = [
     # Pipeline
@@ -50,5 +74,26 @@ __all__ = [
     'WalkForwardCV',
     'PurgedKFold',
     'CombinatorialPurgedCV',
-    'create_cv_strategy'
+    'create_cv_strategy',
+    # Backtesting
+    'Backtester',
+    'WalkForwardBacktester',
+    'BacktestConfig',
+    'BacktestMetrics',
+    'BaseStrategy',
+    'MLStrategy',
+    'Order',
+    'OrderSide',
+    'OrderType',
+    'Position',
+    'Trade',
+    'run_backtest',
+    # Evaluation
+    'ModelEvaluator',
+    'EvaluationResult',
+    'ClassificationMetrics',
+    'RegressionMetrics',
+    'TradingMetrics',
+    'MetricType',
+    'compare_models'
 ]
