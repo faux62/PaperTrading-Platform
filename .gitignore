@@ -169,7 +169,8 @@ docker-compose.override.yml
 *.pkl
 *.pickle
 *.joblib
-models/
+ml-pipeline/models/
+# Trained ML models only
 *.onnx
 mlruns/
 *.parquet

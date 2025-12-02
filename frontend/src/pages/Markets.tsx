@@ -6,7 +6,7 @@ import { useState, useCallback } from 'react';
 import { Layout } from '../components/layout';
 import { Card, CardContent } from '../components/common';
 import { Globe, Search, TrendingUp, Clock, Zap } from 'lucide-react';
-import { WatchlistComponent, RealTimeQuote } from '../components/market';
+import { WatchlistComponent, RealTimeQuote, PriceAlerts } from '../components/market';
 import { useMarketWebSocket, MarketQuote } from '../hooks/useWebSocket';
 
 // Popular stocks for quick access
@@ -109,9 +109,10 @@ const Markets = () => {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Watchlists */}
-          <div className="lg:col-span-1">
+          {/* Left Column - Watchlists & Alerts */}
+          <div className="lg:col-span-1 space-y-6">
             <WatchlistComponent onSymbolClick={handleSymbolClick} />
+            <PriceAlerts />
           </div>
 
           {/* Right Column - Market Data */}
