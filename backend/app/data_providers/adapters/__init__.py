@@ -19,6 +19,7 @@ from app.data_providers.adapters.base import (
     AuthenticationError,
     DataNotAvailableError,
 )
+# US Market Providers
 from app.data_providers.adapters.alpaca import (
     AlpacaAdapter,
     create_alpaca_config,
@@ -39,6 +40,23 @@ from app.data_providers.adapters.intrinio import (
     IntrinioAdapter,
     create_intrinio_config,
 )
+# EU & Global Providers
+from app.data_providers.adapters.twelve_data import (
+    TwelveDataAdapter,
+    create_twelve_data_config,
+)
+from app.data_providers.adapters.yfinance_adapter import (
+    YFinanceAdapter,
+    create_yfinance_config,
+)
+from app.data_providers.adapters.investing import (
+    InvestingAdapter,
+    create_investing_config,
+)
+from app.data_providers.adapters.stooq import (
+    StooqAdapter,
+    create_stooq_config,
+)
 
 __all__ = [
     # Base
@@ -55,19 +73,24 @@ __all__ = [
     "RateLimitError",
     "AuthenticationError",
     "DataNotAvailableError",
-    # Alpaca
+    # US Providers
     "AlpacaAdapter",
     "create_alpaca_config",
-    # Polygon
     "PolygonAdapter",
     "create_polygon_config",
-    # Finnhub
     "FinnhubAdapter",
     "create_finnhub_config",
-    # Tiingo
     "TiingoAdapter",
     "create_tiingo_config",
-    # Intrinio
     "IntrinioAdapter",
     "create_intrinio_config",
+    # EU & Global Providers
+    "TwelveDataAdapter",
+    "create_twelve_data_config",
+    "YFinanceAdapter",
+    "create_yfinance_config",
+    "InvestingAdapter",
+    "create_investing_config",
+    "StooqAdapter",
+    "create_stooq_config",
 ]
