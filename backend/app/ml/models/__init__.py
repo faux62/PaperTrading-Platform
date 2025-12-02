@@ -21,6 +21,21 @@ from .trend_classifier import (
     TrendType,
     TrendClassifierConfig
 )
+from .volatility_model import (
+    GARCHVolatilityModel,
+    VolatilityForecast,
+    VolatilityRegime,
+    GARCHConfig,
+    RealizedVolatilityEstimator,
+    VolatilitySurfaceModel
+)
+from .risk_scorer import (
+    GradientBoostingRiskScorer,
+    RiskScore,
+    RiskLevel,
+    RiskCategory,
+    RiskScorerConfig
+)
 
 __all__ = [
     # Price Predictor
@@ -34,5 +49,18 @@ __all__ = [
     'GradientBoostingTrendClassifier',
     'TrendPrediction',
     'TrendType',
-    'TrendClassifierConfig'
+    'TrendClassifierConfig',
+    # Volatility Model
+    'GARCHVolatilityModel',
+    'VolatilityForecast',
+    'VolatilityRegime',
+    'GARCHConfig',
+    'RealizedVolatilityEstimator',
+    'VolatilitySurfaceModel',
+    # Risk Scorer
+    'GradientBoostingRiskScorer',
+    'RiskScore',
+    'RiskLevel',
+    'RiskCategory',
+    'RiskScorerConfig'
 ]
