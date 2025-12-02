@@ -18,8 +18,20 @@ from .pipeline import (
     HyperparameterOptimizer,
     train_price_predictor
 )
+from .cross_validation import (
+    CrossValidator,
+    CVResult,
+    CVSplit,
+    BaseCrossValidator,
+    TimeSeriesSplit,
+    WalkForwardCV,
+    PurgedKFold,
+    CombinatorialPurgedCV,
+    create_cv_strategy
+)
 
 __all__ = [
+    # Pipeline
     'TrainingPipeline',
     'TrainingConfig',
     'TrainingJob',
@@ -28,5 +40,15 @@ __all__ = [
     'DataSplit',
     'TimeSeriesCrossValidator',
     'HyperparameterOptimizer',
-    'train_price_predictor'
+    'train_price_predictor',
+    # Cross-validation
+    'CrossValidator',
+    'CVResult',
+    'CVSplit',
+    'BaseCrossValidator',
+    'TimeSeriesSplit',
+    'WalkForwardCV',
+    'PurgedKFold',
+    'CombinatorialPurgedCV',
+    'create_cv_strategy'
 ]

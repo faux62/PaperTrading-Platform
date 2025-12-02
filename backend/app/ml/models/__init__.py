@@ -14,11 +14,25 @@ from .price_predictor import (
     PredictionDirection,
     ModelConfig
 )
+from .trend_classifier import (
+    RandomForestTrendClassifier,
+    GradientBoostingTrendClassifier,
+    TrendPrediction,
+    TrendType,
+    TrendClassifierConfig
+)
 
 __all__ = [
+    # Price Predictor
     'LSTMPricePredictor',
     'EnsemblePricePredictor',
     'PredictionResult',
     'PredictionDirection',
-    'ModelConfig'
+    'ModelConfig',
+    # Trend Classifier
+    'RandomForestTrendClassifier',
+    'GradientBoostingTrendClassifier',
+    'TrendPrediction',
+    'TrendType',
+    'TrendClassifierConfig'
 ]
