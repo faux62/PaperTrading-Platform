@@ -6,6 +6,8 @@ Contains machine learning models for:
 - Trend classification (Random Forest)
 - Volatility modeling (GARCH/Prophet)
 - Risk scoring (Gradient Boosting)
+- Ensemble methods
+- Model registry
 """
 from .price_predictor import (
     LSTMPricePredictor,
@@ -36,6 +38,25 @@ from .risk_scorer import (
     RiskCategory,
     RiskScorerConfig
 )
+from .ensemble import (
+    VotingEnsemble,
+    StackingEnsemble,
+    DynamicEnsemble,
+    EnsemblePrediction,
+    EnsembleMethod,
+    ModelPerformance,
+    create_ensemble
+)
+from .registry import (
+    ModelRegistry,
+    ModelVersion,
+    RegisteredModel,
+    ModelStage,
+    ModelStatus,
+    ModelMetrics,
+    LocalArtifactStore,
+    get_registry
+)
 
 __all__ = [
     # Price Predictor
@@ -62,5 +83,22 @@ __all__ = [
     'RiskScore',
     'RiskLevel',
     'RiskCategory',
-    'RiskScorerConfig'
+    'RiskScorerConfig',
+    # Ensemble Methods
+    'VotingEnsemble',
+    'StackingEnsemble',
+    'DynamicEnsemble',
+    'EnsemblePrediction',
+    'EnsembleMethod',
+    'ModelPerformance',
+    'create_ensemble',
+    # Model Registry
+    'ModelRegistry',
+    'ModelVersion',
+    'RegisteredModel',
+    'ModelStage',
+    'ModelStatus',
+    'ModelMetrics',
+    'LocalArtifactStore',
+    'get_registry'
 ]
