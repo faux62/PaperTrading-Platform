@@ -10,6 +10,7 @@ import { Spinner } from './components/common';
 // Pages
 import Dashboard from './pages/Dashboard';
 import Portfolio from './pages/Portfolio';
+import PortfolioDetail from './pages/PortfolioDetail';
 import Trading from './pages/Trading';
 import Markets from './pages/Markets';
 import Analytics from './pages/Analytics';
@@ -108,6 +109,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Portfolio />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portfolio/:id"
+          element={
+            <ProtectedRoute>
+              <PortfolioDetail />
             </ProtectedRoute>
           }
         />

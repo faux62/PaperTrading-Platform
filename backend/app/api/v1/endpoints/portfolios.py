@@ -344,3 +344,111 @@ async def get_rebalance_recommendations(
         "max_drift": float(analysis.max_drift),
         "recommendations": [r.to_dict() for r in analysis.rebalance_recommendations],
     }
+
+
+class RebalancePreviewRequest(BaseModel):
+    """Request for rebalance preview."""
+    risk_profile: Optional[str] = Field(None, pattern="^(aggressive|balanced|prudent)$")
+    min_trade_value: float = Field(default=100, ge=0)
+
+
+@router.post("/{portfolio_id}/rebalance/preview")
+async def preview_rebalance(
+    portfolio_id: int,
+    data: RebalancePreviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Preview rebalancing trades before execution.
+    
+    Returns detailed preview of orders that would be created
+    without actually executing them.
+    """
+    from app.core.portfolio.rebalancing import RebalancingService
+    
+    service = PortfolioService(db)
+    
+    # Verify existence and ownership
+    portfolio = await service.get_portfolio(portfolio_id)
+    if not portfolio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found"
+        )
+    if portfolio.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this portfolio"
+        )
+    
+    rebalancing = RebalancingService(db)
+    
+    try:
+        preview = await rebalancing.preview_rebalance(
+            portfolio_id=portfolio_id,
+            user_id=current_user.id,
+            risk_profile=data.risk_profile or portfolio.risk_profile,
+            min_trade_value=Decimal(str(data.min_trade_value)),
+        )
+        return preview.to_dict()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+class ExecuteRebalanceRequest(BaseModel):
+    """Request to execute rebalancing."""
+    risk_profile: Optional[str] = Field(None, pattern="^(aggressive|balanced|prudent)$")
+    min_trade_value: float = Field(default=100, ge=0)
+    execute_immediately: bool = Field(default=True)
+
+
+@router.post("/{portfolio_id}/rebalance/execute")
+async def execute_rebalance(
+    portfolio_id: int,
+    data: ExecuteRebalanceRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Execute portfolio rebalancing.
+    
+    Creates and optionally executes orders to bring portfolio
+    back to target allocation.
+    """
+    from app.core.portfolio.rebalancing import RebalancingService
+    
+    service = PortfolioService(db)
+    
+    # Verify existence and ownership
+    portfolio = await service.get_portfolio(portfolio_id)
+    if not portfolio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found"
+        )
+    if portfolio.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this portfolio"
+        )
+    
+    rebalancing = RebalancingService(db)
+    
+    try:
+        result = await rebalancing.execute_rebalance(
+            portfolio_id=portfolio_id,
+            user_id=current_user.id,
+            risk_profile=data.risk_profile or portfolio.risk_profile,
+            min_trade_value=Decimal(str(data.min_trade_value)),
+            execute_immediately=data.execute_immediately,
+        )
+        return result.to_dict()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )

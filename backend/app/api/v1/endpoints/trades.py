@@ -505,3 +505,208 @@ async def get_trades_by_symbol(
         for t in trades
     ]
 
+
+# ==================== BATCH ORDERS ====================
+
+class BatchOrderItem(BaseModel):
+    """Single order in a batch."""
+    symbol: str = Field(..., min_length=1, max_length=20)
+    trade_type: str = Field(..., pattern="^(buy|sell)$")
+    order_type: str = Field(default="market", pattern="^(market|limit)$")
+    quantity: int = Field(..., gt=0)
+    limit_price: Optional[float] = Field(None, gt=0)
+
+
+class BatchOrderRequest(BaseModel):
+    """Request for batch order execution."""
+    portfolio_id: int
+    orders: List[BatchOrderItem] = Field(..., min_length=1, max_length=50)
+
+
+class BatchOrderResultItem(BaseModel):
+    """Result of single order in batch."""
+    symbol: str
+    success: bool
+    order_id: Optional[int] = None
+    executed_price: Optional[float] = None
+    executed_quantity: Optional[int] = None
+    error: Optional[str] = None
+
+
+class BatchOrderResponse(BaseModel):
+    """Response for batch order execution."""
+    total_orders: int
+    successful: int
+    failed: int
+    results: List[BatchOrderResultItem]
+
+
+@router.post("/batch", response_model=BatchOrderResponse)
+async def execute_batch_orders(
+    request: BatchOrderRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Execute multiple orders in a batch.
+    
+    Orders are processed sequentially. Failed orders don't block others.
+    Sell orders are prioritized to free up cash for buy orders.
+    """
+    order_manager = OrderManager(db)
+    executor = OrderExecutor(db)
+    
+    results = []
+    successful = 0
+    failed = 0
+    
+    # Sort: sells first, then buys
+    sorted_orders = sorted(
+        request.orders,
+        key=lambda o: 0 if o.trade_type == "sell" else 1
+    )
+    
+    for order_item in sorted_orders:
+        try:
+            # Create order
+            order_request = OrderRequest(
+                portfolio_id=request.portfolio_id,
+                symbol=order_item.symbol.upper(),
+                trade_type=TradeType(order_item.trade_type),
+                quantity=Decimal(str(order_item.quantity)),
+                order_type=OrderType(order_item.order_type),
+                limit_price=Decimal(str(order_item.limit_price)) if order_item.limit_price else None,
+            )
+            
+            order_result = await order_manager.create_order(order_request)
+            
+            if not order_result.success:
+                results.append(BatchOrderResultItem(
+                    symbol=order_item.symbol,
+                    success=False,
+                    error=order_result.message
+                ))
+                failed += 1
+                continue
+            
+            # Execute order immediately (paper trading)
+            exec_result = await executor.execute_order(
+                trade_id=order_result.trade_id,
+                market_condition=MarketCondition.NORMAL
+            )
+            
+            if exec_result.success:
+                results.append(BatchOrderResultItem(
+                    symbol=order_item.symbol,
+                    success=True,
+                    order_id=order_result.trade_id,
+                    executed_price=float(exec_result.executed_price) if exec_result.executed_price else None,
+                    executed_quantity=int(exec_result.executed_quantity) if exec_result.executed_quantity else None
+                ))
+                successful += 1
+            else:
+                results.append(BatchOrderResultItem(
+                    symbol=order_item.symbol,
+                    success=False,
+                    order_id=order_result.trade_id,
+                    error=exec_result.message
+                ))
+                failed += 1
+                
+        except Exception as e:
+            results.append(BatchOrderResultItem(
+                symbol=order_item.symbol,
+                success=False,
+                error=str(e)
+            ))
+            failed += 1
+    
+    await db.commit()
+    
+    return BatchOrderResponse(
+        total_orders=len(request.orders),
+        successful=successful,
+        failed=failed,
+        results=results
+    )
+
+
+# ==================== EXPORT ====================
+
+from fastapi.responses import StreamingResponse
+import csv
+import io
+
+
+@router.get("/export/{portfolio_id}")
+async def export_trades_csv(
+    portfolio_id: int,
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    status: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Export trades to CSV file.
+    
+    Supports filtering by date range and status.
+    """
+    repo = TradeRepository(db)
+    
+    status_enum = None
+    if status:
+        try:
+            status_enum = TradeStatus(status.lower())
+        except ValueError:
+            pass
+    
+    trades = await repo.get_by_portfolio(
+        portfolio_id=portfolio_id,
+        status=status_enum,
+        limit=10000  # Max export
+    )
+    
+    # Filter by date if provided
+    if start_date:
+        trades = [t for t in trades if t.created_at >= start_date]
+    if end_date:
+        trades = [t for t in trades if t.created_at <= end_date]
+    
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "ID", "Date", "Symbol", "Type", "Order Type", "Status",
+        "Quantity", "Price", "Executed Price", "Total Value",
+        "Commission", "Realized P&L", "Notes"
+    ])
+    
+    # Data rows
+    for t in trades:
+        writer.writerow([
+            t.id,
+            t.created_at.isoformat() if t.created_at else "",
+            t.symbol,
+            t.trade_type.value,
+            t.order_type.value,
+            t.status.value,
+            float(t.quantity) if t.quantity else "",
+            float(t.price) if t.price else "",
+            float(t.executed_price) if t.executed_price else "",
+            float(t.total_value) if t.total_value else "",
+            float(t.commission) if t.commission else "",
+            float(t.realized_pnl) if t.realized_pnl else "",
+            t.notes or ""
+        ])
+    
+    output.seek(0)
+    
+    filename = f"trades_portfolio_{portfolio_id}_{datetime.now().strftime('%Y%m%d')}.csv"
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+

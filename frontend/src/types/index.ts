@@ -65,9 +65,12 @@ export interface Position {
   symbol: string;
   quantity: number;
   average_cost: number;
+  average_price: number;
   current_price: number;
+  current_value: number;
   market_value: number;
   unrealized_pnl: number;
+  unrealized_pnl_pct: number;
   unrealized_pnl_percent: number;
   created_at: string;
   updated_at: string;
@@ -104,9 +107,11 @@ export interface Trade {
   side: OrderSide;
   quantity: number;
   price: number;
+  limit_price?: number;
   total_value: number;
   commission: number;
   executed_at: string;
+  created_at: string;
 }
 
 // ============================================
