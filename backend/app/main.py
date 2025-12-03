@@ -72,7 +72,7 @@ def create_application() -> FastAPI:
     # Health check endpoint
     @app.get("/health", tags=["Health"])
     async def health_check():
-        """Health check endpoint."""
+        """Health check endpoint for load balancers."""
         return {
             "status": "healthy",
             "app": settings.APP_NAME,
@@ -81,12 +81,54 @@ def create_application() -> FastAPI:
     
     @app.get("/ready", tags=["Health"])
     async def readiness_check():
-        """Readiness check endpoint."""
-        # TODO: Check DB and Redis connections
+        """Readiness check - verifies all dependencies are available."""
+        checks = {
+            "database": "unknown",
+            "redis": "unknown"
+        }
+        
+        # Check database
+        try:
+            from sqlalchemy import text
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            checks["database"] = "connected"
+        except Exception as e:
+            checks["database"] = f"error: {str(e)[:50]}"
+        
+        # Check Redis
+        try:
+            if redis_client._client:
+                await redis_client._client.ping()
+                checks["redis"] = "connected"
+            else:
+                checks["redis"] = "not initialized"
+        except Exception as e:
+            checks["redis"] = f"error: {str(e)[:50]}"
+        
+        all_healthy = all(v == "connected" for v in checks.values())
+        
         return {
-            "status": "ready",
-            "database": "connected",
-            "redis": "connected"
+            "status": "ready" if all_healthy else "degraded",
+            "checks": checks
+        }
+    
+    @app.get("/metrics", tags=["Health"])
+    async def metrics():
+        """Basic metrics endpoint."""
+        import psutil
+        import os
+        
+        return {
+            "process": {
+                "pid": os.getpid(),
+                "memory_mb": psutil.Process().memory_info().rss / 1024 / 1024,
+                "cpu_percent": psutil.Process().cpu_percent(),
+            },
+            "system": {
+                "cpu_percent": psutil.cpu_percent(),
+                "memory_percent": psutil.virtual_memory().percent,
+            }
         }
     
     return app
