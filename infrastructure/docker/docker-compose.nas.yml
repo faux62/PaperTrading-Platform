@@ -1,16 +1,27 @@
 # ================================
-# Docker Compose - Synology NAS
+# Docker Compose - NAS (UGREEN/Synology/QNAP)
 # ================================
-# Deploy su Synology/QNAP NAS con Container Manager
+# Deploy su NAS con supporto Docker/Container Manager
 # 
-# ISTRUZIONI SYNOLOGY:
-# 1. Copia questa cartella sul NAS via SMB o SSH
-# 2. Apri Container Manager > Project
-# 3. Crea nuovo progetto, seleziona questa cartella
-# 4. Avvia il progetto
+# ISTRUZIONI UGREEN (UGOS):
+# 1. Copia questa cartella sul NAS via SMB
+# 2. Apri Docker Manager su UGOS
+# 3. Vai su "Compose" o "Project"
+# 4. Importa/crea progetto con questa cartella
+# 5. Configura il file .env (copia da .env.nas.example)
+# 6. Avvia il progetto
 #
-# NOTA: Synology usa percorsi diversi per i volumi
-# Modifica i path se necessario
+# PERCORSI UGREEN:
+# - Dati Docker: /volume1/docker/ oppure /mnt/media/docker/
+# - Condivisioni: /volume1/share/ oppure /mnt/media/
+#
+# ISTRUZIONI SYNOLOGY:
+# 1. Usa Container Manager > Project
+# 2. Percorso dati: /volume1/docker/papertrading/
+#
+# ISTRUZIONI QNAP:
+# 1. Usa Container Station
+# 2. Percorso dati: /share/Container/papertrading/
 
 version: '3.8'
 
@@ -137,6 +148,12 @@ networks:
     driver: bridge
 
 # ==================== NOTE ====================
+# Per UGREEN (UGOS):
+# - Docker Manager integrato in UGOS
+# - Porta 80 disponibile (UGOS usa 9443 per web UI)
+# - I volumi vanno in /volume1/docker/papertrading/ o /mnt/media/docker/
+# - Supporta docker-compose nativamente
+#
 # Per Synology:
 # - Porta 80 spesso già usata da DSM, usa 8080 o altra
 # - I volumi vanno in /volume1/docker/papertrading/
