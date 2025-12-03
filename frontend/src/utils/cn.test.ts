@@ -85,8 +85,8 @@ describe('cn utility', () => {
 
   describe('complex scenarios', () => {
     it('should handle complex Tailwind class combinations', () => {
-      const variant = 'primary';
-      const size = 'md';
+      const variant: string = 'primary';
+      const size: string = 'md';
       const isDisabled = false;
       
       const result = cn(

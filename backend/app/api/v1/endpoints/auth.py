@@ -4,10 +4,8 @@ With Redis Session Management and Token Blacklisting
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
-    get_db,
     get_user_repository,
     get_current_active_user,
 )
@@ -26,7 +24,6 @@ from app.schemas.user import (
 from app.core.security import (
     create_access_token,
     create_refresh_token,
-    verify_token,
     decode_token,
 )
 from app.config import settings

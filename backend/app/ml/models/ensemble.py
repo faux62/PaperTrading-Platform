@@ -274,7 +274,10 @@ class VotingEnsemble(BaseEnsemble):
         pred_values = list(predictions.values())
         if avg_prob > 0.5:
             # Find positive predictions
-            positive_preds = [p for p in pred_values if 'up' in str(p).lower() or float(p) > 50 if isinstance(p, (int, float)) else False]
+            positive_preds = [
+                p for p in pred_values 
+                if ('up' in str(p).lower()) or (isinstance(p, (int, float)) and float(p) > 50)
+            ]
             final_pred = positive_preds[0] if positive_preds else pred_values[0]
         else:
             final_pred = pred_values[0]
