@@ -17,7 +17,7 @@ from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.portfolio import Portfolio
 from app.db.models.position import Position
 from app.core.portfolio.service import PortfolioService
-from app.core.portfolio.constraints import PortfolioConstraintValidator
+from app.core.portfolio.constraints import ConstraintsValidator
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class OrderManager:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.portfolio_service = PortfolioService(db)
-        self.constraint_validator = PortfolioConstraintValidator()
+        self.constraint_validator = ConstraintsValidator()
     
     async def create_order(self, request: OrderRequest) -> OrderResult:
         """

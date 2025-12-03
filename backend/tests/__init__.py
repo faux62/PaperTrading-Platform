@@ -1,0 +1,3 @@
+"""
+PaperTrading Platform - Test Suite
+"""

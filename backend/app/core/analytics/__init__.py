@@ -82,8 +82,3 @@ __all__ = [
     'ReportFrequency',
     'get_report_generator'
 ]
-    'BenchmarkComparison',
-    'RollingBenchmarkMetric',
-    'PeerGroupComparison',
-    'get_benchmark_service'
-]
