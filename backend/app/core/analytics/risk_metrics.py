@@ -9,11 +9,10 @@ Advanced risk analytics:
 - Stress testing
 """
 import numpy as np
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from loguru import logger
 
 
 class VaRMethod(str, Enum):

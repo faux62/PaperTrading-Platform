@@ -7,7 +7,7 @@ Provides REST API for:
 - Benchmark comparisons
 - Custom reports
 """
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
@@ -20,7 +20,6 @@ from app.core.analytics import (
     get_risk_metrics_calculator,
     get_benchmark_service,
     VaRMethod,
-    BenchmarkType
 )
 
 

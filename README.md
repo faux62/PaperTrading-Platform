@@ -105,6 +105,37 @@ Vedi `docs/01-ARCHITECTURE.md` per la lista completa e la strategia multi-provid
 - **Charts**: Recharts, Lightweight Charts
 - **Build**: Vite
 
+## 🧪 Testing
+
+```bash
+# Backend tests (pytest)
+cd backend
+pytest                          # Run all tests
+pytest tests/unit/             # Unit tests only
+pytest tests/integration/      # Integration tests
+pytest tests/security/         # Security tests
+pytest --cov=app               # With coverage
+
+# Frontend tests (Vitest)
+cd frontend
+npm test                       # Run all tests
+npm run test:coverage          # With coverage
+
+# E2E tests (Playwright)
+npm run e2e                    # Headless
+npm run e2e:ui                 # With UI
+
+# Load tests (Locust)
+cd backend
+locust -f tests/load/locustfile.py
+```
+
+**Test Coverage:**
+- Backend: 338 tests (unit, integration, security)
+- Frontend: 89 tests (components, utils, types)
+- E2E: Playwright specs for auth, dashboard, trading
+- Load: Locust scenarios for API stress testing
+
 ## 📝 License
 
 MIT License - vedi [LICENSE](LICENSE) per dettagli.

@@ -6,9 +6,8 @@ and allocation drift for portfolios based on risk profiles.
 """
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional, Any
+from typing import Optional
 from datetime import datetime
-from loguru import logger
 
 from app.core.portfolio.risk_profiles import (
     RiskProfile,

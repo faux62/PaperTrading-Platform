@@ -8,11 +8,10 @@ Calculates portfolio and trading performance metrics:
 - Time-weighted vs Money-weighted returns
 """
 import numpy as np
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from loguru import logger
 
 
 class ReturnType(str, Enum):
