@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 # Import ML components
-from ...ml.inference import (
+from app.ml.inference import (
     InferenceService,
     PredictionRequest,
     PredictionResponse,
@@ -22,7 +22,7 @@ from ...ml.inference import (
     get_inference_service,
     get_signal_generator
 )
-from ...ml.models import (
+from app.ml.models import (
     PortfolioOptimizer,
     OptimizedPortfolio,
     OptimizationObjective,

@@ -30,6 +30,7 @@ interface RiskProfileSelectorProps {
   showDetails?: boolean;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
+  disabled?: boolean;
 }
 
 // Default profiles if not provided from API
@@ -135,6 +136,7 @@ export const RiskProfileSelector = ({
   showDetails = true,
   size = 'md',
   className,
+  disabled = false,
 }: RiskProfileSelectorProps) => {
   const [expandedProfile, setExpandedProfile] = useState<string | null>(null);
 
@@ -156,12 +158,12 @@ export const RiskProfileSelector = ({
           <div
             key={profile.value}
             className={cn(
-              'rounded-lg border-2 transition-all cursor-pointer',
+              'rounded-lg border-2 transition-all',
               colors.bg,
               isSelected ? colors.activeBorder : colors.border,
-              'hover:border-opacity-100'
+              disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-opacity-100'
             )}
-            onClick={() => onChange(profile.value)}
+            onClick={() => !disabled && onChange(profile.value)}
           >
             <div className={cn('flex items-center gap-4', sizeClasses[size])}>
               {/* Icon */}

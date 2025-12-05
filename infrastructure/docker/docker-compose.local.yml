@@ -10,14 +10,15 @@ services:
   # ==================== Backend API ====================
   backend:
     build:
-      context: ../backend
+      context: ../../backend
       dockerfile: Dockerfile
     container_name: papertrading-backend
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
-      - DATABASE_URL=postgresql://papertrading:papertrading@postgres:5432/papertrading
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL_ENV=postgresql://papertrading:papertrading@postgres:5432/papertrading
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-this-jwt-secret}
       - CORS_ORIGINS=["http://localhost","http://localhost:80","http://${LOCAL_IP:-192.168.1.100}","http://${LOCAL_IP:-192.168.1.100}:80","http://papertrading.local","http://papertrading.local:80"]
@@ -45,7 +46,7 @@ services:
   # ==================== Frontend ====================
   frontend:
     build:
-      context: ../frontend
+      context: ../../frontend
       dockerfile: Dockerfile
     container_name: papertrading-frontend
     restart: unless-stopped

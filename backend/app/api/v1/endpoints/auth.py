@@ -127,12 +127,12 @@ async def login(
     """
     OAuth2 compatible token login.
     
-    - **username**: User's email address
+    - **username**: User's email address or username
     - **password**: User's password
     """
-    # Authenticate user (username field contains email)
+    # Authenticate user (username field can contain email or username)
     user = await user_repo.authenticate(
-        email=form_data.username,
+        email_or_username=form_data.username,
         password=form_data.password
     )
     
@@ -186,7 +186,7 @@ async def login(
     "/login/json",
     response_model=Token,
     summary="Login with JSON body",
-    description="Authenticate with JSON body containing email and password."
+    description="Authenticate with JSON body containing email/username and password."
 )
 async def login_json(
     request: Request,
@@ -196,11 +196,11 @@ async def login_json(
     """
     JSON login endpoint (alternative to OAuth2 form).
     
-    - **email**: User's email address
+    - **email_or_username**: User's email address or username
     - **password**: User's password
     """
     user = await user_repo.authenticate(
-        email=credentials.email,
+        email_or_username=credentials.email_or_username,
         password=credentials.password
     )
     
@@ -492,6 +492,56 @@ async def get_current_user_info(
         full_name=current_user.full_name,
         is_active=current_user.is_active,
         is_superuser=current_user.is_superuser,
+        base_currency=getattr(current_user, 'base_currency', 'USD'),
+        created_at=current_user.created_at,
+        updated_at=current_user.updated_at,
+    )
+
+
+@router.patch(
+    "/me",
+    response_model=UserSchema,
+    summary="Update current user preferences",
+    description="Update the current user's preferences including base currency."
+)
+async def update_current_user(
+    updates: dict,
+    current_user: User = Depends(get_current_active_user),
+    user_repo: UserRepository = Depends(get_user_repository)
+) -> UserSchema:
+    """
+    Update current user preferences.
+    
+    - **base_currency**: Set preferred base currency (USD, EUR, GBP, etc.)
+    - **full_name**: Update display name
+    """
+    allowed_fields = {'base_currency', 'full_name'}
+    valid_currencies = {'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD'}
+    
+    # Filter to allowed fields
+    filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    
+    # Validate base_currency
+    if 'base_currency' in filtered_updates:
+        if filtered_updates['base_currency'] not in valid_currencies:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid currency. Supported: {', '.join(valid_currencies)}"
+            )
+    
+    if filtered_updates:
+        updated_user = await user_repo.update_preferences(current_user.id, filtered_updates)
+        if updated_user:
+            current_user = updated_user
+    
+    return UserSchema(
+        id=current_user.id,
+        email=current_user.email,
+        username=current_user.username,
+        full_name=current_user.full_name,
+        is_active=current_user.is_active,
+        is_superuser=current_user.is_superuser,
+        base_currency=getattr(current_user, 'base_currency', 'USD'),
         created_at=current_user.created_at,
         updated_at=current_user.updated_at,
     )

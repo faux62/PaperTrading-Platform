@@ -46,11 +46,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Public Route - redirects to dashboard if already authenticated
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+  const { isAuthenticated, isLoading } = useAuthStore();
 
   if (isLoading) {
     return (

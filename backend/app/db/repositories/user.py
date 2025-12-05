@@ -177,20 +177,32 @@ class UserRepository:
     
     async def authenticate(
         self, 
-        email: str, 
+        email_or_username: str, 
         password: str
     ) -> Optional[User]:
         """
-        Authenticate a user by email and password.
+        Authenticate a user by email/username and password.
         
         Args:
-            email: User's email address
+            email_or_username: User's email address or username
             password: Plain text password
             
         Returns:
             User object if authentication successful, None otherwise
         """
-        user = await self.get_by_email(email)
+        # Try to find user by email first, then by username
+        if "@" in email_or_username:
+            user = await self.get_by_email(email_or_username)
+        else:
+            user = await self.get_by_username(email_or_username)
+        
+        # If not found by primary method, try the other
+        if not user:
+            if "@" in email_or_username:
+                user = await self.get_by_username(email_or_username)
+            else:
+                user = await self.get_by_email(email_or_username)
+        
         if not user:
             return None
         if not verify_password(password, user.hashed_password):
@@ -235,3 +247,31 @@ class UserRepository:
             True if user is a superuser
         """
         return user.is_superuser
+
+    async def update_preferences(
+        self, 
+        user_id: int, 
+        preferences: dict
+    ) -> Optional[User]:
+        """
+        Update user preferences (base_currency, etc.).
+        
+        Args:
+            user_id: User ID
+            preferences: Dictionary of preferences to update
+            
+        Returns:
+            Updated User object or None
+        """
+        user = await self.get_by_id(user_id)
+        if not user:
+            return None
+        
+        for field, value in preferences.items():
+            if hasattr(user, field):
+                setattr(user, field, value)
+        
+        user.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user

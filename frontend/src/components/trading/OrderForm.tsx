@@ -9,12 +9,16 @@ import { clsx } from 'clsx';
 import {
   TrendingUp,
   TrendingDown,
-  DollarSign,
   AlertCircle,
   CheckCircle,
   Loader2,
   Info
 } from 'lucide-react';
+
+// Currency symbols
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
+};
 
 interface OrderFormProps {
   portfolioId: number;
@@ -22,6 +26,7 @@ interface OrderFormProps {
   currentPrice?: number;
   availableCash?: number;
   availableShares?: number;
+  currency?: string;
   onSubmit: (order: OrderData) => Promise<void>;
   onCancel?: () => void;
   className?: string;
@@ -70,14 +75,17 @@ export function OrderForm({
   currentPrice,
   availableCash = 0,
   availableShares = 0,
+  currency = 'USD',
   onSubmit,
   onCancel,
   className
 }: OrderFormProps) {
+  const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
   const [tradeType, setTradeType] = useState<TradeType>('buy');
   const [orderType, setOrderType] = useState<OrderType>('market');
   const [symbol, setSymbol] = useState(initialSymbol);
   const [quantity, setQuantity] = useState<string>('');
+  const [marketPrice, setMarketPrice] = useState<string>('');  // For market orders without live data
   const [limitPrice, setLimitPrice] = useState<string>('');
   const [stopPrice, setStopPrice] = useState<string>('');
   const [notes, setNotes] = useState('');
@@ -98,7 +106,9 @@ export function OrderForm({
     if (orderType === 'limit' || orderType === 'stop_limit') {
       return qty * (parseFloat(limitPrice) || 0);
     }
-    return qty * (currentPrice || 0);
+    // For market orders, use provided currentPrice or user-entered marketPrice
+    const price = currentPrice || parseFloat(marketPrice) || 0;
+    return qty * price;
   })();
 
   // Validation
@@ -112,8 +122,13 @@ export function OrderForm({
       return 'Quantity must be greater than 0';
     }
     
+    // For market orders without live price, require user to enter price
+    if (orderType === 'market' && !currentPrice && !parseFloat(marketPrice)) {
+      return 'Price per share is required';
+    }
+    
     if (tradeType === 'buy' && estimatedValue > availableCash) {
-      return `Insufficient funds. Need $${estimatedValue.toFixed(2)}, have $${availableCash.toFixed(2)}`;
+      return `Insufficient funds. Need ${currencySymbol}${estimatedValue.toFixed(2)}, have ${currencySymbol}${availableCash.toFixed(2)}`;
     }
     
     if (tradeType === 'sell' && qty > availableShares) {
@@ -133,15 +148,21 @@ export function OrderForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('OrderForm handleSubmit called', { 
+      symbol, quantity, marketPrice, orderType, tradeType,
+      availableCash, portfolioId, estimatedValue 
+    });
     setError(null);
     setSuccess(false);
     
     const validationError = validate();
     if (validationError) {
+      console.log('Validation error:', validationError);
       setError(validationError);
       return;
     }
     
+    console.log('Validation passed, submitting...');
     setIsSubmitting(true);
     
     try {
@@ -154,6 +175,12 @@ export function OrderForm({
         notes: notes.trim() || undefined
       };
       
+      // For market orders, pass the user-entered price as limit_price
+      // The backend will use this for execution when no live data
+      if (orderType === 'market' && marketPrice) {
+        orderData.limit_price = parseFloat(marketPrice);
+      }
+      
       if (orderType === 'limit' || orderType === 'stop_limit') {
         orderData.limit_price = parseFloat(limitPrice);
       }
@@ -162,12 +189,15 @@ export function OrderForm({
         orderData.stop_price = parseFloat(stopPrice);
       }
       
-      await onSubmit(orderData);
+      console.log('Calling onSubmit with:', orderData);
+      const result = await onSubmit(orderData);
+      console.log('onSubmit returned:', result);
       setSuccess(true);
       
       // Reset form after success
       setTimeout(() => {
         setQuantity('');
+        setMarketPrice('');
         setLimitPrice('');
         setStopPrice('');
         setNotes('');
@@ -307,14 +337,44 @@ export function OrderForm({
         )}
       </div>
 
+      {/* Market Price (for market orders when no live price available) */}
+      {orderType === 'market' && !currentPrice && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Price per Share ({currency})
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+              {currencySymbol}
+            </span>
+            <input
+              type="number"
+              value={marketPrice}
+              onChange={(e) => setMarketPrice(e.target.value)}
+              placeholder="0.00"
+              min="0"
+              step="0.01"
+              className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg 
+                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Enter the execution price (no live market data)
+          </p>
+        </div>
+      )}
+
       {/* Limit Price (for limit and stop-limit orders) */}
       {(orderType === 'limit' || orderType === 'stop_limit') && (
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Limit Price
+            Limit Price ({currency})
           </label>
           <div className="relative">
-            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+              {currencySymbol}
+            </span>
             <input
               type="number"
               value={limitPrice}
@@ -334,10 +394,12 @@ export function OrderForm({
       {(orderType === 'stop' || orderType === 'stop_limit') && (
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Stop Price
+            Stop Price ({currency})
           </label>
           <div className="relative">
-            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+              {currencySymbol}
+            </span>
             <input
               type="number"
               value={stopPrice}
@@ -358,7 +420,7 @@ export function OrderForm({
         <div className="flex justify-between text-sm">
           <span className="text-gray-600 dark:text-gray-400">Estimated Value</span>
           <span className="font-semibold text-gray-900 dark:text-white">
-            ${estimatedValue.toFixed(2)}
+            {currencySymbol}{estimatedValue.toFixed(2)}
           </span>
         </div>
         {tradeType === 'buy' && (
@@ -368,7 +430,7 @@ export function OrderForm({
               'font-medium',
               estimatedValue > availableCash ? 'text-red-600' : 'text-green-600'
             )}>
-              ${availableCash.toFixed(2)}
+              {currencySymbol}{availableCash.toFixed(2)}
             </span>
           </div>
         )}

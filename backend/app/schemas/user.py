@@ -61,13 +61,13 @@ class UserCreate(UserBase):
 
 class UserLogin(BaseModel):
     """Schema for user login."""
-    email: EmailStr
+    email_or_username: str = Field(..., description="Email address or username")
     password: str
     
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "email": "user@example.com",
+                "email_or_username": "user@example.com",
                 "password": "strongpassword123"
             }
         }
@@ -80,6 +80,7 @@ class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     full_name: Optional[str] = Field(None, max_length=100)
     password: Optional[str] = Field(None, min_length=8, max_length=100)
+    base_currency: Optional[str] = Field(None, pattern="^(USD|EUR|GBP|JPY|CHF|CAD|AUD)$")
 
 
 class UserInDB(UserBase):
@@ -88,6 +89,7 @@ class UserInDB(UserBase):
     hashed_password: str
     is_active: bool = True
     is_superuser: bool = False
+    base_currency: str = "USD"
     created_at: datetime
     updated_at: Optional[datetime] = None
     
@@ -99,6 +101,7 @@ class User(UserBase):
     id: int
     is_active: bool = True
     is_superuser: bool = False
+    base_currency: str = "USD"
     created_at: datetime
     updated_at: Optional[datetime] = None
     

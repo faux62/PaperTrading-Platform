@@ -2,9 +2,10 @@
  * Preferences Settings Component
  * User preferences for notifications, display, etc.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, Button } from '../common';
-import { Bell, Eye, Palette, Save } from 'lucide-react';
+import { Bell, Eye, Palette, Save, DollarSign, RefreshCw } from 'lucide-react';
+import { authApi, currencyApi } from '../../services/api';
 
 interface PreferencesData {
   theme: 'dark' | 'light' | 'system';
@@ -20,6 +21,12 @@ interface PreferencesData {
     showPnLPercentage: boolean;
     defaultCurrency: string;
   };
+}
+
+interface Currency {
+  code: string;
+  name: string;
+  symbol: string;
 }
 
 interface PreferencesSettingsProps {
@@ -47,7 +54,50 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
     },
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isCurrencyLoading, setIsCurrencyLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+
+  // Fetch user's current base currency and available currencies
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [userData, currencyData] = await Promise.all([
+          authApi.getMe(),
+          currencyApi.getSupportedCurrencies(),
+        ]);
+        
+        setPreferences(prev => ({
+          ...prev,
+          display: {
+            ...prev.display,
+            defaultCurrency: userData.base_currency || 'USD',
+          },
+        }));
+        
+        setCurrencies(currencyData.currencies || []);
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      }
+    };
+    fetchData();
+  }, []);
+
+  // Fetch exchange rates when currency changes
+  const fetchRates = async () => {
+    setIsCurrencyLoading(true);
+    try {
+      const ratesData = await currencyApi.getRates('USD');
+      setExchangeRates(ratesData.rates || {});
+      setMessage({ type: 'success', text: 'Exchange rates updated' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to fetch exchange rates' });
+    } finally {
+      setIsCurrencyLoading(false);
+    }
+  };
 
   const handleNotificationChange = (key: keyof PreferencesData['notifications']) => {
     setPreferences(prev => ({
@@ -75,13 +125,19 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onSave) return;
 
     setIsLoading(true);
     setMessage(null);
 
     try {
-      await onSave(preferences);
+      // Save base currency to backend
+      await authApi.updateMe({ base_currency: preferences.display.defaultCurrency });
+      
+      // Call optional onSave for other preferences
+      if (onSave) {
+        await onSave(preferences);
+      }
+      
       setMessage({ type: 'success', text: 'Preferences saved successfully' });
     } catch {
       setMessage({ type: 'error', text: 'Failed to save preferences' });
@@ -211,23 +267,78 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
                 label="Show P&L as percentage"
               />
             </div>
+          </div>
+        </CardContent>
+      </Card>
 
+      {/* Base Currency Settings */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-primary-500" />
+              <h3 className="text-lg font-semibold text-white">Base Currency</h3>
+            </div>
+            <button
+              type="button"
+              onClick={fetchRates}
+              disabled={isCurrencyLoading}
+              className="p-2 hover:bg-surface-700 rounded-lg transition-colors disabled:opacity-50"
+              title="Refresh exchange rates"
+            >
+              <RefreshCw className={`w-4 h-4 text-surface-400 ${isCurrencyLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-surface-300 mb-2">
-                Default Currency
+                Your Base Currency
               </label>
+              <p className="text-xs text-surface-500 mb-3">
+                All portfolio totals will be converted to this currency using real-time exchange rates.
+              </p>
               <select
                 value={preferences.display.defaultCurrency}
                 onChange={(e) => handleDisplayChange('defaultCurrency', e.target.value)}
                 className="w-full px-3 py-2 bg-surface-700 border border-surface-600 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="JPY">JPY (¥)</option>
-                <option value="CHF">CHF (Fr)</option>
+                {currencies.length > 0 ? (
+                  currencies.map(currency => (
+                    <option key={currency.code} value={currency.code}>
+                      {currency.code} ({currency.symbol}) - {currency.name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="USD">USD ($) - US Dollar</option>
+                    <option value="EUR">EUR (€) - Euro</option>
+                    <option value="GBP">GBP (£) - British Pound</option>
+                    <option value="JPY">JPY (¥) - Japanese Yen</option>
+                    <option value="CHF">CHF - Swiss Franc</option>
+                    <option value="CAD">CAD (C$) - Canadian Dollar</option>
+                    <option value="AUD">AUD (A$) - Australian Dollar</option>
+                  </>
+                )}
               </select>
             </div>
+
+            {/* Exchange Rates Preview */}
+            {Object.keys(exchangeRates).length > 0 && (
+              <div className="mt-4 p-3 bg-surface-800 rounded-lg">
+                <p className="text-xs text-surface-400 mb-2">Current Exchange Rates (vs USD):</p>
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  {Object.entries(exchangeRates)
+                    .filter(([code]) => code !== 'USD')
+                    .map(([code, rate]) => (
+                      <div key={code} className="text-surface-300">
+                        <span className="font-medium">{code}:</span> {rate.toFixed(4)}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

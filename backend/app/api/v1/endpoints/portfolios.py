@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.api.v1.endpoints.auth import get_current_user
+from app.core.security import get_current_user
 from app.db.models.user import User
 from app.core.portfolio.service import PortfolioService
 from app.core.portfolio.risk_profiles import get_all_profiles, get_profile_summary

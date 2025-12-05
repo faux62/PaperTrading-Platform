@@ -38,8 +38,12 @@ api.interceptors.response.use(
   async (error: AxiosError<ApiError>) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // Handle 401 - Try to refresh token
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Skip redirect for login/register endpoints - they handle their own 401s
+    const isAuthEndpoint = originalRequest.url?.includes('/auth/login') || 
+                          originalRequest.url?.includes('/auth/register');
+
+    // Handle 401 - Try to refresh token (but not for auth endpoints)
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       const refreshToken = tokenStorage.getRefreshToken();
@@ -58,13 +62,15 @@ api.interceptors.response.use(
           }
           return api(originalRequest);
         } catch {
-          // Refresh failed - clear tokens and redirect
+          // Refresh failed - clear tokens and redirect (only if not on login page)
           tokenStorage.clearTokens();
-          window.location.href = '/login';
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login';
+          }
           return Promise.reject(error);
         }
-      } else {
-        // No refresh token - redirect to login
+      } else if (!window.location.pathname.includes('/login')) {
+        // No refresh token - redirect to login (only if not already there)
         tokenStorage.clearTokens();
         window.location.href = '/login';
       }
@@ -90,8 +96,8 @@ api.interceptors.response.use(
 // Auth API
 // ============================================
 export const authApi = {
-  login: async (email: string, password: string) => {
-    const response = await api.post('/auth/login/json', { email, password });
+  login: async (emailOrUsername: string, password: string) => {
+    const response = await api.post('/auth/login/json', { email_or_username: emailOrUsername, password });
     return response.data;
   },
 
@@ -115,6 +121,11 @@ export const authApi = {
     return response.data;
   },
 
+  updateMe: async (data: { base_currency?: string; full_name?: string }) => {
+    const response = await api.patch('/auth/me', data);
+    return response.data;
+  },
+
   getSessions: async () => {
     const response = await api.get('/auth/sessions');
     return response.data;
@@ -131,7 +142,7 @@ export const authApi = {
 // ============================================
 export const portfolioApi = {
   getAll: async () => {
-    const response = await api.get('/portfolios');
+    const response = await api.get('/portfolios/');
     return response.data;
   },
 
@@ -140,8 +151,8 @@ export const portfolioApi = {
     return response.data;
   },
 
-  create: async (data: { name: string; initial_capital: number; risk_profile: string }) => {
-    const response = await api.post('/portfolios', data);
+  create: async (data: { name: string; initial_capital: number; risk_profile: string; currency?: string }) => {
+    const response = await api.post('/portfolios/', data);
     return response.data;
   },
 
@@ -156,8 +167,8 @@ export const portfolioApi = {
   },
 
   getPositions: async (portfolioId: number) => {
-    const response = await api.get(`/portfolios/${portfolioId}/positions`);
-    return response.data;
+    const response = await api.get(`/positions/portfolio/${portfolioId}`);
+    return response.data.positions || [];
   },
 };
 
@@ -204,7 +215,7 @@ export const tradingApi = {
 
   getTradeHistory: async (portfolioId: number) => {
     const response = await api.get(`/trades/history/${portfolioId}`);
-    return response.data;
+    return Array.isArray(response.data) ? response.data : [];
   },
 
   getTrades: async (portfolioId: number, status?: string) => {
@@ -292,6 +303,30 @@ export const analyticsApi = {
   getPerformanceHistory: async (portfolioId: number, period: string = '1M') => {
     const response = await api.get(`/analytics/portfolio/${portfolioId}/performance`, {
       params: { period },
+    });
+    return response.data;
+  },
+};
+
+// ============================================
+// Currency API
+// ============================================
+export const currencyApi = {
+  getSupportedCurrencies: async () => {
+    const response = await api.get('/currency/supported');
+    return response.data;
+  },
+
+  getRates: async (base: string = 'USD') => {
+    const response = await api.get('/currency/rates', { params: { base } });
+    return response.data;
+  },
+
+  convert: async (amount: number, fromCurrency: string, toCurrency: string) => {
+    const response = await api.post('/currency/convert', {
+      amount,
+      from_currency: fromCurrency,
+      to_currency: toCurrency,
     });
     return response.data;
   },

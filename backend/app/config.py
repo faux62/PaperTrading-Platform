@@ -52,9 +52,18 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "papertrading"
     POSTGRES_USER: str = "papertrading_user"
     POSTGRES_PASSWORD: str = "dev_password_123"
+    # Optional: full DATABASE_URL from environment (overrides individual settings)
+    DATABASE_URL_ENV: str = ""
     
     @property
     def DATABASE_URL(self) -> str:
+        # Use environment DATABASE_URL if provided (for Docker)
+        if self.DATABASE_URL_ENV:
+            url = self.DATABASE_URL_ENV
+            # Ensure it uses asyncpg driver
+            if url.startswith("postgresql://"):
+                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return url
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
     
     @property

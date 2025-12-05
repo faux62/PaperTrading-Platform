@@ -259,6 +259,19 @@ class PortfolioService:
             "unrealized_pnl": unrealized_pnl,
         }
     
+    async def get_portfolio_value(
+        self,
+        portfolio_id: int,
+    ) -> Decimal:
+        """
+        Get total portfolio value (cash + equity).
+        
+        Convenience method that returns just the total value as Decimal.
+        Used for constraint validation in order processing.
+        """
+        values = await self.calculate_portfolio_value(portfolio_id)
+        return values.get("total_value", Decimal("0"))
+    
     async def calculate_performance(
         self,
         portfolio_id: int,

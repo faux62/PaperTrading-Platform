@@ -9,7 +9,7 @@ import { useAuthStore } from '../store/authStore';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const { login, isLoading, error } = useAuthStore();
   
   const [formData, setFormData] = useState({
     username: '',
@@ -19,7 +19,6 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    clearError();
     
     const success = await login(formData.username, formData.password);
     if (success) {

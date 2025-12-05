@@ -4,13 +4,18 @@
  * Main portfolio management page with list view, create modal,
  * and portfolio details.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout';
 import { Card, CardContent } from '../components/common';
-import { PortfolioCard, CreatePortfolioModal, PortfolioSummary } from '../components/portfolio';
-import { portfolioApi } from '../services/api';
+import { PortfolioCard, CreatePortfolioModal, EditPortfolioModal, PortfolioSummary } from '../components/portfolio';
+import { portfolioApi, currencyApi, authApi } from '../services/api';
 import { Briefcase, Plus, RefreshCw, AlertCircle } from 'lucide-react';
+
+// Currency symbols
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
+};
 
 const Portfolio = () => {
   const navigate = useNavigate();
@@ -20,13 +25,40 @@ const Portfolio = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  
+  // Edit modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingPortfolio, setEditingPortfolio] = useState<PortfolioSummary | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  
+  // Currency conversion state
+  const [baseCurrency, setBaseCurrency] = useState<string>('USD');
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+
+  // Fetch user's base currency and exchange rates
+  const fetchCurrencyData = async () => {
+    try {
+      const [userData, ratesData] = await Promise.all([
+        authApi.getMe(),
+        currencyApi.getRates('USD'),
+      ]);
+      setBaseCurrency(userData.base_currency || 'USD');
+      setExchangeRates(ratesData.rates || {});
+    } catch (err) {
+      console.error('Failed to fetch currency data:', err);
+    }
+  };
 
   // Fetch portfolios
   const fetchPortfolios = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await portfolioApi.getAll();
+      const [response] = await Promise.all([
+        portfolioApi.getAll(),
+        fetchCurrencyData(), // Always refresh currency data too
+      ]);
       setPortfolios(response.portfolios || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load portfolios');
@@ -54,6 +86,7 @@ const Portfolio = () => {
         name: data.name,
         initial_capital: data.initial_capital,
         risk_profile: data.risk_profile,
+        currency: data.currency,
       });
       setIsCreateModalOpen(false);
       await fetchPortfolios();
@@ -71,8 +104,32 @@ const Portfolio = () => {
 
   // Edit portfolio
   const handleEditPortfolio = (id: number) => {
-    // TODO: Open edit modal
-    console.log('Edit portfolio', id);
+    const portfolio = portfolios.find(p => p.id === id);
+    if (portfolio) {
+      setEditingPortfolio(portfolio);
+      setEditError(null);
+      setIsEditModalOpen(true);
+    }
+  };
+
+  // Update portfolio
+  const handleUpdatePortfolio = async (id: number, data: {
+    name: string;
+    description?: string;
+    risk_profile: string;
+  }) => {
+    setIsEditing(true);
+    setEditError(null);
+    try {
+      await portfolioApi.update(id, data);
+      setIsEditModalOpen(false);
+      setEditingPortfolio(null);
+      await fetchPortfolios();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to update portfolio');
+    } finally {
+      setIsEditing(false);
+    }
   };
 
   // Delete portfolio
@@ -88,9 +145,30 @@ const Portfolio = () => {
     }
   };
 
-  // Calculate totals
-  const totalValue = portfolios.reduce((sum, p) => sum + p.total_value, 0);
-  const totalReturn = portfolios.reduce((sum, p) => sum + p.total_return, 0);
+  // Convert amount from one currency to user's base currency
+  const convertToBaseCurrency = (amount: number, fromCurrency: string): number => {
+    if (fromCurrency === baseCurrency) return amount;
+    if (!exchangeRates[fromCurrency] || !exchangeRates[baseCurrency]) return amount;
+    
+    // Convert via USD: amount / fromRate * toRate
+    const amountInUSD = amount / exchangeRates[fromCurrency];
+    return amountInUSD * exchangeRates[baseCurrency];
+  };
+
+  // Calculate totals converted to user's base currency
+  const { totalValue, totalReturn } = useMemo(() => {
+    let value = 0;
+    let ret = 0;
+    
+    for (const p of portfolios) {
+      value += convertToBaseCurrency(p.total_value, p.currency);
+      ret += convertToBaseCurrency(p.total_return, p.currency);
+    }
+    
+    return { totalValue: value, totalReturn: ret };
+  }, [portfolios, baseCurrency, exchangeRates]);
+
+  const currencySymbol = CURRENCY_SYMBOLS[baseCurrency] || baseCurrency;
 
   return (
     <Layout title="Portfolio">
@@ -132,17 +210,17 @@ const Portfolio = () => {
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-surface-400">Total Value</p>
+              <p className="text-sm text-surface-400">Total Value ({baseCurrency})</p>
               <p className="text-2xl font-bold text-white mt-1">
-                ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {currencySymbol}{totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-surface-400">Total Return</p>
+              <p className="text-sm text-surface-400">Total Return ({baseCurrency})</p>
               <p className={`text-2xl font-bold mt-1 ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {totalReturn >= 0 ? '+' : ''}{totalReturn.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {totalReturn >= 0 ? '+' : ''}{currencySymbol}{Math.abs(totalReturn).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
             </CardContent>
           </Card>
@@ -239,6 +317,19 @@ const Portfolio = () => {
         onSubmit={handleCreatePortfolio}
         isLoading={isCreating}
         error={createError}
+      />
+
+      {/* Edit Portfolio Modal */}
+      <EditPortfolioModal
+        isOpen={isEditModalOpen}
+        portfolio={editingPortfolio}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingPortfolio(null);
+        }}
+        onSubmit={handleUpdatePortfolio}
+        isLoading={isEditing}
+        error={editError}
       />
     </Layout>
   );

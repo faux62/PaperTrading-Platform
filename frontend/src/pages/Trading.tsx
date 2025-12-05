@@ -19,11 +19,17 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
+// Currency symbols
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
+};
+
 interface Portfolio {
   id: number;
   name: string;
   cash_balance: number;
   initial_capital: number;
+  currency: string;
 }
 
 interface Trade {
@@ -63,9 +69,16 @@ const Trading = () => {
     try {
       setIsLoading(true);
       const data = await portfolioApi.getAll();
-      setPortfolios(data);
-      if (data.length > 0) {
-        setSelectedPortfolio(data[0]);
+      const portfolioList = data.portfolios || [];
+      setPortfolios(portfolioList);
+      if (portfolioList.length > 0 && !selectedPortfolio) {
+        // Load full portfolio details for the first one
+        const fullPortfolio = await portfolioApi.getById(portfolioList[0].id);
+        setSelectedPortfolio(fullPortfolio);
+      } else if (selectedPortfolio) {
+        // Refresh current selected portfolio details
+        const fullPortfolio = await portfolioApi.getById(selectedPortfolio.id);
+        setSelectedPortfolio(fullPortfolio);
       }
     } catch (err) {
       setError('Failed to load portfolios');
@@ -80,15 +93,17 @@ const Trading = () => {
     try {
       const data = await portfolioApi.getPositions(selectedPortfolio.id);
       // Map API response to Position interface
+      // API returns: avg_cost, market_value, unrealized_pnl_percent
+      // UI expects: average_cost, current_value, unrealized_pnl_pct
       setPositions(data.map((p: any) => ({
         symbol: p.symbol,
         exchange: p.exchange,
         quantity: parseFloat(p.quantity),
-        average_cost: parseFloat(p.average_cost),
+        average_cost: parseFloat(p.avg_cost),
         current_price: p.current_price ? parseFloat(p.current_price) : undefined,
-        current_value: p.current_value ? parseFloat(p.current_value) : undefined,
+        current_value: p.market_value ? parseFloat(p.market_value) : undefined,
         unrealized_pnl: p.unrealized_pnl ? parseFloat(p.unrealized_pnl) : undefined,
-        unrealized_pnl_pct: p.unrealized_pnl_pct ? parseFloat(p.unrealized_pnl_pct) : undefined,
+        unrealized_pnl_pct: p.unrealized_pnl_percent ? parseFloat(p.unrealized_pnl_percent) : undefined,
         weight_pct: p.weight_pct ? parseFloat(p.weight_pct) : undefined
       })));
     } catch (err) {
@@ -107,14 +122,18 @@ const Trading = () => {
   };
 
   const handleOrderSubmit = async (order: any) => {
+    console.log('Trading.handleOrderSubmit called with:', order);
     try {
-      await tradingApi.createOrder(order);
+      console.log('Calling tradingApi.createOrder...');
+      const result = await tradingApi.createOrder(order);
+      console.log('tradingApi.createOrder returned:', result);
       // Refresh data
       await loadPositions();
       await loadRecentTrades();
       // Also refresh portfolio to get updated cash balance
       await loadPortfolios();
     } catch (err) {
+      console.error('tradingApi.createOrder error:', err);
       throw err;
     }
   };
@@ -181,9 +200,14 @@ const Trading = () => {
               </label>
               <select
                 value={selectedPortfolio?.id || ''}
-                onChange={(e) => {
-                  const portfolio = portfolios.find(p => p.id === parseInt(e.target.value));
-                  setSelectedPortfolio(portfolio || null);
+                onChange={async (e) => {
+                  const portfolioId = parseInt(e.target.value);
+                  try {
+                    const fullPortfolio = await portfolioApi.getById(portfolioId);
+                    setSelectedPortfolio(fullPortfolio);
+                  } catch (err) {
+                    console.error('Failed to load portfolio:', err);
+                  }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
                            bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -205,7 +229,7 @@ const Trading = () => {
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Cash Available</p>
                   <p className="text-xl font-semibold text-gray-900 dark:text-white">
-                    ${selectedPortfolio?.cash_balance?.toLocaleString() || '0'}
+                    {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{selectedPortfolio?.cash_balance?.toLocaleString() || '0'}
                   </p>
                 </div>
               </div>
@@ -298,6 +322,7 @@ const Trading = () => {
                 <OrderForm
                   portfolioId={selectedPortfolio.id}
                   availableCash={selectedPortfolio.cash_balance}
+                  currency={selectedPortfolio.currency}
                   onSubmit={handleOrderSubmit}
                 />
               </CardContent>
@@ -390,10 +415,10 @@ const Trading = () => {
                             {trade.quantity}
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-gray-600 dark:text-gray-400">
-                            ${trade.executed_price?.toFixed(2)}
+                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{trade.executed_price?.toFixed(2)}
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-medium text-gray-900 dark:text-white">
-                            ${trade.total_value?.toFixed(2)}
+                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{trade.total_value?.toFixed(2)}
                           </td>
                           <td className="py-3 pl-4">
                             <span className={clsx(

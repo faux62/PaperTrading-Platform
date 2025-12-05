@@ -392,12 +392,12 @@ class ExecutionEngine:
         
         if position:
             # Update existing position (average cost basis)
-            old_value = position.quantity * position.average_cost
+            old_value = position.quantity * position.avg_cost
             new_value = trade.executed_quantity * trade.executed_price
             total_quantity = position.quantity + trade.executed_quantity
             
             position.quantity = total_quantity
-            position.average_cost = (old_value + new_value) / total_quantity
+            position.avg_cost = (old_value + new_value) / total_quantity
             position.updated_at = datetime.utcnow()
         else:
             # Create new position
@@ -406,8 +406,10 @@ class ExecutionEngine:
                 symbol=trade.symbol,
                 exchange=trade.exchange,
                 quantity=trade.executed_quantity,
-                average_cost=trade.executed_price,
-                created_at=datetime.utcnow(),
+                avg_cost=trade.executed_price,
+                current_price=trade.executed_price,
+                market_value=trade.total_value,
+                opened_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
             self.db.add(position)
@@ -426,7 +428,7 @@ class ExecutionEngine:
             raise ValueError(f"No position found for {trade.symbol}")
         
         # Calculate realized P&L
-        cost_basis = trade.executed_quantity * position.average_cost
+        cost_basis = trade.executed_quantity * position.avg_cost
         sale_proceeds = trade.executed_quantity * trade.executed_price
         realized_pnl = sale_proceeds - cost_basis
         

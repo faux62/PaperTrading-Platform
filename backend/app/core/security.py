@@ -3,11 +3,13 @@ PaperTrading Platform - Security Module
 JWT Authentication, Password Hashing, Token Management
 """
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Optional, Any, Annotated
 import uuid
 
 import bcrypt
 from jose import jwt, JWTError
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 
 from app.config import settings
 
@@ -184,3 +186,55 @@ def verify_token(token: str, token_type: str = "access") -> Optional[str]:
         return None
     
     return payload.get("sub")
+
+
+# OAuth2 scheme for token extraction
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+
+async def get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)]
+):
+    """
+    Dependency to get the current authenticated user from JWT token.
+    
+    Args:
+        token: JWT token extracted from Authorization header
+        
+    Returns:
+        User object
+        
+    Raises:
+        HTTPException: If token is invalid or user not found
+    """
+    from app.db.models.user import User
+    from app.db.database import async_session_maker
+    from sqlalchemy import select
+    
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    user_id = verify_token(token, "access")
+    if user_id is None:
+        raise credentials_exception
+    
+    # Get user from database
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(User).where(User.id == int(user_id))
+        )
+        user = result.scalar_one_or_none()
+    
+    if user is None:
+        raise credentials_exception
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user"
+        )
+    
+    return user

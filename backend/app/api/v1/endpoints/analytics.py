@@ -17,7 +17,7 @@ from loguru import logger
 
 from app.core.analytics import (
     get_performance_analytics,
-    get_risk_metrics_calculator,
+    get_risk_metrics,
     get_benchmark_service,
     VaRMethod,
 )
@@ -358,7 +358,7 @@ async def get_risk_metrics(
         returns, dates = await _get_portfolio_returns(portfolio_id, start_date, end_date)
         benchmark_returns = await _get_benchmark_returns("SPY", start_date, end_date)
         
-        risk_calc = get_risk_metrics_calculator()
+        risk_calc = get_risk_metrics()
         
         # Calculate VaR
         method = VaRMethod(var_method) if var_method in ['historical', 'parametric', 'monte_carlo'] else VaRMethod.HISTORICAL
@@ -405,7 +405,7 @@ async def get_detailed_risk_metrics(
         returns, dates = await _get_portfolio_returns(portfolio_id, start_date, end_date)
         benchmark_returns = await _get_benchmark_returns("SPY", start_date, end_date)
         
-        risk_calc = get_risk_metrics_calculator()
+        risk_calc = get_risk_metrics()
         
         # Basic risk metrics
         method = VaRMethod(request.var_method) if request.var_method in ['historical', 'parametric', 'monte_carlo'] else VaRMethod.HISTORICAL
@@ -472,7 +472,7 @@ async def get_var_history(
         start_date, end_date = _get_date_range(time_range)
         returns, dates = await _get_portfolio_returns(portfolio_id, start_date, end_date)
         
-        risk_calc = get_risk_metrics_calculator()
+        risk_calc = get_risk_metrics()
         
         # Calculate rolling VaR
         var_series = []
@@ -661,7 +661,7 @@ async def get_analytics_summary(
         benchmark_returns = await _get_benchmark_returns(benchmark, start_date, end_date)
         
         analytics = get_performance_analytics()
-        risk_calc = get_risk_metrics_calculator()
+        risk_calc = get_risk_metrics()
         benchmark_service = get_benchmark_service()
         
         # Calculate all metrics

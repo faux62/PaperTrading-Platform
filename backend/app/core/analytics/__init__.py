@@ -16,15 +16,14 @@ from .performance import (
     get_performance_analytics
 )
 from .risk_metrics import (
-    RiskMetricsCalculator,
+    RiskMetrics,
     VaRResult,
     VaRMethod,
     BetaAnalysis,
-    FactorExposure,
     CorrelationAnalysis,
-    TailRiskMetrics,
     StressTestResult,
-    get_risk_metrics_calculator
+    RiskSummary,
+    get_risk_metrics
 )
 from .benchmarking import (
     BenchmarkService,
@@ -55,15 +54,14 @@ __all__ = [
     'ReturnType',
     'get_performance_analytics',
     # Risk Metrics
-    'RiskMetricsCalculator',
+    'RiskMetrics',
     'VaRResult',
     'VaRMethod',
     'BetaAnalysis',
-    'FactorExposure',
     'CorrelationAnalysis',
-    'TailRiskMetrics',
     'StressTestResult',
-    'get_risk_metrics_calculator',
+    'RiskSummary',
+    'get_risk_metrics',
     # Benchmarking
     'BenchmarkService',
     'BenchmarkInfo',

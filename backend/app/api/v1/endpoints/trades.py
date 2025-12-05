@@ -179,10 +179,13 @@ async def create_order(
     """
     Create a new order.
     
-    The order will be validated against portfolio constraints
-    and placed in PENDING status.
+    The order will be validated against portfolio constraints.
+    Market orders are executed immediately with a simulated price.
+    Limit/Stop orders are placed in PENDING status.
     """
     order_manager = OrderManager(db)
+    executor = OrderExecutor(db)
+    repo = TradeRepository(db)
     
     try:
         order_request = OrderRequest(
@@ -197,6 +200,41 @@ async def create_order(
         )
         
         result = await order_manager.create_order(order_request)
+        
+        if not result.success:
+            return OrderResultResponse(
+                success=result.success,
+                order_id=result.order_id,
+                message=result.message,
+                errors=result.errors
+            )
+        
+        # For MARKET orders, execute immediately with simulated price
+        order_type = request.order_type if isinstance(request.order_type, OrderType) else OrderType(request.order_type)
+        if order_type == OrderType.MARKET and result.order_id:
+            # Get the created trade
+            trade = await repo.get_by_id(result.order_id)
+            if trade:
+                # Use user-provided price (limit_price) or default mock price
+                # In production, this would fetch from market data
+                if request.limit_price and request.limit_price > 0:
+                    execution_price = request.limit_price
+                else:
+                    execution_price = Decimal("150.00")  # Default mock price
+                
+                # Execute the order
+                exec_result = await executor.execute_order(
+                    trade,
+                    execution_price,
+                    MarketCondition.NORMAL
+                )
+                
+                if exec_result.success:
+                    result.message = f"Market order executed at ${execution_price}"
+                else:
+                    result.message = f"Order created but execution failed: {exec_result.message}"
+                    result.errors = [exec_result.message]
+        
         await db.commit()
         
         return OrderResultResponse(

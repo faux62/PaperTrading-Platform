@@ -17,7 +17,7 @@ from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.portfolio import Portfolio
 from app.db.models.position import Position
 from app.core.portfolio.service import PortfolioService
-from app.core.portfolio.constraints import ConstraintsValidator
+from app.core.portfolio.risk_profiles import get_risk_profile
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,6 @@ class OrderManager:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.portfolio_service = PortfolioService(db)
-        self.constraint_validator = ConstraintsValidator()
     
     async def create_order(self, request: OrderRequest) -> OrderResult:
         """
@@ -151,7 +150,9 @@ class OrderManager:
                 errors=[str(e)]
             )
         except Exception as e:
+            import traceback
             logger.error(f"Error creating order: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return OrderResult(
                 success=False,
                 message="Internal error creating order",
@@ -226,12 +227,9 @@ class OrderManager:
                 if portfolio_value > 0:
                     position_pct = (new_value / portfolio_value) * 100
                     
-                    # Check max position size
-                    max_position = getattr(
-                        self.constraint_validator.get_constraints(portfolio.risk_profile),
-                        'max_position_size', 
-                        25.0
-                    )
+                    # Check max position size from risk profile
+                    risk_profile = get_risk_profile(portfolio.risk_profile.value)
+                    max_position = float(risk_profile.position_limits.max_position_size_percent)
                     
                     if position_pct > max_position:
                         errors.append(

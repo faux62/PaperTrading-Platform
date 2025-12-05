@@ -8,3 +8,4 @@ export { PortfolioCard } from './PortfolioCard';
 export type { PortfolioSummary } from './PortfolioCard';
 
 export { CreatePortfolioModal } from './CreatePortfolioModal';
+export { EditPortfolioModal } from './EditPortfolioModal';

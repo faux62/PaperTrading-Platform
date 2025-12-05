@@ -236,7 +236,10 @@ export function useWebSocket({
 
 // Convenience hook for market data stream
 export function useMarketWebSocket(onQuote?: (quote: MarketQuote) => void) {
-  const WS_URL = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/api/v1/ws/market`;
+  // Use relative WebSocket URL for production (nginx proxy)
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsHost = import.meta.env.VITE_WS_URL || `${wsProtocol}//${window.location.host}`;
+  const WS_URL = `${wsHost}/ws/market`;
 
   return useWebSocket({
     url: WS_URL,
@@ -302,7 +305,10 @@ export function usePortfolioWebSocket(options?: {
   onOrderStatus?: (update: OrderStatusUpdate) => void;
   onTradeExecution?: (update: TradeExecutionUpdate) => void;
 }) {
-  const WS_URL = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/api/v1/ws/portfolio`;
+  // Use relative WebSocket URL for production (nginx proxy)
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsHost = import.meta.env.VITE_WS_URL || `${wsProtocol}//${window.location.host}`;
+  const WS_URL = `${wsHost}/ws/portfolio`;
 
   return useWebSocket({
     url: WS_URL,
