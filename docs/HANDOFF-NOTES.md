@@ -25,15 +25,15 @@
 
 ## Setup su Nuovo Mac
 
-### 1. Clone Repository
-```bash
-git clone https://github.com/faux62/PaperTrading-Platform.git
-cd PaperTrading-Platform
+### 1. Collega il Volume Esterno
+Il progetto è su **X9 Pro** in:
+```
+/Volumes/X9 Pro/Sviluppo/Applicazioni/Finance/PaperTrading-Platform
 ```
 
 ### 2. Avvia Docker
 ```bash
-cd infrastructure/docker
+cd "/Volumes/X9 Pro/Sviluppo/Applicazioni/Finance/PaperTrading-Platform/infrastructure/docker"
 docker compose -f docker-compose.local.yml up -d
 ```
 
