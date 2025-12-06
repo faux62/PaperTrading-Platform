@@ -24,7 +24,7 @@ Portare la piattaforma da stato di sviluppo a **100% operativa con dati reali**.
 | WL | 5 | 5 | 0 | ✅ Completato |
 | ALT | 5 | 5 | 0 | ✅ Completato |
 | ANA | 5 | 5 | 0 | ✅ Completato |
-| SET | 3 | 4 | 1 | ✅ Completato (1 parziale) |
+| SET | 7 | 7 | 0 | ✅ Completato |
 
 ---
 
@@ -142,8 +142,11 @@ Verificare che tutte le funzionalità dell'interfaccia funzionino correttamente.
 |------|-------------|-----------|------|
 | SET-01 | Modifica profilo utente | ✅ | Full name persiste via API |
 | SET-02 | Cambio password | ✅ | Validazione password corrente OK |
-| SET-03 | Preferenze notifiche | ⏭️ SKIPPED | Backend non implementato |
-| SET-04 | Theme toggle (dark/light) | ⚠️ PARZIALE | Meccanismo OK, UI non ha stili light |
+| SET-03 | Preferenze notifiche | ✅ | Backend implementato via `settingsApi` |
+| SET-04 | Theme toggle (dark/light) | ✅ | CSS variables + body.light class |
+| SET-05 | Data Providers (15) | ✅ | API keys criptate, import da .env |
+| SET-06 | Active Sessions | ✅ | GET/DELETE sessioni con revoke UI |
+| SET-07 | Display Preferences | ✅ | Chart type, period, compact mode |
 
 ---
 
@@ -154,11 +157,11 @@ Verificare che tutte le funzionalità dell'interfaccia funzionino correttamente.
 ### Statistiche Finali
 | Metrica | Valore |
 |---------|--------|
-| **Test totali** | 45 |
-| **Passati** | 40 |
+| **Test totali** | 48 |
+| **Passati** | 44 |
 | **Skipped** | 4 |
-| **Parziali** | 1 |
-| **Tasso successo** | 89% (40/45) |
+| **Parziali** | 0 |
+| **Tasso successo** | 92% (44/48) |
 
 ### Fix Applicati Durante Testing
 1. **TRD-03**: Aggiunto `include_pending` parameter a `/trades` endpoint
@@ -167,14 +170,15 @@ Verificare che tutte le funzionalità dell'interfaccia funzionino correttamente.
 4. **WL/ALT**: Fix contrasto colori (text-white, bg-gray-800, etc.)
 5. **SET-02**: Creato endpoint `POST /api/v1/auth/change-password` con validazione
 6. **SET-01**: Collegato frontend a `PATCH /api/v1/auth/me` per profilo
-7. **SET-04**: Implementato toggle theme con localStorage (solo meccanismo)
+7. **SET-04**: Implementato toggle theme con localStorage e CSS variables
+8. **SET-05**: Creato `user_settings` table con 15 provider API keys (criptate con Fernet)
+9. **SET-06**: Implementato endpoint sessioni attive con Redis
+10. **SET-07**: Aggiunto `import-from-env` endpoint per importare API keys
 
 ### Da Implementare (Backlog)
 - [ ] TRD-05: Export trades CSV
 - [ ] TRD-06: Filtro trades per data/simbolo
 - [ ] MKT-03: Grafico prezzi interattivo
-- [ ] SET-03: Preferenze notifiche (backend)
-- [ ] SET-04: Light theme UI (tutti i componenti)
 
 ### Prossimi Passi
 → **Fase 2**: Integrazione dati reali con Finnhub API
