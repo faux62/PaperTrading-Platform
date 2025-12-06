@@ -1,14 +1,21 @@
 """
 PaperTrading Platform - Market Data Endpoints
-Mock data for Phase 1 testing
+Real data providers with mock fallback
 """
-from fastapi import APIRouter
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import datetime, date, timedelta
+from typing import Optional
 import random
+from loguru import logger
+
+from app.dependencies import get_current_active_user
+from app.db.models.user import User
+from app.data_providers import orchestrator, failover_manager, rate_limiter
+from app.data_providers.adapters.base import MarketType, TimeFrame, ProviderError
 
 router = APIRouter()
 
-# Mock stock database
+# Mock stock database (fallback when providers unavailable)
 MOCK_STOCKS = {
     "AAPL": {"name": "Apple Inc.", "exchange": "NASDAQ", "sector": "Technology", "base_price": 178.50},
     "GOOGL": {"name": "Alphabet Inc.", "exchange": "NASDAQ", "sector": "Technology", "base_price": 141.80},
@@ -32,14 +39,14 @@ MOCK_STOCKS = {
     "CRM": {"name": "Salesforce Inc.", "exchange": "NYSE", "sector": "Technology", "base_price": 265.30},
 }
 
-def get_mock_price(symbol: str) -> dict:
-    """Generate mock price with small random variation."""
+
+def _get_mock_price(symbol: str) -> dict:
+    """Generate mock price with small random variation (fallback)."""
     stock = MOCK_STOCKS.get(symbol.upper())
     if not stock:
         return None
     
     base = stock["base_price"]
-    # Random variation +/- 2%
     variation = random.uniform(-0.02, 0.02)
     price = round(base * (1 + variation), 2)
     change = round(price - base, 2)
@@ -59,48 +66,196 @@ def get_mock_price(symbol: str) -> dict:
         "low": round(price * 0.99, 2),
         "open": round(base, 2),
         "previous_close": round(base, 2),
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "source": "mock"
     }
 
 
+def _has_providers() -> bool:
+    """Check if any providers are registered."""
+    return len(failover_manager._providers) > 0
+
+
 @router.get("/quote/{symbol}")
-async def get_quote(symbol: str):
-    """Get current quote for symbol."""
-    quote = get_mock_price(symbol)
+async def get_quote(
+    symbol: str,
+    force_refresh: bool = Query(False, description="Skip cache and fetch fresh data"),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get current quote for symbol.
+    
+    Uses real data providers when available, falls back to mock data.
+    """
+    symbol = symbol.upper()
+    
+    # Try real providers first
+    if _has_providers():
+        try:
+            quote = await orchestrator.get_quote(
+                symbol,
+                market_type=MarketType.US_STOCK,
+                force_refresh=force_refresh,
+            )
+            
+            return {
+                "symbol": quote.symbol,
+                "name": MOCK_STOCKS.get(symbol, {}).get("name", symbol),
+                "exchange": MOCK_STOCKS.get(symbol, {}).get("exchange", ""),
+                "price": float(quote.price),
+                "change": float(quote.change) if quote.change else 0,
+                "change_percent": float(quote.change_percent) if quote.change_percent else 0,
+                "volume": quote.volume or 0,
+                "bid": float(quote.bid) if quote.bid else float(quote.price) - 0.01,
+                "ask": float(quote.ask) if quote.ask else float(quote.price) + 0.01,
+                "high": float(quote.high) if quote.high else float(quote.price),
+                "low": float(quote.low) if quote.low else float(quote.price),
+                "open": float(quote.open) if quote.open else float(quote.price),
+                "previous_close": float(quote.previous_close) if quote.previous_close else float(quote.price),
+                "timestamp": quote.timestamp.isoformat(),
+                "source": quote.provider,
+            }
+        except ProviderError as e:
+            logger.warning(f"Provider error for {symbol}, using mock: {e}")
+        except Exception as e:
+            logger.error(f"Error fetching quote for {symbol}: {e}")
+    
+    # Fallback to mock data
+    quote = _get_mock_price(symbol)
     if not quote:
-        return {"error": f"Symbol {symbol} not found", "symbol": symbol}
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
     return quote
 
 
 @router.get("/quotes")
-async def get_quotes(symbols: str):
+async def get_quotes(
+    symbols: str = Query(..., description="Comma-separated list of symbols"),
+    force_refresh: bool = Query(False, description="Skip cache"),
+    current_user: User = Depends(get_current_active_user)
+):
     """Get quotes for multiple symbols (comma-separated)."""
     symbol_list = [s.strip().upper() for s in symbols.split(",")]
     quotes = []
+    errors = []
+    
+    # Try real providers first
+    if _has_providers():
+        try:
+            result = await orchestrator.get_quotes(
+                symbol_list,
+                market_type=MarketType.US_STOCK,
+                force_refresh=force_refresh,
+            )
+            
+            for symbol, quote in result.items():
+                quotes.append({
+                    "symbol": quote.symbol,
+                    "name": MOCK_STOCKS.get(symbol, {}).get("name", symbol),
+                    "exchange": MOCK_STOCKS.get(symbol, {}).get("exchange", ""),
+                    "price": float(quote.price),
+                    "change": float(quote.change) if quote.change else 0,
+                    "change_percent": float(quote.change_percent) if quote.change_percent else 0,
+                    "volume": quote.volume or 0,
+                    "timestamp": quote.timestamp.isoformat(),
+                    "source": quote.provider,
+                })
+            
+            # Check for missing symbols
+            fetched = set(result.keys())
+            for sym in symbol_list:
+                if sym not in fetched:
+                    errors.append({"symbol": sym, "error": "Not found"})
+            
+            return {"quotes": quotes, "count": len(quotes), "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Error fetching quotes: {e}")
+    
+    # Fallback to mock
     for sym in symbol_list:
-        quote = get_mock_price(sym)
+        quote = _get_mock_price(sym)
         if quote:
             quotes.append(quote)
-    return {"quotes": quotes, "count": len(quotes)}
+        else:
+            errors.append({"symbol": sym, "error": "Not found"})
+    
+    return {"quotes": quotes, "count": len(quotes), "errors": errors}
 
 
 @router.get("/history/{symbol}")
-async def get_history(symbol: str, period: str = "1M"):
+async def get_history(
+    symbol: str,
+    period: str = Query("1M", description="Period: 1D, 1W, 1M, 3M, 1Y"),
+    timeframe: str = Query("1d", description="Timeframe: 1m, 5m, 15m, 1h, 1d"),
+    current_user: User = Depends(get_current_active_user)
+):
     """Get historical OHLCV data."""
-    stock = MOCK_STOCKS.get(symbol.upper())
-    if not stock:
-        return {"error": f"Symbol {symbol} not found"}
+    symbol = symbol.upper()
     
-    # Generate mock historical data
+    # Map period to start date
+    period_map = {"1D": 1, "1W": 7, "1M": 30, "3M": 90, "1Y": 365}
+    days = period_map.get(period.upper(), 30)
+    
+    start_date = date.today() - timedelta(days=days)
+    end_date = date.today()
+    
+    # Map timeframe
+    tf_map = {
+        "1m": TimeFrame.MIN_1,
+        "5m": TimeFrame.MIN_5,
+        "15m": TimeFrame.MIN_15,
+        "1h": TimeFrame.HOUR,
+        "1d": TimeFrame.DAY,
+    }
+    tf = tf_map.get(timeframe.lower(), TimeFrame.DAY)
+    
+    # Try real providers
+    if _has_providers():
+        try:
+            bars = await orchestrator.get_historical(
+                symbol,
+                timeframe=tf,
+                start_date=start_date,
+                end_date=end_date,
+                market_type=MarketType.US_STOCK,
+            )
+            
+            data = []
+            for bar in bars:
+                data.append({
+                    "date": bar.timestamp.strftime("%Y-%m-%d") if isinstance(bar.timestamp, datetime) else str(bar.timestamp),
+                    "open": float(bar.open),
+                    "high": float(bar.high),
+                    "low": float(bar.low),
+                    "close": float(bar.close),
+                    "volume": bar.volume,
+                })
+            
+            return {
+                "symbol": symbol,
+                "period": period,
+                "timeframe": timeframe,
+                "data": data,
+                "source": bars[0].provider if bars else "unknown",
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error fetching history for {symbol}, using mock: {e}")
+    
+    # Fallback to mock
+    stock = MOCK_STOCKS.get(symbol)
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
+    
     base = stock["base_price"]
     data = []
-    days = {"1D": 1, "1W": 7, "1M": 30, "3M": 90, "1Y": 365}.get(period, 30)
     
     for i in range(days):
         variation = random.uniform(-0.03, 0.03)
         price = round(base * (1 + variation), 2)
+        d = date.today() - timedelta(days=days - i)
         data.append({
-            "date": f"2024-{12-i//30:02d}-{28-i%28:02d}",
+            "date": d.strftime("%Y-%m-%d"),
             "open": round(price * 0.99, 2),
             "high": round(price * 1.02, 2),
             "low": round(price * 0.98, 2),
@@ -108,15 +263,19 @@ async def get_history(symbol: str, period: str = "1M"):
             "volume": random.randint(1000000, 50000000)
         })
     
-    return {"symbol": symbol.upper(), "period": period, "data": list(reversed(data))}
+    return {"symbol": symbol, "period": period, "timeframe": timeframe, "data": data, "source": "mock"}
 
 
 @router.get("/search")
-async def search_symbols(query: str):
+async def search_symbols(
+    query: str = Query(..., min_length=1, description="Search query"),
+    current_user: User = Depends(get_current_active_user)
+):
     """Search for symbols."""
     query = query.upper()
     results = []
     
+    # Search mock database (in future, can use provider search APIs)
     for symbol, info in MOCK_STOCKS.items():
         if query in symbol or query.lower() in info["name"].lower():
             results.append({
@@ -131,13 +290,15 @@ async def search_symbols(query: str):
 
 
 @router.get("/market-hours")
-async def get_market_hours():
+async def get_market_hours(
+    current_user: User = Depends(get_current_active_user)
+):
     """Get market hours status."""
     now = datetime.utcnow()
     hour = now.hour
     weekday = now.weekday()
     
-    # Simplified: US market open 14:30-21:00 UTC (9:30-16:00 ET)
+    # US market open 14:30-21:00 UTC (9:30-16:00 ET)
     is_open = weekday < 5 and 14 <= hour < 21
     
     return {
@@ -150,4 +311,31 @@ async def get_market_hours():
         },
         "current_time_utc": now.isoformat(),
         "trading_day": weekday < 5
+    }
+
+
+@router.get("/providers/status")
+async def get_provider_status(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get status of all data providers including rate limit consumption."""
+    providers = {}
+    
+    for name in failover_manager._providers.keys():
+        stats = rate_limiter.get_stats(name)
+        providers[name] = {
+            "registered": True,
+            "rate_limit": {
+                "configured": stats.get("configured", False),
+                "limits": stats.get("limits", {}),
+                "remaining": stats.get("remaining", {}),
+                "can_proceed": stats.get("can_proceed", True),
+                "wait_time_seconds": stats.get("wait_time", 0),
+            }
+        }
+    
+    return {
+        "providers": providers,
+        "total_registered": len(providers),
+        "timestamp": datetime.utcnow().isoformat()
     }

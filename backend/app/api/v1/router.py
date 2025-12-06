@@ -5,7 +5,8 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth, portfolios, positions, trades, market_data, 
-    watchlists, analytics, alerts, ml_features, ml_predictions, currency, settings
+    watchlists, analytics, alerts, ml_features, ml_predictions, currency, settings,
+    providers
 )
 from app.api.v1.websockets import market_stream_router, portfolio_stream_router
 
@@ -36,6 +37,7 @@ api_router.include_router(ml_features.router, prefix="/ml/features", tags=["ML F
 api_router.include_router(ml_predictions.router, tags=["ML Predictions"])
 api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
 api_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
+api_router.include_router(providers.router, prefix="/providers", tags=["Provider Monitoring"])
 
 # Include WebSocket routers
 api_router.include_router(market_stream_router, tags=["WebSocket - Market"])

@@ -11,6 +11,62 @@ from app.api.v1.router import api_router
 from app.api.v1.websockets import market_stream_router
 from app.db.database import engine, init_db
 from app.db.redis_client import redis_client
+from app.data_providers.provider_init import initialize_providers, shutdown_providers
+
+
+async def load_api_keys_from_settings() -> dict[str, str]:
+    """Load API keys from user settings in database."""
+    from app.db.database import async_session_maker
+    from app.db.repositories.user import UserRepository
+    
+    api_keys = {}
+    
+    try:
+        async with async_session_maker() as db:
+            user_repo = UserRepository(db)
+            # Load default/system settings from first user or admin
+            users = await user_repo.get_all(skip=0, limit=1)
+            
+            if users:
+                user = users[0]
+                if user.settings and "data_providers" in user.settings:
+                    providers = user.settings.get("data_providers", {})
+                    for provider_config in providers.values():
+                        if isinstance(provider_config, dict):
+                            name = provider_config.get("provider_id", "").lower()
+                            api_key = provider_config.get("api_key", "")
+                            if name and api_key:
+                                api_keys[name] = api_key
+                                # Handle Alpaca secret
+                                if name == "alpaca" and "api_secret" in provider_config:
+                                    api_keys["alpaca_secret"] = provider_config["api_secret"]
+    except Exception as e:
+        logger.warning(f"Could not load API keys from database: {e}")
+    
+    # Also load from environment variables as fallback
+    import os
+    env_mappings = {
+        "FINNHUB_API_KEY": "finnhub",
+        "POLYGON_API_KEY": "polygon",
+        "ALPHA_VANTAGE_API_KEY": "alpha_vantage",
+        "TIINGO_API_KEY": "tiingo",
+        "TWELVE_DATA_API_KEY": "twelve_data",
+        "ALPACA_API_KEY": "alpaca",
+        "ALPACA_SECRET_KEY": "alpaca_secret",
+        "FMP_API_KEY": "fmp",
+        "EODHD_API_KEY": "eodhd",
+        "INTRINIO_API_KEY": "intrinio",
+        "MARKETSTACK_API_KEY": "marketstack",
+        "NASDAQ_DATA_LINK_API_KEY": "nasdaq_datalink",
+        "STOCKDATA_API_KEY": "stockdata",
+    }
+    
+    for env_var, provider_name in env_mappings.items():
+        env_value = os.getenv(env_var)
+        if env_value and provider_name not in api_keys:
+            api_keys[provider_name] = env_value
+    
+    return api_keys
 
 
 @asynccontextmanager
@@ -27,7 +83,17 @@ async def lifespan(app: FastAPI):
     await redis_client.initialize()
     logger.info("✅ Redis connected")
     
-    # TODO: Initialize providers
+    # Initialize data providers
+    try:
+        api_keys = await load_api_keys_from_settings()
+        logger.info(f"📊 Found API keys for {len(api_keys)} providers")
+        
+        results = await initialize_providers(api_keys)
+        success_count = sum(1 for v in results.values() if v)
+        logger.info(f"✅ Initialized {success_count}/{len(results)} data providers")
+    except Exception as e:
+        logger.error(f"⚠️ Provider initialization error (non-fatal): {e}")
+    
     # TODO: Initialize scheduler
     # TODO: Load ML models
     
@@ -37,6 +103,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Shutting down PaperTrading Platform...")
+    await shutdown_providers()
     await redis_client.close()
     await engine.dispose()
     logger.info("👋 Goodbye!")

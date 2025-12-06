@@ -30,6 +30,8 @@ class MarketType(str, Enum):
     FOREX = "forex"
     COMMODITY = "commodity"
     INDEX = "index"
+    ETF = "etf"
+    US_OPTION = "us_option"
 
 
 class DataType(str, Enum):

@@ -7,3 +7,4 @@ export { ProfileSettings, default as ProfileSettingsDefault } from './ProfileSet
 export { PreferencesSettings, default as PreferencesSettingsDefault } from './PreferencesSettings';
 export { SecuritySettings, default as SecuritySettingsDefault } from './SecuritySettings';
 export { DataProviderSettings, default as DataProviderSettingsDefault } from './DataProviderSettings';
+export { default as ProviderStatusMonitor } from './ProviderStatusMonitor';
