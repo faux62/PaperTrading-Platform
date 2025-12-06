@@ -2,7 +2,7 @@
  * Settings Page
  * Complete settings management with tabs for Profile, Preferences, Security, and Data Providers
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/layout';
 import { Card, CardContent } from '../components/common';
 import { User, Settings2, Shield, Database } from 'lucide-react';
@@ -12,6 +12,7 @@ import {
   SecuritySettings,
   DataProviderSettings,
 } from '../components/settings';
+import { authApi } from '../services/api';
 
 type SettingsTab = 'profile' | 'preferences' | 'security' | 'providers';
 
@@ -19,6 +20,14 @@ interface TabConfig {
   id: SettingsTab;
   label: string;
   icon: React.ReactNode;
+}
+
+interface UserProfile {
+  username: string;
+  email: string;
+  full_name: string | null;
+  base_currency: string;
+  updated_at: string | null;
 }
 
 const tabs: TabConfig[] = [
@@ -30,26 +39,46 @@ const tabs: TabConfig[] = [
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Mock handlers - in production these would call API
+  // Fetch user profile on mount
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const data = await authApi.getMe();
+        setUserProfile(data);
+      } catch (error) {
+        console.error('Failed to fetch profile:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  // Real API handler for profile save
   const handleProfileSave = async (data: { username: string; email: string; firstName: string; lastName: string }) => {
-    console.log('Saving profile:', data);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const fullName = `${data.firstName} ${data.lastName}`.trim();
+    const updated = await authApi.updateMe({ full_name: fullName || undefined });
+    setUserProfile(updated);
   };
 
   const handlePreferencesSave = async (data: unknown) => {
     console.log('Saving preferences:', data);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // TODO: Implement preferences API when backend supports it
+    await new Promise(resolve => setTimeout(resolve, 500));
   };
 
-  const handlePasswordChange = async (_oldPassword: string, _newPassword: string) => {
-    console.log('Changing password');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+  // Real API handler for password change
+  const handlePasswordChange = async (oldPassword: string, newPassword: string) => {
+    await authApi.changePassword(oldPassword, newPassword);
   };
 
   const handleProviderSave = async (provider: string, apiKey: string) => {
     console.log('Saving provider:', provider, apiKey.slice(0, 4) + '***');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // TODO: Implement provider API when backend supports it
+    await new Promise(resolve => setTimeout(resolve, 500));
   };
 
   const handleTestConnection = async (provider: string): Promise<boolean> => {
@@ -58,12 +87,38 @@ const Settings = () => {
     return Math.random() > 0.3; // Mock success/failure
   };
 
+  // Parse full_name into firstName and lastName
+  const parseFullName = (fullName: string | null): { firstName: string; lastName: string } => {
+    if (!fullName) return { firstName: '', lastName: '' };
+    const parts = fullName.trim().split(' ');
+    if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+    return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+  };
+
   const renderTabContent = () => {
+    if (loading) {
+      return (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full mx-auto"></div>
+            <p className="text-surface-400 mt-4">Loading...</p>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    const { firstName, lastName } = parseFullName(userProfile?.full_name || null);
+
     switch (activeTab) {
       case 'profile':
         return (
           <ProfileSettings
-            initialData={{ username: 'papertrader', email: 'user@example.com', firstName: 'Paper', lastName: 'Trader' }}
+            initialData={{ 
+              username: userProfile?.username || '', 
+              email: userProfile?.email || '', 
+              firstName, 
+              lastName 
+            }}
             onSave={handleProfileSave}
           />
         );
@@ -73,8 +128,6 @@ const Settings = () => {
         return (
           <SecuritySettings
             onPasswordChange={handlePasswordChange}
-            lastPasswordChange={new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)}
-            activeSessions={2}
           />
         );
       case 'providers':

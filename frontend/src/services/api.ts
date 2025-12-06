@@ -126,6 +126,14 @@ export const authApi = {
     return response.data;
   },
 
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const response = await api.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return response.data;
+  },
+
   getSessions: async () => {
     const response = await api.get('/auth/sessions');
     return response.data;
@@ -241,22 +249,27 @@ export const tradingApi = {
 // ============================================
 export const marketApi = {
   getQuote: async (symbol: string) => {
-    const response = await api.get(`/market-data/quote/${symbol}`);
+    const response = await api.get(`/market/quote/${symbol}`);
     return response.data;
   },
 
   getQuotes: async (symbols: string[]) => {
-    const response = await api.post('/market-data/quotes', { symbols });
+    const response = await api.get('/market/quotes', { params: { symbols: symbols.join(',') } });
     return response.data;
   },
 
   getHistorical: async (symbol: string, period: string = '1M') => {
-    const response = await api.get(`/market-data/historical/${symbol}`, { params: { period } });
+    const response = await api.get(`/market/history/${symbol}`, { params: { period } });
     return response.data;
   },
 
   search: async (query: string) => {
-    const response = await api.get('/market-data/search', { params: { q: query } });
+    const response = await api.get('/market/search', { params: { query } });
+    return response.data;
+  },
+
+  getMarketHours: async () => {
+    const response = await api.get('/market/market-hours');
     return response.data;
   },
 };
@@ -328,6 +341,61 @@ export const currencyApi = {
       from_currency: fromCurrency,
       to_currency: toCurrency,
     });
+    return response.data;
+  },
+};
+
+// ============================================
+// Settings API
+// ============================================
+export const settingsApi = {
+  getSettings: async () => {
+    const response = await api.get('/settings/');
+    return response.data;
+  },
+
+  updateSettings: async (settings: {
+    theme?: string;
+    display?: {
+      theme?: string;
+      compact_mode?: boolean;
+      show_percent_change?: boolean;
+      default_chart_period?: string;
+      chart_type?: string;
+    };
+    notifications?: {
+      email?: boolean;
+      push?: boolean;
+      trade_execution?: boolean;
+      price_alerts?: boolean;
+      portfolio_updates?: boolean;
+      market_news?: boolean;
+    };
+  }) => {
+    const response = await api.patch('/settings/', settings);
+    return response.data;
+  },
+
+  saveApiKey: async (provider: string, apiKey: string) => {
+    const response = await api.post('/settings/api-keys', {
+      provider,
+      api_key: apiKey,
+    });
+    return response.data;
+  },
+
+  deleteApiKey: async (provider: string) => {
+    const response = await api.delete(`/settings/api-keys/${provider}`);
+    return response.data;
+  },
+
+  testConnection: async (provider: string) => {
+    const response = await api.post('/settings/api-keys/test', { provider });
+    return response.data;
+  },
+
+  importFromEnv: async () => {
+    const response = await api.post('/settings/api-keys/import-from-env');
     return response.data;
   },
 };

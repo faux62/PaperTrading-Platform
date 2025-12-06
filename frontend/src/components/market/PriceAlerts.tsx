@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import Card, { CardContent, CardHeader } from '../common/Card';
 import Button from '../common/Button';
+import { tokenStorage } from '../../services/tokenStorage';
 
 // Types
 type AlertType = 'price_above' | 'price_below' | 'percent_change_up' | 'percent_change_down';
@@ -81,7 +82,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const url = symbol 
         ? `/api/v1/alerts/?symbol=${symbol}` 
         : '/api/v1/alerts/';
@@ -103,7 +104,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch('/api/v1/alerts/summary', {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -127,7 +128,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
     if (!newAlert.symbol || !newAlert.target_value) return;
 
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch('/api/v1/alerts/', {
         method: 'POST',
         headers: {
@@ -164,7 +165,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
   // Toggle alert
   const toggleAlert = async (alertId: number) => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(`/api/v1/alerts/${alertId}/toggle`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -185,7 +186,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
   // Delete alert
   const deleteAlert = async (alertId: number) => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(`/api/v1/alerts/${alertId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -255,11 +256,11 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
+          <h3 className="text-lg font-semibold flex items-center gap-2 text-white">
             <Bell className="h-5 w-5 text-yellow-500" />
             Price Alerts
             {summary && (
-              <span className="text-xs font-normal text-muted-foreground">
+              <span className="text-xs font-normal text-gray-400">
                 ({summary.active} active)
               </span>
             )}
@@ -275,39 +276,39 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
           <div className="grid grid-cols-4 gap-2 p-3 bg-surface-800 rounded-lg mb-4">
             <div className="text-center">
               <p className="text-lg font-bold text-green-500">{summary.active}</p>
-              <p className="text-xs text-muted-foreground">Active</p>
+              <p className="text-xs text-gray-400">Active</p>
             </div>
             <div className="text-center">
               <p className="text-lg font-bold text-blue-500">{summary.triggered}</p>
-              <p className="text-xs text-muted-foreground">Triggered</p>
+              <p className="text-xs text-gray-400">Triggered</p>
             </div>
             <div className="text-center">
               <p className="text-lg font-bold text-gray-500">{summary.disabled}</p>
-              <p className="text-xs text-muted-foreground">Disabled</p>
+              <p className="text-xs text-gray-400">Disabled</p>
             </div>
             <div className="text-center">
               <p className="text-lg font-bold text-red-500">{summary.expired}</p>
-              <p className="text-xs text-muted-foreground">Expired</p>
+              <p className="text-xs text-gray-400">Expired</p>
             </div>
           </div>
         )}
 
         {/* Create Form */}
         {showCreateForm && (
-          <div className="p-4 border rounded-lg bg-accent/30 space-y-3">
+          <div className="p-4 border border-gray-600 rounded-lg bg-gray-800 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
                 placeholder="Symbol (e.g., AAPL)"
                 value={newAlert.symbol}
                 onChange={(e) => setNewAlert({ ...newAlert, symbol: e.target.value.toUpperCase() })}
-                className="px-3 py-2 bg-background border rounded-md text-sm"
+                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-sm text-white placeholder:text-gray-500"
                 disabled={!!symbol}
               />
               <select
                 value={newAlert.alert_type}
                 onChange={(e) => setNewAlert({ ...newAlert, alert_type: e.target.value as AlertType })}
-                className="px-3 py-2 bg-background border rounded-md text-sm"
+                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-sm text-white"
               >
                 {Object.entries(ALERT_TYPE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -320,7 +321,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
                 placeholder={newAlert.alert_type.includes('percent') ? 'Percentage (e.g., 5)' : 'Price (e.g., 150.00)'}
                 value={newAlert.target_value}
                 onChange={(e) => setNewAlert({ ...newAlert, target_value: e.target.value })}
-                className="px-3 py-2 bg-background border rounded-md text-sm"
+                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-sm text-white placeholder:text-gray-500"
                 step="0.01"
               />
               <input
@@ -328,11 +329,11 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
                 placeholder="Note (optional)"
                 value={newAlert.note}
                 onChange={(e) => setNewAlert({ ...newAlert, note: e.target.value })}
-                className="px-3 py-2 bg-background border rounded-md text-sm"
+                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-sm text-white placeholder:text-gray-500"
               />
             </div>
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-sm text-gray-300">
                 <input
                   type="checkbox"
                   checked={newAlert.is_recurring}
@@ -351,7 +352,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
 
         {/* Alerts List */}
         {alerts.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">
+          <p className="text-sm text-gray-400 text-center py-6">
             No alerts yet. Create one to get notified when prices change.
           </p>
         ) : (
@@ -359,22 +360,22 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
             {alerts.map((alert) => (
               <div
                 key={alert.id}
-                className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/30 transition-colors"
+                className="flex items-center justify-between p-3 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   {getAlertIcon(alert.alert_type)}
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">{alert.symbol}</span>
-                      <span className="text-sm text-muted-foreground">
+                      <span className="font-semibold text-white">{alert.symbol}</span>
+                      <span className="text-sm text-gray-400">
                         {ALERT_TYPE_LABELS[alert.alert_type]}
                       </span>
-                      <span className="font-mono text-sm">
+                      <span className="font-mono text-sm text-white">
                         {formatValue(alert.alert_type, alert.target_value)}
                       </span>
                     </div>
                     {alert.note && (
-                      <p className="text-xs text-muted-foreground">{alert.note}</p>
+                      <p className="text-xs text-gray-400">{alert.note}</p>
                     )}
                     {alert.triggered_at && (
                       <p className="text-xs text-blue-400">
@@ -414,7 +415,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
                     className="h-8 w-8 p-0"
                     onClick={() => deleteAlert(alert.id)}
                   >
-                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
               </div>

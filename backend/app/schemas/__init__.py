@@ -14,6 +14,7 @@ from app.schemas.user import (
     UserWithToken,
     Message,
     ErrorResponse,
+    PasswordChange,
 )
 
 from app.schemas.watchlist import (
@@ -42,6 +43,7 @@ __all__ = [
     "UserWithToken",
     "Message",
     "ErrorResponse",
+    "PasswordChange",
     # Watchlist schemas
     "WatchlistSymbolBase",
     "WatchlistSymbolResponse",

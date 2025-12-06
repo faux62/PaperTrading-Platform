@@ -43,6 +43,8 @@ class Trade(Base):
     # Symbol info
     symbol = Column(String(20), nullable=False, index=True)
     exchange = Column(String(20), nullable=True)
+    native_currency = Column(String(3), default="USD", nullable=False)  # Currency the symbol is quoted in
+    exchange_rate = Column(Numeric(15, 6), nullable=True)  # Rate from native_currency to portfolio currency at execution
     
     # Trade details
     trade_type = Column(SQLEnum(TradeType), nullable=False)

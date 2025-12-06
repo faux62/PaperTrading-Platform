@@ -36,11 +36,14 @@ interface Trade {
   id: number;
   symbol: string;
   trade_type: string;
+  order_type: string;
   quantity: number;
-  executed_price: number;
-  total_value: number;
+  price: number;
+  executed_price: number | null;
+  total_value: number | null;
   status: string;
-  executed_at: string;
+  executed_at: string | null;
+  created_at: string;
 }
 
 const Trading = () => {
@@ -92,20 +95,29 @@ const Trading = () => {
     if (!selectedPortfolio) return;
     try {
       const data = await portfolioApi.getPositions(selectedPortfolio.id);
+      
+      // Calculate total portfolio value for weight calculation
+      const totalValue = data.reduce((sum: number, p: any) => 
+        sum + (parseFloat(p.market_value) || 0), 0
+      );
+      
       // Map API response to Position interface
       // API returns: avg_cost, market_value, unrealized_pnl_percent
       // UI expects: average_cost, current_value, unrealized_pnl_pct
-      setPositions(data.map((p: any) => ({
-        symbol: p.symbol,
-        exchange: p.exchange,
-        quantity: parseFloat(p.quantity),
-        average_cost: parseFloat(p.avg_cost),
-        current_price: p.current_price ? parseFloat(p.current_price) : undefined,
-        current_value: p.market_value ? parseFloat(p.market_value) : undefined,
-        unrealized_pnl: p.unrealized_pnl ? parseFloat(p.unrealized_pnl) : undefined,
-        unrealized_pnl_pct: p.unrealized_pnl_percent ? parseFloat(p.unrealized_pnl_percent) : undefined,
-        weight_pct: p.weight_pct ? parseFloat(p.weight_pct) : undefined
-      })));
+      setPositions(data.map((p: any) => {
+        const marketValue = parseFloat(p.market_value) || 0;
+        return {
+          symbol: p.symbol,
+          exchange: p.exchange,
+          quantity: parseFloat(p.quantity) || 0,
+          average_cost: parseFloat(p.avg_cost) || 0,
+          current_price: parseFloat(p.current_price) || 0,
+          current_value: marketValue,
+          unrealized_pnl: parseFloat(p.unrealized_pnl) || 0,
+          unrealized_pnl_pct: parseFloat(p.unrealized_pnl_percent) || 0,
+          weight_pct: totalValue > 0 ? (marketValue / totalValue) * 100 : 0
+        };
+      }));
     } catch (err) {
       console.error('Failed to load positions:', err);
     }
@@ -114,8 +126,22 @@ const Trading = () => {
   const loadRecentTrades = async () => {
     if (!selectedPortfolio) return;
     try {
+      console.log('loadRecentTrades: Fetching trades for portfolio', selectedPortfolio.id);
       const data = await tradingApi.getTradeHistory(selectedPortfolio.id);
-      setRecentTrades(data.slice(0, 10));
+      console.log('loadRecentTrades: Raw API response:', data);
+      // Convert string values to numbers
+      const parsedTrades = data.slice(0, 10).map((t: any) => ({
+        ...t,
+        quantity: parseFloat(t.quantity) || 0,
+        price: parseFloat(t.price) || 0,
+        executed_price: parseFloat(t.executed_price) || 0,
+        executed_quantity: parseFloat(t.executed_quantity) || 0,
+        total_value: parseFloat(t.total_value) || 0,
+        commission: parseFloat(t.commission) || 0,
+        realized_pnl: t.realized_pnl ? parseFloat(t.realized_pnl) : null,
+      }));
+      console.log('loadRecentTrades: Parsed trades:', parsedTrades);
+      setRecentTrades(parsedTrades);
     } catch (err) {
       console.error('Failed to load trades:', err);
     }
@@ -322,6 +348,7 @@ const Trading = () => {
                 <OrderForm
                   portfolioId={selectedPortfolio.id}
                   availableCash={selectedPortfolio.cash_balance}
+                  positions={positions}
                   currency={selectedPortfolio.currency}
                   onSubmit={handleOrderSubmit}
                 />
@@ -396,7 +423,7 @@ const Trading = () => {
                       {recentTrades.map((trade) => (
                         <tr key={trade.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                           <td className="py-3 pr-4 text-sm text-gray-600 dark:text-gray-400">
-                            {new Date(trade.executed_at).toLocaleDateString()}
+                            {new Date(trade.executed_at || trade.created_at).toLocaleDateString()}
                           </td>
                           <td className="py-3 px-4 font-medium text-gray-900 dark:text-white">
                             {trade.symbol}
@@ -415,10 +442,10 @@ const Trading = () => {
                             {trade.quantity}
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-gray-600 dark:text-gray-400">
-                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{trade.executed_price?.toFixed(2)}
+                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{(trade.executed_price || trade.price)?.toFixed(2)}
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-medium text-gray-900 dark:text-white">
-                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{trade.total_value?.toFixed(2)}
+                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{(trade.total_value || (trade.quantity * trade.price))?.toFixed(2)}
                           </td>
                           <td className="py-3 pl-4">
                             <span className={clsx(

@@ -95,7 +95,7 @@ export function PositionTable({
   const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
     <button
       onClick={() => handleSort(field)}
-      className="flex items-center gap-1 hover:text-gray-900 dark:hover:text-white transition-colors"
+      className="flex items-center gap-1 hover:text-gray-900 dark:hover:text-white transition-colors ml-auto"
     >
       {children}
       {sortField === field && (
@@ -273,8 +273,10 @@ export function PositionTable({
                     {formatPercent(position.unrealized_pnl_pct)}
                   </div>
                 </td>
-                <td className="py-4 px-4 text-right text-gray-600 dark:text-gray-400">
-                  {position.weight_pct ? `${position.weight_pct.toFixed(1)}%` : '-'}
+                <td className="py-4 px-4 text-right font-mono text-gray-600 dark:text-gray-400">
+                  {(position.weight_pct !== undefined && position.weight_pct !== null) 
+                    ? `${position.weight_pct.toFixed(1)}%` 
+                    : '0.0%'}
                 </td>
                 <td className="py-4 pl-4 relative">
                   <button

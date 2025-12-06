@@ -95,9 +95,11 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
             <Input
               name="username"
               value={formData.username}
-              onChange={handleChange}
-              placeholder="Enter username"
+              disabled
+              className="bg-surface-700 text-surface-400 cursor-not-allowed"
+              placeholder="Username"
             />
+            <p className="text-xs text-surface-500 mt-1">Username cannot be changed</p>
           </div>
 
           <div>
@@ -109,9 +111,11 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
               type="email"
               name="email"
               value={formData.email}
-              onChange={handleChange}
-              placeholder="Enter email"
+              disabled
+              className="bg-surface-700 text-surface-400 cursor-not-allowed"
+              placeholder="Email"
             />
+            <p className="text-xs text-surface-500 mt-1">Email cannot be changed</p>
           </div>
 
           {message && (

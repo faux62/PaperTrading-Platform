@@ -4,10 +4,12 @@ With Redis Session Management and Token Blacklisting
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
     get_user_repository,
     get_current_active_user,
+    get_db,
 )
 from app.db.repositories.user import UserRepository
 from app.db.models.user import User
@@ -20,6 +22,7 @@ from app.schemas.user import (
     Token,
     RefreshTokenRequest,
     Message,
+    PasswordChange,
 )
 from app.core.security import (
     create_access_token,
@@ -545,4 +548,120 @@ async def update_current_user(
         created_at=current_user.created_at,
         updated_at=current_user.updated_at,
     )
+
+
+@router.get(
+    "/sessions",
+    summary="Get active sessions",
+    description="Get list of active sessions for the current user."
+)
+async def get_sessions(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get all active sessions for the current user.
+    
+    Returns list of sessions with device info and creation time.
+    """
+    session_ids = await redis_client.get_user_sessions(current_user.id)
+    
+    sessions = []
+    for session_id in session_ids:
+        session_data = await redis_client.get_session(current_user.id, session_id)
+        if session_data:
+            sessions.append({
+                "id": session_id,
+                "ip": session_data.get("ip", "unknown"),
+                "user_agent": session_data.get("user_agent", "unknown"),
+                "created_at": session_data.get("created_at"),
+                "current": False,  # Will be set client-side based on token
+            })
+    
+    return {
+        "sessions": sessions,
+        "count": len(sessions)
+    }
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    summary="Revoke a session",
+    description="Revoke a specific session (logout from a device)."
+)
+async def revoke_session(
+    session_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Revoke a specific session.
+    
+    - **session_id**: The session ID to revoke
+    
+    Returns success message.
+    """
+    deleted = await redis_client.delete_session(current_user.id, session_id)
+    
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+    
+    return {"message": "Session revoked successfully"}
+
+
+@router.post(
+    "/change-password",
+    response_model=Message,
+    summary="Change password",
+    description="Change the current user's password. Requires current password verification."
+)
+async def change_password(
+    password_data: PasswordChange,
+    current_user: User = Depends(get_current_active_user),
+    user_repo: UserRepository = Depends(get_user_repository),
+    db: AsyncSession = Depends(get_db)
+) -> Message:
+    """
+    Change current user's password.
+    
+    - **current_password**: Current password for verification
+    - **new_password**: New password (min 8 chars)
+    
+    Returns success message or error if current password is incorrect.
+    """
+    from datetime import datetime
+    from app.db.models.user_settings import UserSettings
+    from sqlalchemy import select
+    
+    success, message = await user_repo.change_password(
+        user_id=current_user.id,
+        current_password=password_data.current_password,
+        new_password=password_data.new_password
+    )
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+    
+    # Update password_changed_at in user_settings
+    result = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == current_user.id)
+    )
+    settings = result.scalar_one_or_none()
+    if settings:
+        settings.password_changed_at = datetime.utcnow()
+        await db.commit()
+    else:
+        # Create settings record if not exists
+        settings = UserSettings(user_id=current_user.id, password_changed_at=datetime.utcnow())
+        db.add(settings)
+        await db.commit()
+    
+    # Optionally invalidate all other sessions after password change
+    await redis_client.delete_all_user_sessions(current_user.id)
+    
+    return Message(message=message)
 

@@ -20,6 +20,7 @@ class Position(Base):
     # Symbol info
     symbol = Column(String(20), nullable=False, index=True)
     exchange = Column(String(20), nullable=True)
+    native_currency = Column(String(3), default="USD", nullable=False)  # Currency the symbol is quoted in
     
     # Position details
     quantity = Column(Numeric(15, 4), default=Decimal("0"))

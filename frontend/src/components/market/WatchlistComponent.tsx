@@ -15,6 +15,7 @@ import Card, { CardContent, CardHeader } from '../common/Card';
 import Button from '../common/Button';
 import RealTimeQuote from './RealTimeQuote';
 import { useMarketWebSocket, MarketQuote } from '../../hooks/useWebSocket';
+import { tokenStorage } from '../../services/tokenStorage';
 
 // Types
 interface WatchlistSymbol {
@@ -54,7 +55,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
   // Fetch watchlists
   const fetchWatchlists = useCallback(async () => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch('/api/v1/watchlists/', {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -73,7 +74,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
   // Fetch watchlist with symbols
   const fetchWatchlistSymbols = useCallback(async (watchlistId: number) => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(`/api/v1/watchlists/${watchlistId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -115,7 +116,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
     if (!newWatchlistName.trim()) return;
 
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch('/api/v1/watchlists/', {
         method: 'POST',
         headers: {
@@ -141,7 +142,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
     if (!confirm('Are you sure you want to delete this watchlist?')) return;
 
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(`/api/v1/watchlists/${watchlistId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -161,7 +162,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
   // Add symbol to watchlist
   const addSymbol = async (watchlistId: number, symbol: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(`/api/v1/watchlists/${watchlistId}/symbols`, {
         method: 'POST',
         headers: {
@@ -185,7 +186,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
   // Remove symbol from watchlist
   const removeSymbol = async (watchlistId: number, symbol: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(`/api/v1/watchlists/${watchlistId}/symbols/${symbol}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -232,10 +233,10 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
+          <h3 className="text-lg font-semibold flex items-center gap-2 text-white">
             <Star className="h-5 w-5 text-yellow-500" />
             Watchlists
-            <span className="text-xs text-muted-foreground font-normal">
+            <span className="text-xs text-gray-400 font-normal">
               ({status === 'connected' ? 'Live' : 'Offline'})
             </span>
           </h3>
@@ -247,13 +248,13 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
       <CardContent className="space-y-2">
         {/* Create Modal */}
         {showCreateModal && (
-          <div className="p-3 border rounded-lg bg-accent/50 space-y-2">
+          <div className="p-3 border border-gray-600 rounded-lg bg-gray-800 space-y-2">
             <input
               type="text"
               placeholder="Watchlist name..."
               value={newWatchlistName}
               onChange={(e) => setNewWatchlistName(e.target.value)}
-              className="w-full px-3 py-2 bg-background border rounded-md text-sm"
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-sm text-white placeholder:text-gray-500"
               onKeyDown={(e) => e.key === 'Enter' && createWatchlist()}
               autoFocus
             />
@@ -270,25 +271,25 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
 
         {/* Watchlists */}
         {watchlists.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
+          <p className="text-sm text-gray-400 text-center py-4">
             No watchlists yet. Create one to start tracking stocks.
           </p>
         ) : (
           watchlists.map((watchlist) => (
-            <div key={watchlist.id} className="border rounded-lg overflow-hidden">
+            <div key={watchlist.id} className="border border-gray-700 rounded-lg overflow-hidden">
               {/* Watchlist Header */}
               <div
-                className="flex items-center justify-between p-3 cursor-pointer hover:bg-accent/50 transition-colors"
+                className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-800 transition-colors"
                 onClick={() => toggleWatchlist(watchlist.id)}
               >
                 <div className="flex items-center gap-2">
                   {expandedWatchlist === watchlist.id ? (
-                    <ChevronDown className="h-4 w-4" />
+                    <ChevronDown className="h-4 w-4 text-gray-400" />
                   ) : (
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
                   )}
-                  <span className="font-medium">{watchlist.name}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="font-medium text-white">{watchlist.name}</span>
+                  <span className="text-xs text-gray-400">
                     ({watchlist.symbols?.length || 0} symbols)
                   </span>
                 </div>
@@ -307,7 +308,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
 
               {/* Expanded Content */}
               {expandedWatchlist === watchlist.id && (
-                <div className="border-t p-2 space-y-1">
+                <div className="border-t border-gray-700 p-2 space-y-1">
                   {/* Add Symbol */}
                   {selectedWatchlistId === watchlist.id ? (
                     <div className="flex gap-2 p-2">
@@ -316,7 +317,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
                         placeholder="Enter symbol (e.g., AAPL)"
                         value={searchSymbol}
                         onChange={(e) => setSearchSymbol(e.target.value.toUpperCase())}
-                        className="flex-1 px-2 py-1 bg-background border rounded text-sm"
+                        className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder:text-gray-500"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             addSymbol(watchlist.id, searchSymbol);
@@ -346,7 +347,7 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="w-full justify-start text-muted-foreground"
+                      className="w-full justify-start text-gray-400 hover:text-white"
                       onClick={() => setSelectedWatchlistId(watchlist.id)}
                     >
                       <Plus className="h-4 w-4 mr-2" />
@@ -374,13 +375,13 @@ export function WatchlistComponent({ onSymbolClick }: WatchlistProps) {
                         className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => removeSymbol(watchlist.id, s.symbol)}
                       >
-                        <X className="h-4 w-4 text-destructive" />
+                        <X className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>
                   ))}
 
                   {watchlist.symbols?.length === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-2">
+                    <p className="text-xs text-gray-400 text-center py-2">
                       No symbols in this watchlist
                     </p>
                   )}

@@ -2,17 +2,91 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CSS Variables for Light/Dark Mode */
 :root {
+  /* Dark mode (default) */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-hover: #475569;
+  --text-primary: #f8fafc;
+  --text-secondary: #e2e8f0;
+  --text-muted: #94a3b8;
+  --border-color: #334155;
+  
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+}
+
+/* Light mode variables */
+body.light {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --bg-hover: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #1e293b;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
+
+/* Override Tailwind classes for theme support */
+body.light .bg-surface-900 { background-color: var(--bg-primary) !important; }
+body.light .bg-surface-800 { background-color: var(--bg-secondary) !important; }
+body.light .bg-surface-700 { background-color: var(--bg-tertiary) !important; }
+body.light .bg-surface-600 { background-color: var(--bg-hover) !important; }
+
+body.light .text-white { color: var(--text-primary) !important; }
+body.light .text-surface-100 { color: var(--text-secondary) !important; }
+body.light .text-surface-200 { color: var(--text-secondary) !important; }
+body.light .text-surface-300 { color: var(--text-secondary) !important; }
+body.light .text-surface-400 { color: var(--text-muted) !important; }
+body.light .text-surface-500 { color: var(--text-muted) !important; }
+
+body.light .border-surface-700 { border-color: var(--border-color) !important; }
+body.light .border-surface-600 { border-color: var(--border-color) !important; }
+
+body.light .hover\\:bg-surface-700:hover { background-color: var(--bg-hover) !important; }
+body.light .hover\\:bg-surface-600:hover { background-color: var(--bg-hover) !important; }
+
+/* Sidebar light mode */
+body.light aside { background-color: var(--bg-secondary) !important; border-color: var(--border-color) !important; }
+
+/* Card light mode */
+body.light .rounded-lg[class*="bg-surface"] { 
+  background-color: var(--bg-secondary) !important; 
+  border: 1px solid var(--border-color);
+}
+
+/* Input light mode */
+body.light input, body.light select, body.light textarea {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.light input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* Table light mode */
+body.light table { background-color: var(--bg-secondary) !important; }
+body.light th { background-color: var(--bg-tertiary) !important; color: var(--text-primary) !important; }
+body.light td { color: var(--text-primary) !important; }
+body.light tr:hover { background-color: var(--bg-hover) !important; }
+
+/* Modal/Overlay light mode */
+body.light [class*="bg-black\\/"] { background-color: rgba(0, 0, 0, 0.3) !important; }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
@@ -21,16 +95,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: var(--bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: var(--bg-hover);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: var(--text-muted);
 }
 
 /* Green/Red for trading */

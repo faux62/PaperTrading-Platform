@@ -2,20 +2,25 @@
  * Security Settings Component
  * Password change and security options
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, Button, Input } from '../common';
-import { Shield, Key, Clock, AlertTriangle } from 'lucide-react';
+import { Shield, Key, Clock, AlertTriangle, Monitor, Smartphone, LogOut, Loader2 } from 'lucide-react';
+import { authApi, settingsApi } from '../../services/api';
+
+interface Session {
+  id: string;
+  ip: string;
+  user_agent: string;
+  created_at: string;
+  current?: boolean;
+}
 
 interface SecuritySettingsProps {
   onPasswordChange?: (oldPassword: string, newPassword: string) => Promise<void>;
-  lastPasswordChange?: Date;
-  activeSessions?: number;
 }
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   onPasswordChange,
-  lastPasswordChange,
-  activeSessions = 1,
 }) => {
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -23,8 +28,46 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
     confirmPassword: '',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [lastPasswordChange, setLastPasswordChange] = useState<Date | null>(null);
+  const [revokingSession, setRevokingSession] = useState<string | null>(null);
+
+  // Load sessions and settings on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoadingSessions(true);
+        const [sessionsData, settingsData] = await Promise.all([
+          authApi.getSessions(),
+          settingsApi.getSettings(),
+        ]);
+        // Map backend session format to frontend format
+        const mappedSessions = (sessionsData.sessions || []).map((s: {
+          session_id: string;
+          ip: string;
+          user_agent: string;
+          created_at: string;
+        }) => ({
+          id: s.session_id,
+          ip: s.ip,
+          user_agent: s.user_agent,
+          created_at: s.created_at,
+        }));
+        setSessions(mappedSessions);
+        if (settingsData.password_changed_at) {
+          setLastPasswordChange(new Date(settingsData.password_changed_at));
+        }
+      } catch (error) {
+        console.error('Failed to load security data:', error);
+      } finally {
+        setIsLoadingSessions(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const validatePassword = (password: string): string[] => {
     const issues: string[] = [];
@@ -34,6 +77,38 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
     if (!/[0-9]/.test(password)) issues.push('One number');
     if (!/[!@#$%^&*]/.test(password)) issues.push('One special character (!@#$%^&*)');
     return issues;
+  };
+
+  const handleRevokeSession = async (sessionId: string) => {
+    setRevokingSession(sessionId);
+    try {
+      await authApi.revokeSession(sessionId);
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      setMessage({ type: 'success', text: 'Session revoked successfully' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to revoke session' });
+    } finally {
+      setRevokingSession(null);
+    }
+  };
+
+  const parseUserAgent = (ua: string): { device: string; browser: string } => {
+    const isMobile = /Mobile|Android|iPhone|iPad/.test(ua);
+    const device = isMobile ? 'Mobile' : 'Desktop';
+    
+    let browser = 'Unknown Browser';
+    if (ua.includes('Chrome')) browser = 'Chrome';
+    else if (ua.includes('Firefox')) browser = 'Firefox';
+    else if (ua.includes('Safari')) browser = 'Safari';
+    else if (ua.includes('Edge')) browser = 'Edge';
+    
+    return { device, browser };
+  };
+
+  const formatDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -165,6 +240,68 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         </CardContent>
       </Card>
 
+      {/* Active Sessions */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Monitor className="w-5 h-5 text-primary-500" />
+              <h3 className="text-lg font-semibold text-white">Active Sessions</h3>
+            </div>
+            <span className="text-sm text-surface-400">
+              {isLoadingSessions ? '...' : `${sessions.length} active`}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingSessions ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+            </div>
+          ) : sessions.length === 0 ? (
+            <p className="text-surface-400 text-center py-4">No active sessions found</p>
+          ) : (
+            <div className="space-y-3">
+              {sessions.map((session) => {
+                const { device, browser } = parseUserAgent(session.user_agent);
+                const DeviceIcon = device === 'Mobile' ? Smartphone : Monitor;
+                
+                return (
+                  <div
+                    key={session.id}
+                    className="flex items-center justify-between p-3 bg-surface-700 rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <DeviceIcon className="w-5 h-5 text-surface-400" />
+                      <div>
+                        <p className="text-white text-sm font-medium">
+                          {browser} on {device}
+                        </p>
+                        <p className="text-surface-400 text-xs">
+                          IP: {session.ip} • {session.created_at ? formatDate(session.created_at) : 'Unknown time'}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleRevokeSession(session.id)}
+                      disabled={revokingSession === session.id}
+                    >
+                      {revokingSession === session.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <LogOut className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Security Info */}
       <Card>
         <CardHeader>
@@ -185,14 +322,6 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   ? lastPasswordChange.toLocaleDateString() 
                   : 'Never'}
               </span>
-            </div>
-
-            <div className="flex items-center justify-between py-2 border-b border-surface-700">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-surface-400" />
-                <span className="text-surface-300">Active sessions</span>
-              </div>
-              <span className="text-white">{activeSessions}</span>
             </div>
 
             <div className="flex items-center justify-between py-2">

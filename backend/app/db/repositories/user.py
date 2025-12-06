@@ -275,3 +275,40 @@ class UserRepository:
         await self.session.commit()
         await self.session.refresh(user)
         return user
+
+    async def change_password(
+        self,
+        user_id: int,
+        current_password: str,
+        new_password: str
+    ) -> tuple[bool, str]:
+        """
+        Change user's password after validating current password.
+        
+        Args:
+            user_id: User ID
+            current_password: Current password for verification
+            new_password: New password to set
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        user = await self.get_by_id(user_id)
+        if not user:
+            return False, "User not found"
+        
+        # Verify current password
+        if not verify_password(current_password, user.hashed_password):
+            return False, "Current password is incorrect"
+        
+        # Ensure new password is different
+        if verify_password(new_password, user.hashed_password):
+            return False, "New password must be different from current password"
+        
+        # Update password
+        user.hashed_password = get_password_hash(new_password)
+        user.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(user)
+        
+        return True, "Password changed successfully"

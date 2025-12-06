@@ -20,12 +20,17 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
 };
 
+interface PositionInfo {
+  symbol: string;
+  quantity: number;
+}
+
 interface OrderFormProps {
   portfolioId: number;
   symbol?: string;
   currentPrice?: number;
   availableCash?: number;
-  availableShares?: number;
+  positions?: PositionInfo[];  // All positions to lookup shares by symbol
   currency?: string;
   onSubmit: (order: OrderData) => Promise<void>;
   onCancel?: () => void;
@@ -74,7 +79,7 @@ export function OrderForm({
   symbol: initialSymbol = '',
   currentPrice,
   availableCash = 0,
-  availableShares = 0,
+  positions = [],
   currency = 'USD',
   onSubmit,
   onCancel,
@@ -92,6 +97,11 @@ export function OrderForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Calculate available shares for current symbol from positions
+  const availableShares = positions.find(
+    p => p.symbol.toUpperCase() === symbol.toUpperCase()
+  )?.quantity || 0;
 
   // Update symbol when prop changes
   useEffect(() => {

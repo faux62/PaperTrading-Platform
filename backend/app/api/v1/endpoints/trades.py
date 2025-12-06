@@ -416,9 +416,10 @@ async def get_trade_history(
     portfolio_id: int,
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(100, ge=1, le=500),
+    include_pending: bool = Query(True, description="Include pending orders in history"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get executed trade history for a portfolio."""
+    """Get trade history for a portfolio."""
     repo = TradeRepository(db)
     trades = await repo.get_recent_trades(
         portfolio_id=portfolio_id,
@@ -426,8 +427,9 @@ async def get_trade_history(
         limit=limit
     )
     
-    # Filter to only executed
-    executed = [t for t in trades if t.status == TradeStatus.EXECUTED]
+    # Filter based on include_pending parameter
+    if not include_pending:
+        trades = [t for t in trades if t.status == TradeStatus.EXECUTED]
     
     return [
         TradeResponse(
@@ -449,7 +451,7 @@ async def get_trade_history(
             executed_at=t.executed_at,
             notes=t.notes
         )
-        for t in executed
+        for t in trades
     ]
 
 

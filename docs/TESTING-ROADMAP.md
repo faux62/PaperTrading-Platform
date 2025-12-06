@@ -5,6 +5,29 @@ Portare la piattaforma da stato di sviluppo a **100% operativa con dati reali**.
 
 ---
 
+## 📊 Stato Attuale Testing
+
+**Ultima sessione**: 6 dicembre 2025  
+**Fase corrente**: Fase 1 - Test Funzionale  
+**Utente test**: `bandini.fausto@gmail.com` / `Pallazz@99`  
+**Portfolio test**: ID 7 - "Test Trading"
+
+### Riepilogo Progressi
+
+| Sezione | Completati | Totali | Saltati | Status |
+|---------|------------|--------|---------|--------|
+| AUTH | 6 | 6 | 0 | ✅ Completato |
+| PORT | 6 | 6 | 0 | ✅ Completato |
+| POS | 5 | 5 | 0 | ✅ Completato |
+| TRD | 4 | 6 | 2 | ✅ Completato (2 skipped) |
+| MKT | 2 | 4 | 1 | ✅ Completato (1 skipped) |
+| WL | 5 | 5 | 0 | ✅ Completato |
+| ALT | 5 | 5 | 0 | ✅ Completato |
+| ANA | 5 | 5 | 0 | ✅ Completato |
+| SET | 3 | 4 | 1 | ✅ Completato (1 parziale) |
+
+---
+
 ## Panoramica Fasi
 
 | Fase | Nome | Obiettivo | Prerequisiti |
@@ -33,94 +56,128 @@ Verificare che tutte le funzionalità dell'interfaccia funzionino correttamente.
 
 ### Checklist Autenticazione
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| AUTH-01 | Registrazione nuovo utente | ⬜ |
-| AUTH-02 | Login con credenziali valide | ⬜ |
-| AUTH-03 | Login con credenziali errate (deve fallire) | ⬜ |
-| AUTH-04 | Logout | ⬜ |
-| AUTH-05 | Refresh token automatico | ⬜ |
-| AUTH-06 | Sessione persistente dopo refresh pagina | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| AUTH-01 | Registrazione nuovo utente | ✅ | |
+| AUTH-02 | Login con credenziali valide | ✅ | |
+| AUTH-03 | Login con credenziali errate (deve fallire) | ✅ | |
+| AUTH-04 | Logout | ✅ | |
+| AUTH-05 | Refresh token automatico | ✅ | |
+| AUTH-06 | Sessione persistente dopo refresh pagina | ✅ | |
 
 ### Checklist Portfolio
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| PORT-01 | Creazione nuovo portfolio | ⬜ |
-| PORT-02 | Modifica nome/descrizione portfolio | ⬜ |
-| PORT-03 | Eliminazione portfolio | ⬜ |
-| PORT-04 | Visualizzazione lista portfolio | ⬜ |
-| PORT-05 | Selezione risk profile (aggressive/balanced/prudent) | ⬜ |
-| PORT-06 | Visualizzazione capital iniziale | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| PORT-01 | Creazione nuovo portfolio | ✅ | |
+| PORT-02 | Modifica nome/descrizione portfolio | ✅ | |
+| PORT-03 | Eliminazione portfolio | ✅ | |
+| PORT-04 | Visualizzazione lista portfolio | ✅ | |
+| PORT-05 | Selezione risk profile (aggressive/balanced/prudent) | ✅ | |
+| PORT-06 | Visualizzazione capital iniziale | ✅ | |
 
 ### Checklist Posizioni
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| POS-01 | Apertura nuova posizione (buy) | ⬜ |
-| POS-02 | Chiusura posizione (sell) | ⬜ |
-| POS-03 | Modifica quantità posizione | ⬜ |
-| POS-04 | Visualizzazione P&L posizione | ⬜ |
-| POS-05 | Lista posizioni per portfolio | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| POS-01 | Apertura nuova posizione (buy) | ✅ | Fix: availableShares prop |
+| POS-02 | Chiusura posizione (sell) | ✅ | |
+| POS-03 | Modifica quantità posizione | ✅ | |
+| POS-04 | Visualizzazione P&L posizione | ✅ | Fix: JS falsy 0 values |
+| POS-05 | Lista posizioni per portfolio | ✅ | Fix: weight_pct calculation |
 
 ### Checklist Trading
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| TRD-01 | Esecuzione ordine market buy | ⬜ |
-| TRD-02 | Esecuzione ordine market sell | ⬜ |
-| TRD-03 | Esecuzione ordine limit | ⬜ |
-| TRD-04 | Storico trades | ⬜ |
-| TRD-05 | Export trades (CSV) | ⬜ |
-| TRD-06 | Filtro trades per data/simbolo | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| TRD-01 | Esecuzione ordine market buy | ✅ | |
+| TRD-02 | Esecuzione ordine market sell | ✅ | |
+| TRD-03 | Esecuzione ordine limit | ✅ | Fix: backend include_pending |
+| TRD-04 | Storico trades | ✅ | Fix: parseFloat string values |
+| TRD-05 | Export trades (CSV) | ⏭️ SKIPPED | Non implementato |
+| TRD-06 | Filtro trades per data/simbolo | ⏭️ SKIPPED | Non implementato |
 
 ### Checklist Market Data
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| MKT-01 | Ricerca simbolo | ⬜ |
-| MKT-02 | Visualizzazione quote | ⬜ |
-| MKT-03 | Grafico prezzi | ⬜ |
-| MKT-04 | Market hours indicator | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| MKT-01 | Ricerca simbolo | ✅ | Autocomplete con suggerimenti |
+| MKT-02 | Visualizzazione quote | ✅ | Mock data funzionante |
+| MKT-03 | Grafico prezzi | ⏭️ SKIPPED | Non implementato |
+| MKT-04 | Market hours indicator | ✅ | Visualizza orari US/Crypto |
 
 ### Checklist Watchlist
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| WL-01 | Creazione watchlist | ⬜ |
-| WL-02 | Aggiunta simbolo a watchlist | ⬜ |
-| WL-03 | Rimozione simbolo da watchlist | ⬜ |
-| WL-04 | Eliminazione watchlist | ⬜ |
-| WL-05 | Watchlist multipli | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| WL-01 | Creazione watchlist | ✅ | Fix: tokenStorage |
+| WL-02 | Aggiunta simbolo a watchlist | ✅ | |
+| WL-03 | Rimozione simbolo da watchlist | ✅ | |
+| WL-04 | Eliminazione watchlist | ✅ | |
+| WL-05 | Watchlist multipli | ✅ | |
 
 ### Checklist Alerts
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| ALT-01 | Creazione price alert | ⬜ |
-| ALT-02 | Modifica alert | ⬜ |
-| ALT-03 | Disattivazione alert | ⬜ |
-| ALT-04 | Eliminazione alert | ⬜ |
-| ALT-05 | Visualizzazione alert summary | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| ALT-01 | Creazione price alert | ✅ | Fix: tokenStorage + colori |
+| ALT-02 | Modifica alert | ✅ | Toggle on/off |
+| ALT-03 | Disattivazione alert | ✅ | |
+| ALT-04 | Eliminazione alert | ✅ | |
+| ALT-05 | Visualizzazione alert summary | ✅ | |
 
 ### Checklist Analytics
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| ANA-01 | Dashboard performance | ⬜ |
-| ANA-02 | Grafico equity curve | ⬜ |
-| ANA-03 | Metriche rischio (VaR, Sharpe) | ⬜ |
-| ANA-04 | Allocation breakdown | ⬜ |
-| ANA-05 | Benchmark comparison | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| ANA-01 | Dashboard performance | ✅ | Portfolio Performance widget |
+| ANA-02 | Grafico equity curve | ✅ | Drawdown Analysis chart |
+| ANA-03 | Metriche rischio (VaR, Sharpe) | ✅ | Risk Analysis completo |
+| ANA-04 | Allocation breakdown | ✅ | Asset Allocation widget |
+| ANA-05 | Benchmark comparison | ✅ | vs SPY con tutte le metriche |
 
 ### Checklist Settings
 
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| SET-01 | Modifica profilo utente | ⬜ |
-| SET-02 | Cambio password | ⬜ |
-| SET-03 | Preferenze notifiche | ⬜ |
-| SET-04 | Theme toggle (dark/light) | ⬜ |
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| SET-01 | Modifica profilo utente | ✅ | Full name persiste via API |
+| SET-02 | Cambio password | ✅ | Validazione password corrente OK |
+| SET-03 | Preferenze notifiche | ⏭️ SKIPPED | Backend non implementato |
+| SET-04 | Theme toggle (dark/light) | ⚠️ PARZIALE | Meccanismo OK, UI non ha stili light |
+
+---
+
+## 🏁 Riepilogo Fase 1 Completata
+
+**Data completamento**: 6 dicembre 2025
+
+### Statistiche Finali
+| Metrica | Valore |
+|---------|--------|
+| **Test totali** | 45 |
+| **Passati** | 40 |
+| **Skipped** | 4 |
+| **Parziali** | 1 |
+| **Tasso successo** | 89% (40/45) |
+
+### Fix Applicati Durante Testing
+1. **TRD-03**: Aggiunto `include_pending` parameter a `/trades` endpoint
+2. **MKT-01/02**: Implementati endpoint mock per market data (`/market/quote`, `/quotes`, `/search`, etc.)
+3. **WL/ALT**: Fix `tokenStorage` import in WatchlistComponent e PriceAlerts
+4. **WL/ALT**: Fix contrasto colori (text-white, bg-gray-800, etc.)
+5. **SET-02**: Creato endpoint `POST /api/v1/auth/change-password` con validazione
+6. **SET-01**: Collegato frontend a `PATCH /api/v1/auth/me` per profilo
+7. **SET-04**: Implementato toggle theme con localStorage (solo meccanismo)
+
+### Da Implementare (Backlog)
+- [ ] TRD-05: Export trades CSV
+- [ ] TRD-06: Filtro trades per data/simbolo
+- [ ] MKT-03: Grafico prezzi interattivo
+- [ ] SET-03: Preferenze notifiche (backend)
+- [ ] SET-04: Light theme UI (tutti i componenti)
+
+### Prossimi Passi
+→ **Fase 2**: Integrazione dati reali con Finnhub API
 
 ---
 

@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, Button } from '../common';
 import { Bell, Eye, Palette, Save, DollarSign, RefreshCw } from 'lucide-react';
-import { authApi, currencyApi } from '../../services/api';
+import { authApi, currencyApi, settingsApi } from '../../services/api';
 
 interface PreferencesData {
   theme: 'dark' | 'light' | 'system';
@@ -59,19 +59,36 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
 
-  // Fetch user's current base currency and available currencies
+  // Fetch user's current settings, base currency and available currencies
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [userData, currencyData] = await Promise.all([
+        // Load theme from localStorage
+        const savedTheme = localStorage.getItem('papertrading-theme') as PreferencesData['theme'] | null;
+        if (savedTheme && ['dark', 'light', 'system'].includes(savedTheme)) {
+          setPreferences(prev => ({ ...prev, theme: savedTheme }));
+        }
+        
+        const [userData, currencyData, settingsData] = await Promise.all([
           authApi.getMe(),
           currencyApi.getSupportedCurrencies(),
+          settingsApi.getSettings(),
         ]);
         
+        // Load saved settings from backend
         setPreferences(prev => ({
           ...prev,
+          theme: savedTheme || settingsData.theme || 'dark',
+          notifications: {
+            email: settingsData.notifications?.email ?? true,
+            push: settingsData.notifications?.push ?? true,
+            priceAlerts: settingsData.notifications?.price_alerts ?? true,
+            tradeConfirmations: settingsData.notifications?.trade_execution ?? true,
+            dailySummary: settingsData.notifications?.market_news ?? false,
+          },
           display: {
-            ...prev.display,
+            compactMode: settingsData.display?.compact_mode ?? false,
+            showPnLPercentage: settingsData.display?.show_percent_change ?? true,
             defaultCurrency: userData.base_currency || 'USD',
           },
         }));
@@ -121,6 +138,18 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
 
   const handleThemeChange = (theme: PreferencesData['theme']) => {
     setPreferences(prev => ({ ...prev, theme }));
+    
+    // Apply theme to DOM immediately - toggle 'light' class on body
+    const body = document.body;
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      body.classList.toggle('light', !prefersDark);
+    } else {
+      body.classList.toggle('light', theme === 'light');
+    }
+    
+    // Persist to localStorage
+    localStorage.setItem('papertrading-theme', theme);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -132,6 +161,26 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
     try {
       // Save base currency to backend
       await authApi.updateMe({ base_currency: preferences.display.defaultCurrency });
+      
+      // Save settings (theme, notifications, display) to settings API
+      await settingsApi.updateSettings({
+        theme: preferences.theme,
+        display: {
+          theme: preferences.theme,
+          compact_mode: preferences.display.compactMode,
+          show_percent_change: preferences.display.showPnLPercentage,
+          default_chart_period: '1M',
+          chart_type: 'candlestick',
+        },
+        notifications: {
+          email: preferences.notifications.email,
+          push: preferences.notifications.push,
+          trade_execution: preferences.notifications.tradeConfirmations,
+          price_alerts: preferences.notifications.priceAlerts,
+          portfolio_updates: true,
+          market_news: preferences.notifications.dailySummary,
+        },
+      });
       
       // Call optional onSave for other preferences
       if (onSave) {

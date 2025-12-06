@@ -128,3 +128,18 @@ class ErrorResponse(BaseModel):
     """Error response schema."""
     detail: str
     code: Optional[str] = None
+
+
+class PasswordChange(BaseModel):
+    """Schema for password change request."""
+    current_password: str = Field(..., min_length=1, description="Current password")
+    new_password: str = Field(..., min_length=8, max_length=100, description="New password (min 8 chars)")
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "current_password": "oldpassword123",
+                "new_password": "newstrongpassword456"
+            }
+        }
+    )
