@@ -5,8 +5,10 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/layout';
 import { Card, CardContent } from '../components/common';
-import { Globe, Search, TrendingUp, Clock, Zap, X } from 'lucide-react';
+import { Globe, Search, TrendingUp, Clock, Zap, X, BarChart2 } from 'lucide-react';
 import { WatchlistComponent, PriceAlerts } from '../components/market';
+import { CandlestickChart } from '../components/charts';
+import type { CandlestickData } from '../components/charts/types';
 import { useMarketWebSocket } from '../hooks/useWebSocket';
 import { marketApi } from '../services/api';
 
@@ -42,6 +44,12 @@ const Markets = () => {
   const [selectedQuote, setSelectedQuote] = useState<StockQuote | null>(null);
   const [popularQuotes, setPopularQuotes] = useState<Map<string, StockQuote>>(new Map());
   const [isSearching, setIsSearching] = useState(false);
+  
+  // Chart state
+  const [chartData, setChartData] = useState<CandlestickData[]>([]);
+  const [chartPeriod, setChartPeriod] = useState('1M');
+  const [isLoadingChart, setIsLoadingChart] = useState(false);
+  const [chartError, setChartError] = useState<string | null>(null);
 
   // WebSocket connection status (for display)
   const { status } = useMarketWebSocket();
@@ -50,6 +58,42 @@ const Markets = () => {
   useEffect(() => {
     loadPopularQuotes();
   }, []);
+
+  // Load chart data when symbol or period changes
+  useEffect(() => {
+    if (selectedSymbol) {
+      loadChartData(selectedSymbol, chartPeriod);
+    }
+  }, [selectedSymbol, chartPeriod]);
+
+  const loadChartData = async (symbol: string, period: string) => {
+    setIsLoadingChart(true);
+    setChartError(null);
+    try {
+      const data = await marketApi.getHistorical(symbol, period);
+      if (data.data && Array.isArray(data.data)) {
+        // Convert API response to CandlestickData format
+        const candleData: CandlestickData[] = data.data.map((d: any) => ({
+          time: d.date || d.timestamp || d.time,
+          open: parseFloat(d.open),
+          high: parseFloat(d.high),
+          low: parseFloat(d.low),
+          close: parseFloat(d.close),
+          volume: d.volume ? parseFloat(d.volume) : undefined,
+        }));
+        setChartData(candleData);
+      } else {
+        setChartData([]);
+        setChartError('No historical data available');
+      }
+    } catch (err) {
+      console.error('Failed to load chart data:', err);
+      setChartError('Failed to load chart data');
+      setChartData([]);
+    } finally {
+      setIsLoadingChart(false);
+    }
+  };
 
   const loadPopularQuotes = async () => {
     try {
@@ -288,6 +332,48 @@ const Markets = () => {
                       {selectedSymbol} not found in database
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Price Chart */}
+            {selectedSymbol && (
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <BarChart2 className="w-4 h-4 text-blue-400" />
+                      <h2 className="font-semibold text-white">{selectedSymbol} Price Chart</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      {['1D', '1W', '1M', '3M', '1Y'].map((period) => (
+                        <button
+                          key={period}
+                          onClick={() => setChartPeriod(period)}
+                          className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                            chartPeriod === period
+                              ? 'bg-primary-600 text-white'
+                              : 'bg-surface-700 text-surface-400 hover:bg-surface-600'
+                          }`}
+                        >
+                          {period}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-surface-800 rounded-lg p-2">
+                    <CandlestickChart
+                      data={chartData}
+                      symbol={selectedSymbol}
+                      showVolume={true}
+                      showMA={true}
+                      maLength={20}
+                      height={350}
+                      theme="dark"
+                      loading={isLoadingChart}
+                      error={chartError || undefined}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             )}

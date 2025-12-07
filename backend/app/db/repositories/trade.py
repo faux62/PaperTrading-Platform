@@ -85,6 +85,8 @@ class TradeRepository:
         status: Optional[TradeStatus] = None,
         trade_type: Optional[TradeType] = None,
         symbol: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Trade]:
@@ -96,6 +98,8 @@ class TradeRepository:
             status: Optional status filter
             trade_type: Optional trade type filter (BUY/SELL)
             symbol: Optional symbol filter
+            start_date: Optional start date filter (inclusive)
+            end_date: Optional end date filter (inclusive)
             limit: Max results
             offset: Pagination offset
             
@@ -112,6 +116,12 @@ class TradeRepository:
         
         if symbol:
             query = query.where(Trade.symbol == symbol.upper())
+        
+        if start_date:
+            query = query.where(Trade.created_at >= start_date)
+        
+        if end_date:
+            query = query.where(Trade.created_at <= end_date)
         
         query = query.order_by(desc(Trade.created_at)).limit(limit).offset(offset)
         

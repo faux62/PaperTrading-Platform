@@ -15,7 +15,9 @@ import {
   BarChart3, 
   History,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Download,
+  Filter
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -54,6 +56,12 @@ const Trading = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'trade' | 'positions' | 'history'>('trade');
+  
+  // Trade filters state
+  const [filterSymbol, setFilterSymbol] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
 
   // Load portfolios on mount
   useEffect(() => {
@@ -127,10 +135,15 @@ const Trading = () => {
     if (!selectedPortfolio) return;
     try {
       console.log('loadRecentTrades: Fetching trades for portfolio', selectedPortfolio.id);
-      const data = await tradingApi.getTradeHistory(selectedPortfolio.id);
+      const params: any = {};
+      if (filterSymbol) params.symbol = filterSymbol.toUpperCase();
+      if (filterStartDate) params.start_date = filterStartDate + 'T00:00:00';
+      if (filterEndDate) params.end_date = filterEndDate + 'T23:59:59';
+      
+      const data = await tradingApi.getTradeHistory(selectedPortfolio.id, params);
       console.log('loadRecentTrades: Raw API response:', data);
       // Convert string values to numbers
-      const parsedTrades = data.slice(0, 10).map((t: any) => ({
+      const parsedTrades = data.slice(0, 50).map((t: any) => ({
         ...t,
         quantity: parseFloat(t.quantity) || 0,
         price: parseFloat(t.price) || 0,
@@ -145,6 +158,46 @@ const Trading = () => {
     } catch (err) {
       console.error('Failed to load trades:', err);
     }
+  };
+
+  const handleExportCSV = async () => {
+    if (!selectedPortfolio) return;
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterStartDate) params.append('start_date', filterStartDate + 'T00:00:00');
+      if (filterEndDate) params.append('end_date', filterEndDate + 'T23:59:59');
+      
+      const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/trades/export/${selectedPortfolio.id}?${params.toString()}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Export failed');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `trades_portfolio_${selectedPortfolio.id}_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Export failed:', err);
+      setError('Failed to export trades');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleApplyFilters = () => {
+    loadRecentTrades();
+  };
+
+  const handleClearFilters = () => {
+    setFilterSymbol('');
+    setFilterStartDate('');
+    setFilterEndDate('');
   };
 
   const handleOrderSubmit = async (order: any) => {
@@ -402,9 +455,76 @@ const Trading = () => {
         {activeTab === 'history' && (
           <Card>
             <CardHeader>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Trade History</h3>
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Trade History</h3>
+                <button
+                  onClick={handleExportCSV}
+                  disabled={isExporting || recentTrades.length === 0}
+                  className="flex items-center gap-2 px-3 py-2 text-sm bg-green-600 text-white rounded-lg
+                             hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  {isExporting ? 'Exporting...' : 'Export CSV'}
+                </button>
+              </div>
             </CardHeader>
             <CardContent>
+              {/* Filters Section */}
+              <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Filter className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Symbol</label>
+                    <input
+                      type="text"
+                      value={filterSymbol}
+                      onChange={(e) => setFilterSymbol(e.target.value)}
+                      placeholder="e.g. AAPL"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
+                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">From Date</label>
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
+                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">To Date</label>
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
+                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <button
+                      onClick={handleApplyFilters}
+                      className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Apply
+                    </button>
+                    <button
+                      onClick={handleClearFilters}
+                      className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 
+                                 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
               {recentTrades.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full">

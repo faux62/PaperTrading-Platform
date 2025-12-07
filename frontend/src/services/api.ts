@@ -221,8 +221,12 @@ export const tradingApi = {
     return response.data;
   },
 
-  getTradeHistory: async (portfolioId: number) => {
-    const response = await api.get(`/trades/history/${portfolioId}`);
+  getTradeHistory: async (portfolioId: number, filters?: { symbol?: string; start_date?: string; end_date?: string }) => {
+    const params: any = {};
+    if (filters?.symbol) params.symbol = filters.symbol;
+    if (filters?.start_date) params.start_date = filters.start_date;
+    if (filters?.end_date) params.end_date = filters.end_date;
+    const response = await api.get(`/trades/history/${portfolioId}`, { params });
     return Array.isArray(response.data) ? response.data : [];
   },
 

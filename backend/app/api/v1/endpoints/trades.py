@@ -3,10 +3,13 @@ PaperTrading Platform - Trade Endpoints
 
 API endpoints for order management, trade execution, and trade history.
 """
-from datetime import datetime
+import csv
+import io
+from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,6 +115,8 @@ async def list_trades(
     status: Optional[str] = Query(None, description="Filter by status"),
     trade_type: Optional[str] = Query(None, description="Filter by trade type (buy/sell)"),
     symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    start_date: Optional[datetime] = Query(None, description="Filter trades from this date (inclusive)"),
+    end_date: Optional[datetime] = Query(None, description="Filter trades until this date (inclusive)"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
@@ -119,7 +124,7 @@ async def list_trades(
     """
     List trades/orders for a portfolio.
     
-    Supports filtering by status, trade type, and symbol.
+    Supports filtering by status, trade type, symbol, and date range.
     """
     repo = TradeRepository(db)
     
@@ -143,6 +148,8 @@ async def list_trades(
         status=status_enum,
         trade_type=trade_type_enum,
         symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
         limit=limit,
         offset=offset
     )
@@ -417,15 +424,32 @@ async def get_trade_history(
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(100, ge=1, le=500),
     include_pending: bool = Query(True, description="Include pending orders in history"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    start_date: Optional[datetime] = Query(None, description="Filter trades from this date"),
+    end_date: Optional[datetime] = Query(None, description="Filter trades until this date"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get trade history for a portfolio."""
+    """Get trade history for a portfolio with optional filters."""
     repo = TradeRepository(db)
-    trades = await repo.get_recent_trades(
-        portfolio_id=portfolio_id,
-        days=days,
-        limit=limit
-    )
+    
+    # Use date filters if provided, otherwise use days parameter
+    if start_date or end_date:
+        trades = await repo.get_by_portfolio(
+            portfolio_id=portfolio_id,
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit
+        )
+    else:
+        trades = await repo.get_recent_trades(
+            portfolio_id=portfolio_id,
+            days=days,
+            limit=limit
+        )
+        # Apply symbol filter for get_recent_trades
+        if symbol:
+            trades = [t for t in trades if t.symbol.upper() == symbol.upper()]
     
     # Filter based on include_pending parameter
     if not include_pending:
