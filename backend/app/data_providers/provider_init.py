@@ -134,7 +134,7 @@ async def initialize_providers(api_keys: dict[str, str]) -> dict[str, bool]:
         "eodhd": (EODHDAdapter, create_eodhd_config),
         # "intrinio": (IntrinioAdapter, create_intrinio_config),  # Disabled - no active subscription
         "marketstack": (MarketstackAdapter, create_marketstack_config),
-        "nasdaq_datalink": (NasdaqDataLinkAdapter, create_nasdaq_datalink_config),
+        # "nasdaq_datalink": (NasdaqDataLinkAdapter, create_nasdaq_datalink_config),  # Disabled - WIKI dataset discontinued
         "stockdata": (StockDataAdapter, create_stockdata_config),
         "yfinance": (YFinanceAdapter, create_yfinance_config),
         "stooq": (StooqAdapter, create_stooq_config),
