@@ -8,7 +8,7 @@ Portare la piattaforma da stato di sviluppo a **100% operativa con dati reali**.
 ## 📊 Stato Attuale Testing
 
 **Ultima sessione**: 7 dicembre 2025  
-**Fase corrente**: Fase 4 COMPLETATA - Pronto per Fase 5  
+**Fase corrente**: Fase 5 COMPLETATA - Pronto per Fase 6  
 **Utente test**: `bandini.fausto@gmail.com` / `Pallazz@99`  
 **Portfolio test**: ID 7 - "Test Trading"
 
@@ -387,6 +387,8 @@ docker exec papertrading-postgres psql -U papertrading -c "SELECT pg_size_pretty
 
 ## Fase 5: Test Analytics e ML
 
+### Status: ✅ COMPLETATO (7 Dicembre 2025)
+
 ### Obiettivo
 Verificare correttezza dei calcoli finanziari.
 
@@ -399,13 +401,25 @@ Verificare correttezza dei calcoli finanziari.
 
 | Test | Descrizione | Formula Verifica | Risultato |
 |------|-------------|------------------|-----------|
-| CALC-01 | Total Return | (Valore Finale - Iniziale) / Iniziale | ⬜ |
-| CALC-02 | Sharpe Ratio | (Return - RiskFree) / StdDev | ⬜ |
-| CALC-03 | Max Drawdown | Max peak-to-trough decline | ⬜ |
-| CALC-04 | VaR 95% | Perdita massima al 95% confidence | ⬜ |
-| CALC-05 | Beta vs SPY | Covariance / Variance benchmark | ⬜ |
-| CALC-06 | Win Rate | Trades vincenti / Totale trades | ⬜ |
-| CALC-07 | Profit Factor | Gross Profit / Gross Loss | ⬜ |
+| CALC-01 | Total Return | (Valore Finale - Iniziale) / Iniziale | ✅ |
+| CALC-02 | Sharpe Ratio | (Return - RiskFree) / StdDev | ✅ |
+| CALC-03 | Max Drawdown | Max peak-to-trough decline | ✅ |
+| CALC-04 | VaR 95% | Perdita massima al 95% confidence | ✅ |
+| CALC-05 | Beta vs SPY | Covariance / Variance benchmark | ✅ |
+| CALC-06 | Win Rate | Trades vincenti / Totale trades | ✅ |
+| CALC-07 | Profit Factor | Gross Profit / Gross Loss | ✅ |
+
+### Test File
+`backend/tests/unit/test_analytics_calculations.py` - 26 test cases
+
+### Test Aggiuntivi Verificati
+- Annualized Return
+- Sortino Ratio
+- Calmar Ratio
+- CVaR (Conditional VaR)
+- Alpha calculation
+- R-squared
+- Risk metrics integration
 
 ### Test ML Predictions (se implementati)
 
