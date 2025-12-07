@@ -2,7 +2,7 @@
 PaperTrading Platform - Simulated Execution Engine
 
 Simulates realistic order execution with price slippage, partial fills,
-and market conditions simulation.
+bid/ask spread, commissions, and market conditions simulation.
 """
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -28,6 +28,69 @@ class MarketCondition(str, Enum):
     VOLATILE = "volatile"
     LOW_LIQUIDITY = "low_liquidity"
     HIGH_VOLUME = "high_volume"
+
+
+@dataclass
+class BidAskSpreadConfig:
+    """Bid/Ask spread simulation configuration.
+    
+    Simulates realistic market spread based on:
+    - Base spread (typical tight spread for liquid stocks)
+    - Volatility impact (wider spreads in volatile markets)
+    - Liquidity impact (wider spreads for less liquid securities)
+    """
+    # Base spread percentage (0.01 = 1%)
+    # Typical liquid US stocks: 0.01-0.05% 
+    # Less liquid: 0.1-0.5%
+    base_spread_pct: Decimal = Decimal("0.0005")  # 5 bps (0.05%)
+    
+    # Multiplier for volatile markets
+    volatility_multiplier: Decimal = Decimal("2.5")
+    
+    # Multiplier for low liquidity
+    liquidity_multiplier: Decimal = Decimal("3.0")
+    
+    # Maximum spread cap
+    max_spread_pct: Decimal = Decimal("0.02")  # 2%
+    
+    # Minimum spread (in price units, e.g., $0.01)
+    min_spread_absolute: Decimal = Decimal("0.01")
+
+
+@dataclass
+class CommissionConfig:
+    """Commission structure for paper trading.
+    
+    Supports multiple commission models:
+    - Per-share: Fixed amount per share (e.g., $0.005/share)
+    - Flat fee: Fixed fee per trade (e.g., $4.95/trade)
+    - Percentage: Percentage of trade value (e.g., 0.1%)
+    - Tiered: Combination based on trade size
+    """
+    # Commission model: "per_share", "flat", "percentage", "tiered", "zero"
+    model: str = "per_share"
+    
+    # Per-share commission (typical: $0.005 - $0.01)
+    per_share_rate: Decimal = Decimal("0.005")
+    
+    # Minimum per order
+    min_commission: Decimal = Decimal("1.00")
+    
+    # Maximum per order (cap)
+    max_commission: Decimal = Decimal("50.00")
+    
+    # Flat fee per trade
+    flat_fee: Decimal = Decimal("0.00")
+    
+    # Percentage of trade value
+    percentage_rate: Decimal = Decimal("0.001")  # 0.1%
+    
+    # SEC fee (US regulatory fee: ~$22.10 per million)
+    sec_fee_rate: Decimal = Decimal("0.0000221")
+    
+    # FINRA TAF fee (~$0.000119 per share, max $5.95)
+    finra_taf_rate: Decimal = Decimal("0.000119")
+    finra_taf_max: Decimal = Decimal("5.95")
 
 
 @dataclass
@@ -60,9 +123,17 @@ class ExecutionResult:
     executed_quantity: Optional[Decimal] = None
     total_value: Optional[Decimal] = None
     slippage: Optional[Decimal] = None
+    slippage_cost: Optional[Decimal] = None  # Actual cost from slippage
+    bid_price: Optional[Decimal] = None  # Simulated bid
+    ask_price: Optional[Decimal] = None  # Simulated ask
+    spread: Optional[Decimal] = None  # Bid/ask spread
+    spread_cost: Optional[Decimal] = None  # Cost from spread
     commission: Decimal = Decimal("0")
+    commission_breakdown: Optional[Dict[str, Decimal]] = None  # Detail breakdown
     message: str = ""
     executed_at: Optional[datetime] = None
+    is_partial_fill: bool = False
+    remaining_quantity: Optional[Decimal] = None
 
 
 class ExecutionEngine:
@@ -70,19 +141,71 @@ class ExecutionEngine:
     Simulated Execution Engine
     
     Simulates realistic order execution for paper trading:
-    - Market orders: Execute at current price with slippage
-    - Limit orders: Execute if price meets limit
+    - Market orders: Execute at current price with slippage and spread
+    - Limit orders: Execute if price meets limit (with optional partial fills)
     - Stop orders: Trigger when price hits stop level
     - Stop-limit orders: Trigger stop then execute as limit
+    - Realistic bid/ask spread simulation
+    - Configurable commission structures
     """
     
     def __init__(
         self, 
         db: AsyncSession,
-        slippage_config: Optional[SlippageConfig] = None
+        slippage_config: Optional[SlippageConfig] = None,
+        spread_config: Optional[BidAskSpreadConfig] = None,
+        commission_config: Optional[CommissionConfig] = None
     ):
         self.db = db
         self.slippage_config = slippage_config or SlippageConfig()
+        self.spread_config = spread_config or BidAskSpreadConfig()
+        self.commission_config = commission_config or CommissionConfig()
+    
+    def simulate_bid_ask(
+        self,
+        mid_price: Decimal,
+        market_condition: MarketCondition = MarketCondition.NORMAL
+    ) -> Tuple[Decimal, Decimal, Decimal]:
+        """
+        Simulate realistic bid/ask prices from mid price.
+        
+        Args:
+            mid_price: The mid/last price
+            market_condition: Current market condition
+            
+        Returns:
+            Tuple of (bid_price, ask_price, spread_pct)
+        """
+        config = self.spread_config
+        
+        # Calculate spread percentage based on conditions
+        spread_pct = config.base_spread_pct
+        
+        if market_condition == MarketCondition.VOLATILE:
+            spread_pct *= config.volatility_multiplier
+        elif market_condition == MarketCondition.LOW_LIQUIDITY:
+            spread_pct *= config.liquidity_multiplier
+        elif market_condition == MarketCondition.HIGH_VOLUME:
+            # High volume = tighter spreads
+            spread_pct *= Decimal("0.5")
+        
+        # Add random noise (±30%)
+        noise = Decimal(str(random.uniform(0.7, 1.3)))
+        spread_pct *= noise
+        
+        # Cap spread
+        spread_pct = min(spread_pct, config.max_spread_pct)
+        
+        # Calculate absolute spread
+        spread_abs = mid_price * spread_pct
+        spread_abs = max(spread_abs, config.min_spread_absolute)
+        
+        # Calculate bid and ask (split spread around mid)
+        half_spread = spread_abs / 2
+        bid_price = (mid_price - half_spread).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        ask_price = (mid_price + half_spread).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        
+        return bid_price, ask_price, spread_pct
     
     async def execute_market_order(
         self,
@@ -91,20 +214,36 @@ class ExecutionEngine:
         market_condition: MarketCondition = MarketCondition.NORMAL
     ) -> ExecutionResult:
         """
-        Execute a market order at current price with slippage.
+        Execute a market order at current price with bid/ask spread and slippage.
+        
+        For market orders:
+        - BUY: Execute at ASK price + slippage (pays spread)
+        - SELL: Execute at BID price - slippage (pays spread)
         
         Args:
             trade: The trade/order to execute
-            current_price: Current market price
+            current_price: Current market mid price
             market_condition: Current market condition
             
         Returns:
-            ExecutionResult with execution details
+            ExecutionResult with execution details including spread info
         """
         try:
-            # Calculate slippage
+            # Simulate bid/ask spread
+            bid_price, ask_price, spread_pct = self.simulate_bid_ask(
+                current_price, market_condition
+            )
+            
+            # Determine base price based on trade type
+            # BUY orders execute at ASK, SELL at BID
+            if trade.trade_type == TradeType.BUY:
+                base_price = ask_price
+            else:
+                base_price = bid_price
+            
+            # Calculate additional slippage on top of spread
             slippage = self._calculate_slippage(
-                current_price=current_price,
+                current_price=base_price,
                 quantity=trade.quantity,
                 trade_type=trade.trade_type,
                 market_condition=market_condition
@@ -112,7 +251,7 @@ class ExecutionEngine:
             
             # Apply slippage to get executed price
             executed_price = self._apply_slippage(
-                price=current_price,
+                price=base_price,
                 slippage=slippage,
                 trade_type=trade.trade_type
             )
@@ -120,8 +259,16 @@ class ExecutionEngine:
             # Calculate total value
             total_value = trade.quantity * executed_price
             
-            # Calculate commission (configurable)
-            commission = self._calculate_commission(total_value)
+            # Calculate commission with breakdown
+            commission, commission_breakdown = self._calculate_commission_with_breakdown(
+                trade_value=total_value,
+                quantity=trade.quantity,
+                trade_type=trade.trade_type
+            )
+            
+            # Calculate costs from spread and slippage
+            spread_cost = abs(base_price - current_price) * trade.quantity
+            slippage_cost = abs(executed_price - base_price) * trade.quantity
             
             # Update the trade record
             trade.executed_price = executed_price
@@ -139,7 +286,7 @@ class ExecutionEngine:
             logger.info(
                 f"Executed market order {trade.id}: {trade.trade_type.value} "
                 f"{trade.quantity} {trade.symbol} @ ${executed_price:.4f} "
-                f"(slippage: {slippage:.4%})"
+                f"(spread: {spread_pct:.4%}, slippage: {slippage:.4%}, commission: ${commission:.2f})"
             )
             
             return ExecutionResult(
@@ -148,7 +295,13 @@ class ExecutionEngine:
                 executed_quantity=trade.quantity,
                 total_value=total_value,
                 slippage=slippage,
+                slippage_cost=slippage_cost,
+                bid_price=bid_price,
+                ask_price=ask_price,
+                spread=spread_pct,
+                spread_cost=spread_cost,
                 commission=commission,
+                commission_breakdown=commission_breakdown,
                 message="Order executed successfully",
                 executed_at=trade.executed_at
             )
@@ -166,14 +319,21 @@ class ExecutionEngine:
     async def execute_limit_order(
         self,
         trade: Trade,
-        current_price: Decimal
+        current_price: Decimal,
+        available_liquidity: Optional[Decimal] = None,
+        enable_partial_fill: bool = True
     ) -> ExecutionResult:
         """
         Execute a limit order if price meets limit.
         
+        Supports partial fills based on available liquidity simulation.
+        
         Args:
             trade: The trade/order to execute
             current_price: Current market price
+            available_liquidity: Simulated available shares at price level
+                               If None, generates random liquidity
+            enable_partial_fill: Whether to allow partial fills
             
         Returns:
             ExecutionResult with execution details or None if not triggered
@@ -199,37 +359,104 @@ class ExecutionEngine:
                 message=f"Limit not met: current ${current_price:.4f}, limit ${trade.price:.4f}"
             )
         
-        # Execute at limit price (better execution)
+        # Determine fill quantity based on liquidity
+        requested_quantity = trade.quantity
+        
+        if enable_partial_fill:
+            # Simulate available liquidity if not provided
+            if available_liquidity is None:
+                available_liquidity = self._simulate_liquidity(
+                    requested_quantity,
+                    current_price
+                )
+            
+            # Calculate fill quantity
+            fill_quantity = min(requested_quantity, available_liquidity)
+            
+            # Ensure minimum fill (at least 1 share or 10% of order)
+            min_fill = max(Decimal("1"), requested_quantity * Decimal("0.1"))
+            if fill_quantity < min_fill and fill_quantity < requested_quantity:
+                fill_quantity = min_fill
+        else:
+            fill_quantity = requested_quantity
+        
+        is_partial = fill_quantity < requested_quantity
+        remaining = requested_quantity - fill_quantity if is_partial else None
+        
+        # Execute at limit price
         executed_price = trade.price
-        total_value = trade.quantity * executed_price
-        commission = self._calculate_commission(total_value)
+        total_value = fill_quantity * executed_price
+        commission, breakdown = self._calculate_commission_with_breakdown(
+            total_value, fill_quantity, trade.trade_type
+        )
         
         # Update trade
         trade.executed_price = executed_price
-        trade.executed_quantity = trade.quantity
+        trade.executed_quantity = fill_quantity
         trade.total_value = total_value
         trade.commission = commission
-        trade.status = TradeStatus.EXECUTED
+        
+        if is_partial:
+            trade.status = TradeStatus.PARTIAL
+            trade.notes = f"Partial fill: {fill_quantity}/{requested_quantity} shares"
+        else:
+            trade.status = TradeStatus.EXECUTED
+        
         trade.executed_at = datetime.utcnow()
         
         await self.db.flush()
         await self._update_portfolio_and_positions(trade)
         
+        fill_type = "partial fill" if is_partial else "full fill"
         logger.info(
-            f"Executed limit order {trade.id}: {trade.trade_type.value} "
-            f"{trade.quantity} {trade.symbol} @ ${executed_price:.4f}"
+            f"Executed limit order {trade.id} ({fill_type}): {trade.trade_type.value} "
+            f"{fill_quantity}/{requested_quantity} {trade.symbol} @ ${executed_price:.4f}"
         )
         
         return ExecutionResult(
             success=True,
             executed_price=executed_price,
-            executed_quantity=trade.quantity,
+            executed_quantity=fill_quantity,
             total_value=total_value,
             slippage=Decimal("0"),
             commission=commission,
-            message="Limit order executed",
-            executed_at=trade.executed_at
+            commission_breakdown=breakdown,
+            message=f"Limit order {fill_type}" + (f" ({remaining} remaining)" if remaining else ""),
+            executed_at=trade.executed_at,
+            is_partial_fill=is_partial,
+            remaining_quantity=remaining
         )
+    
+    def _simulate_liquidity(
+        self,
+        requested_quantity: Decimal,
+        price: Decimal
+    ) -> Decimal:
+        """
+        Simulate available liquidity at a price level.
+        
+        Uses a probabilistic model:
+        - Small orders (<100 shares): Usually full fill
+        - Medium orders (100-1000): Sometimes partial
+        - Large orders (>1000): Higher chance of partial
+        
+        Returns simulated available shares.
+        """
+        qty = float(requested_quantity)
+        
+        # Base fill probability decreases with order size
+        if qty < 100:
+            # Small orders: 95% chance of full fill
+            fill_pct = random.uniform(0.95, 1.0) if random.random() < 0.95 else random.uniform(0.5, 0.95)
+        elif qty < 1000:
+            # Medium orders: 75% chance of full fill
+            fill_pct = random.uniform(0.85, 1.0) if random.random() < 0.75 else random.uniform(0.3, 0.85)
+        else:
+            # Large orders: 50% chance of full fill
+            fill_pct = random.uniform(0.7, 1.0) if random.random() < 0.50 else random.uniform(0.2, 0.7)
+        
+        available = Decimal(str(qty * fill_pct)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        return max(Decimal("1"), available)  # At least 1 share
     
     async def check_stop_order(
         self,
@@ -340,13 +567,95 @@ class ExecutionEngine:
     
     def _calculate_commission(self, total_value: Decimal) -> Decimal:
         """
-        Calculate trading commission.
-        
-        Default: $0 for paper trading (can be configured)
+        Calculate trading commission (simplified version for backward compatibility).
         """
-        # Paper trading typically has no commission
-        # But can simulate real broker fees if needed
-        return Decimal("0")
+        commission, _ = self._calculate_commission_with_breakdown(total_value, Decimal("0"), TradeType.BUY)
+        return commission
+    
+    def _calculate_commission_with_breakdown(
+        self,
+        trade_value: Decimal,
+        quantity: Decimal,
+        trade_type: TradeType
+    ) -> Tuple[Decimal, Dict[str, Decimal]]:
+        """
+        Calculate trading commission with detailed breakdown.
+        
+        Supports multiple commission models:
+        - zero: No commission (free trading, but still includes regulatory fees)
+        - per_share: Commission per share traded
+        - flat: Flat fee per trade
+        - percentage: Percentage of trade value
+        - tiered: Combination of models
+        
+        Args:
+            trade_value: Total trade value
+            quantity: Number of shares
+            trade_type: BUY or SELL
+            
+        Returns:
+            Tuple of (total_commission, breakdown_dict)
+        """
+        config = self.commission_config
+        breakdown = {}
+        base_commission = Decimal("0")
+        
+        if config.model == "zero":
+            breakdown["base"] = Decimal("0")
+        
+        elif config.model == "per_share":
+            # Per-share commission with min/max
+            base_commission = quantity * config.per_share_rate
+            base_commission = max(base_commission, config.min_commission)
+            base_commission = min(base_commission, config.max_commission)
+            breakdown["per_share"] = base_commission
+            
+        elif config.model == "flat":
+            # Flat fee per trade
+            base_commission = config.flat_fee
+            breakdown["flat_fee"] = base_commission
+            
+        elif config.model == "percentage":
+            # Percentage of trade value
+            base_commission = trade_value * config.percentage_rate
+            base_commission = max(base_commission, config.min_commission)
+            base_commission = min(base_commission, config.max_commission)
+            breakdown["percentage"] = base_commission
+            
+        elif config.model == "tiered":
+            # Combination: flat + per_share for large orders
+            base_commission = config.flat_fee
+            if quantity > 1000:
+                per_share_part = (quantity - 1000) * config.per_share_rate
+                base_commission += per_share_part
+                breakdown["flat_fee"] = config.flat_fee
+                breakdown["per_share_excess"] = per_share_part
+            else:
+                breakdown["flat_fee"] = base_commission
+        else:
+            # Default to zero
+            breakdown["base"] = Decimal("0")
+        
+        # Add regulatory fees for SELL orders (US markets simulation)
+        if trade_type == TradeType.SELL:
+            # SEC fee
+            sec_fee = (trade_value * config.sec_fee_rate).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            breakdown["sec_fee"] = sec_fee
+            
+            # FINRA TAF fee
+            finra_fee = min(
+                quantity * config.finra_taf_rate,
+                config.finra_taf_max
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            breakdown["finra_taf"] = finra_fee
+            
+            base_commission = base_commission + sec_fee + finra_fee
+        
+        total = base_commission.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        
+        return total, breakdown
     
     async def _update_portfolio_and_positions(self, trade: Trade) -> None:
         """

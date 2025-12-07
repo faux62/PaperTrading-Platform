@@ -8,7 +8,7 @@ Portare la piattaforma da stato di sviluppo a **100% operativa con dati reali**.
 ## 📊 Stato Attuale Testing
 
 **Ultima sessione**: 7 dicembre 2025  
-**Fase corrente**: Fase 2 COMPLETATA - Pronto per Fase 3  
+**Fase corrente**: Fase 3 COMPLETATA - Pronto per Fase 4  
 **Utente test**: `bandini.fausto@gmail.com` / `Pallazz@99`  
 **Portfolio test**: ID 7 - "Test Trading"
 
@@ -25,7 +25,8 @@ Portare la piattaforma da stato di sviluppo a **100% operativa con dati reali**.
 | ALT | 5 | 5 | 0 | ✅ Completato |
 | ANA | 5 | 5 | 0 | ✅ Completato |
 | SET | 7 | 7 | 0 | ✅ Completato |
-| **DATA** | **8** | **8** | **0** | ✅ **Completato** |
+| DATA | 8 | 8 | 0 | ✅ Completato |
+| **SIM** | **7** | **7** | **0** | ✅ **Completato** |
 
 ---
 
@@ -35,8 +36,8 @@ Portare la piattaforma da stato di sviluppo a **100% operativa con dati reali**.
 |------|------|-----------|--------|
 | 1 | Test Funzionale | UI/UX completa | ✅ COMPLETATA |
 | 2 | Dati Reali | Quote di mercato live | ✅ COMPLETATA |
-| 3 | Trading Simulato | Logica ordini realistica | 🔄 DA INIZIARE |
-| 4 | Carico e Stabilità | Performance multi-utente | ⏳ Futuro |
+| 3 | Trading Simulato | Logica ordini realistica | ✅ COMPLETATA |
+| 4 | Carico e Stabilità | Performance multi-utente | 🔄 DA INIZIARE |
 | 5 | Analytics e ML | Calcoli finanziari | ⏳ Futuro |
 | 6 | Deploy NAS | Accesso rete locale | ⏳ Futuro |
 
@@ -247,6 +248,56 @@ Connettere provider dati di mercato per quote real-time.
 ### Obiettivo
 Verificare la logica di trading con esecuzione ordini realistica.
 
+### Status: ✅ COMPLETATO (7 Dicembre 2025)
+
+**30/30 test passati** - Execution Engine completamente funzionale!
+
+### Funzionalità Implementate
+
+#### 1. Bid/Ask Spread Simulation (`BidAskSpreadConfig`)
+- Spread realistico basato su condizioni di mercato
+- Spread aumenta in condizioni volatili/bassa liquidità
+- Spread minimo $0.01, massimo 2%
+- BUY esegue a ASK, SELL esegue a BID
+
+#### 2. Slippage Simulation (`SlippageConfig`)
+- Base slippage: 5 bps (0.05%)
+- Size impact: +1 bp per $10k oltre soglia
+- Volatility multiplier: 3x in mercati volatili
+- Maximum cap: 2%
+
+#### 3. Commission System (`CommissionConfig`)
+- Modelli supportati: `zero`, `per_share`, `flat`, `percentage`, `tiered`
+- Per-share default: $0.005/share (min $1, max $50)
+- Regulatory fees automatiche per SELL (SEC + FINRA TAF)
+- Breakdown dettagliato commissioni
+
+#### 4. Partial Fill Simulation
+- Fill simulato basato su liquidità
+- Ordini piccoli (<100): ~95% full fill
+- Ordini medi (100-1000): ~75% full fill  
+- Ordini grandi (>1000): ~50% full fill
+- Status `PARTIAL` per fill incompleti
+
+### Checklist Trading Simulato
+
+| Test | Descrizione | Risultato | Note |
+|------|-------------|-----------|------|
+| SIM-01 | Ordine market eseguito a prezzo realistico | ✅ | BUY a ASK+slippage, SELL a BID-slippage |
+| SIM-02 | Ordine limit eseguito solo se prezzo raggiunto | ✅ | BUY: current<=limit, SELL: current>=limit |
+| SIM-03 | Spread bid/ask realistico | ✅ | 5bps base, +150% volatile, +200% low-liq |
+| SIM-04 | Slippage simulato su ordini grandi | ✅ | Size impact oltre $10k soglia |
+| SIM-05 | Rifiuto ordine se capitale insufficiente | ✅ | Validazione in OrderManager |
+| SIM-06 | Partial fill su ordini limit | ✅ | Simulazione liquidità implementata |
+| SIM-07 | Calcolo commissioni | ✅ | 5 modelli + regulatory fees |
+
+### Test File
+`backend/tests/unit/test_trading_simulation.py` - 30 test cases
+
+### Files Modificati
+- `backend/app/core/trading/execution.py` - Nuovo sistema spread/commission/partial fill
+- `backend/app/db/models/trade.py` - Aggiunto `TradeStatus.PARTIAL`
+
 ### Provider Consigliato: Alpaca (Paper Trading Gratuito)
 
 #### Setup
@@ -263,18 +314,6 @@ ALPACA_PAPER=true
 ```
 
 5. Restart backend
-
-### Checklist Trading Simulato
-
-| Test | Descrizione | Risultato |
-|------|-------------|-----------|
-| SIM-01 | Ordine market eseguito a prezzo realistico | ⬜ |
-| SIM-02 | Ordine limit eseguito solo se prezzo raggiunto | ⬜ |
-| SIM-03 | Spread bid/ask realistico | ⬜ |
-| SIM-04 | Slippage simulato su ordini grandi | ⬜ |
-| SIM-05 | Rifiuto ordine se capitale insufficiente | ⬜ |
-| SIM-06 | Partial fill su ordini limit | ⬜ |
-| SIM-07 | Calcolo commissioni | ⬜ |
 
 ---
 

@@ -28,6 +28,7 @@ class TradeStatus(str, enum.Enum):
     """Trade status."""
     PENDING = "pending"
     EXECUTED = "executed"
+    PARTIAL = "partial"  # Partially filled
     CANCELLED = "cancelled"
     FAILED = "failed"
 
