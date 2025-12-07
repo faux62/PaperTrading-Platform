@@ -421,14 +421,17 @@ Verificare correttezza dei calcoli finanziari.
 - R-squared
 - Risk metrics integration
 
-### Test ML Predictions (se implementati)
+### Test ML Predictions
 
 | Test | Descrizione | Risultato |
 |------|-------------|-----------|
-| ML-01 | Prediction genera output valido | ⬜ |
-| ML-02 | Confidence score 0-100% | ⬜ |
-| ML-03 | Signal generation (buy/sell/hold) | ⬜ |
-| ML-04 | Backtesting accuracy > 50% | ⬜ |
+| ML-01 | Prediction genera output valido | ✅ |
+| ML-02 | Confidence score 0-100% | ✅ |
+| ML-03 | Signal generation (buy/sell/hold) | ✅ |
+| ML-04 | Backtesting accuracy > 50% | ✅ |
+
+### Test File ML
+`backend/tests/unit/test_ml_predictions.py` - 13 test cases
 
 ---
 
