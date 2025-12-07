@@ -28,6 +28,7 @@ from app.data_providers.adapters.base import (
 
 
 FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+FMP_STABLE_URL = "https://financialmodelingprep.com/stable"
 
 
 def create_fmp_config(api_key: str) -> ProviderConfig:
@@ -101,8 +102,8 @@ class FMPAdapter(BaseAdapter):
     async def health_check(self) -> bool:
         """Check API connectivity."""
         try:
-            url = f"{FMP_BASE_URL}/quote/AAPL"
-            params = {"apikey": self.config.api_key}
+            url = f"{FMP_STABLE_URL}/quote"
+            params = {"symbol": "AAPL", "apikey": self.config.api_key}
             
             async with self._session.get(url, params=params) as response:
                 if response.status == 200:
@@ -120,8 +121,8 @@ class FMPAdapter(BaseAdapter):
     async def get_quote(self, symbol: str) -> Quote:
         """Get real-time quote for a symbol."""
         symbol = symbol.upper()
-        url = f"{FMP_BASE_URL}/quote/{symbol}"
-        params = {"apikey": self.config.api_key}
+        url = f"{FMP_STABLE_URL}/quote"
+        params = {"symbol": symbol, "apikey": self.config.api_key}
         
         try:
             start_time = datetime.now()
@@ -155,8 +156,8 @@ class FMPAdapter(BaseAdapter):
             return []
         
         symbols = [s.upper() for s in symbols]
-        url = f"{FMP_BASE_URL}/quote/{','.join(symbols)}"
-        params = {"apikey": self.config.api_key}
+        url = f"{FMP_STABLE_URL}/quote"
+        params = {"symbol": ",".join(symbols), "apikey": self.config.api_key}
         
         try:
             start_time = datetime.now()
@@ -359,10 +360,6 @@ class FMPAdapter(BaseAdapter):
             day_low=Decimal(str(data.get("dayLow", 0))) if data.get("dayLow") else None,
             day_open=Decimal(str(data.get("open", 0))) if data.get("open") else None,
             prev_close=Decimal(str(data.get("previousClose", 0))) if data.get("previousClose") else None,
-            fifty_two_week_high=Decimal(str(data.get("yearHigh", 0))) if data.get("yearHigh") else None,
-            fifty_two_week_low=Decimal(str(data.get("yearLow", 0))) if data.get("yearLow") else None,
-            market_cap=int(data.get("marketCap", 0) or 0) if data.get("marketCap") else None,
-            pe_ratio=Decimal(str(data.get("pe", 0))) if data.get("pe") else None,
         )
     
     def _parse_bar(self, symbol: str, data: dict[str, Any], timeframe: TimeFrame) -> OHLCV:

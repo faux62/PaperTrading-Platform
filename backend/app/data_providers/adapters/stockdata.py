@@ -365,8 +365,6 @@ class StockDataAdapter(BaseAdapter):
             day_low=Decimal(str(data.get("day_low", 0))) if data.get("day_low") else None,
             day_open=Decimal(str(data.get("day_open", 0))) if data.get("day_open") else None,
             prev_close=Decimal(str(data.get("previous_close_price", 0))) if data.get("previous_close_price") else None,
-            fifty_two_week_high=Decimal(str(data.get("52_week_high", 0))) if data.get("52_week_high") else None,
-            fifty_two_week_low=Decimal(str(data.get("52_week_low", 0))) if data.get("52_week_low") else None,
         )
     
     def _parse_bar(self, data: dict[str, Any], timeframe: TimeFrame) -> OHLCV:

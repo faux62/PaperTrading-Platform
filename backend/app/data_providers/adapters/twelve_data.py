@@ -410,8 +410,6 @@ class TwelveDataAdapter(BaseAdapter):
             day_low=Decimal(str(data.get("low", 0))) if data.get("low") else None,
             day_open=open_price if open_price else None,
             prev_close=prev_close if prev_close else None,
-            fifty_two_week_high=Decimal(str(data.get("fifty_two_week", {}).get("high", 0))) if data.get("fifty_two_week", {}).get("high") else None,
-            fifty_two_week_low=Decimal(str(data.get("fifty_two_week", {}).get("low", 0))) if data.get("fifty_two_week", {}).get("low") else None,
         )
     
     def _parse_bar(self, symbol: str, data: dict[str, Any], timeframe: TimeFrame) -> OHLCV:

@@ -344,19 +344,19 @@ class YFinanceAdapter(BaseAdapter):
     
     def _parse_fast_info(self, symbol: str, info) -> Quote:
         """Parse fast_info to Quote."""
-        # fast_info attributes vary by yfinance version
+        # fast_info attributes use snake_case in modern yfinance
         try:
-            last_price = Decimal(str(getattr(info, 'lastPrice', 0) or getattr(info, 'regularMarketPrice', 0) or 0))
-            prev_close = Decimal(str(getattr(info, 'previousClose', 0) or getattr(info, 'regularMarketPreviousClose', 0) or 0))
+            last_price = Decimal(str(getattr(info, 'last_price', 0) or getattr(info, 'lastPrice', 0) or 0))
+            prev_close = Decimal(str(getattr(info, 'previous_close', 0) or getattr(info, 'previousClose', 0) or 0))
             
             change = last_price - prev_close if prev_close else None
             change_pct = (change / prev_close * 100) if change and prev_close else None
             
-            volume = int(getattr(info, 'lastVolume', 0) or getattr(info, 'regularMarketVolume', 0) or 0)
+            volume = int(getattr(info, 'last_volume', 0) or getattr(info, 'lastVolume', 0) or 0)
             
-            day_high = Decimal(str(getattr(info, 'dayHigh', 0) or getattr(info, 'regularMarketDayHigh', 0) or 0))
-            day_low = Decimal(str(getattr(info, 'dayLow', 0) or getattr(info, 'regularMarketDayLow', 0) or 0))
-            day_open = Decimal(str(getattr(info, 'open', 0) or getattr(info, 'regularMarketOpen', 0) or 0))
+            day_high = Decimal(str(getattr(info, 'day_high', 0) or getattr(info, 'dayHigh', 0) or 0))
+            day_low = Decimal(str(getattr(info, 'day_low', 0) or getattr(info, 'dayLow', 0) or 0))
+            day_open = Decimal(str(getattr(info, 'open', 0) or 0))
             
             market_type = self._determine_market_type(symbol)
             

@@ -14,6 +14,8 @@ services:
       dockerfile: Dockerfile
     container_name: papertrading-backend
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     environment:
       - ENVIRONMENT=production
       - DATABASE_URL_ENV=postgresql://papertrading:papertrading@postgres:5432/papertrading

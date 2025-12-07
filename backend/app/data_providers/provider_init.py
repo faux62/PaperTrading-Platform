@@ -132,13 +132,13 @@ async def initialize_providers(api_keys: dict[str, str]) -> dict[str, bool]:
         "alpaca": (AlpacaAdapter, create_alpaca_config),
         "fmp": (FMPAdapter, create_fmp_config),
         "eodhd": (EODHDAdapter, create_eodhd_config),
-        "intrinio": (IntrinioAdapter, create_intrinio_config),
+        # "intrinio": (IntrinioAdapter, create_intrinio_config),  # Disabled - no active subscription
         "marketstack": (MarketstackAdapter, create_marketstack_config),
         "nasdaq_datalink": (NasdaqDataLinkAdapter, create_nasdaq_datalink_config),
         "stockdata": (StockDataAdapter, create_stockdata_config),
         "yfinance": (YFinanceAdapter, create_yfinance_config),
         "stooq": (StooqAdapter, create_stooq_config),
-        "investing": (InvestingAdapter, create_investing_config),
+        # "investing": (InvestingAdapter, create_investing_config),  # Disabled - scraping blocked (403)
     }
     
     # Initialize each provider that has an API key configured

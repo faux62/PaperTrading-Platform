@@ -275,3 +275,119 @@ def _calculate_usage_percent(stats: dict) -> dict:
             usage[window] = round((used / limit) * 100, 2)
     
     return usage
+
+
+@router.get(
+    "/test/{provider}",
+    summary="Test a specific provider",
+    description="Test a specific provider by fetching a quote for AAPL. Returns success/error status."
+)
+async def test_provider(
+    provider: str,
+    symbol: str = "AAPL",
+    current_user: User = Depends(get_current_active_user)
+):
+    """Test a specific provider by fetching a real quote."""
+    import time
+    
+    if provider not in failover_manager._providers:
+        raise HTTPException(status_code=404, detail=f"Provider {provider} not found")
+    
+    adapter = failover_manager._providers[provider]
+    
+    result = {
+        "provider": provider,
+        "symbol": symbol,
+        "success": False,
+        "error": None,
+        "quote": None,
+        "latency_ms": 0,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
+    try:
+        start_time = time.time()
+        quote = await adapter.get_quote(symbol)
+        latency = (time.time() - start_time) * 1000
+        
+        result["success"] = True
+        result["latency_ms"] = round(latency, 2)
+        result["quote"] = {
+            "price": float(quote.price),
+            "bid": float(quote.bid) if quote.bid else None,
+            "ask": float(quote.ask) if quote.ask else None,
+            "volume": quote.volume,
+            "day_high": float(quote.day_high) if quote.day_high else None,
+            "day_low": float(quote.day_low) if quote.day_low else None,
+            "change": float(quote.change) if quote.change else None,
+            "change_percent": float(quote.change_percent) if quote.change_percent else None,
+            "timestamp": quote.timestamp.isoformat() if quote.timestamp else None,
+        }
+        
+        # Record success in health monitor
+        health_monitor.record_success(provider, latency)
+        
+    except Exception as e:
+        result["error"] = str(e)
+        health_monitor.record_failure(provider, e)
+        logger.warning(f"Provider {provider} test failed: {e}")
+    
+    return result
+
+
+@router.get(
+    "/test-all",
+    summary="Test all providers",
+    description="Test all registered providers and return results for each."
+)
+async def test_all_providers(
+    symbol: str = "AAPL",
+    current_user: User = Depends(get_current_active_user)
+):
+    """Test all providers and return results."""
+    import time
+    import asyncio
+    
+    results = {}
+    
+    for name, adapter in failover_manager._providers.items():
+        result = {
+            "success": False,
+            "error": None,
+            "price": None,
+            "latency_ms": 0,
+        }
+        
+        try:
+            start_time = time.time()
+            quote = await adapter.get_quote(symbol)
+            latency = (time.time() - start_time) * 1000
+            
+            result["success"] = True
+            result["price"] = float(quote.price)
+            result["latency_ms"] = round(latency, 2)
+            
+            health_monitor.record_success(name, latency)
+            
+        except Exception as e:
+            result["error"] = str(e)[:100]  # Truncate long errors
+            health_monitor.record_failure(name, e)
+        
+        results[name] = result
+        
+        # Small delay to avoid overwhelming APIs
+        await asyncio.sleep(0.2)
+    
+    # Summary
+    success_count = sum(1 for r in results.values() if r["success"])
+    
+    return {
+        "symbol": symbol,
+        "results": results,
+        "summary": {
+            "total": len(results),
+            "success": success_count,
+            "failed": len(results) - success_count,
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    }
