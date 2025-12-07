@@ -1,5 +1,8 @@
 # 📋 PaperTrading Platform - Piano di Sviluppo e Roadmap
 
+> **Ultimo aggiornamento:** 7 Dicembre 2025
+> **Stato corrente:** FASE 2 COMPLETATA ✅ - Pronto per FASE 3
+
 ## 1. Overview del Progetto
 
 ### 1.1 Informazioni Generali
@@ -109,6 +112,8 @@
 - [x] CI/CD pipeline base
 - [x] Documentazione API auto-generata
 
+**Status: ✅ COMPLETATA**
+
 ---
 
 ## 4. FASE 2: Data Acquisition Layer (Settimane 4-7)
@@ -186,6 +191,32 @@
 - [x] Cache Redis per quotes real-time
 - [x] Bulk download per dati storici
 
+**Status: ✅ COMPLETATA (7 Dicembre 2025)**
+
+#### Provider Attivi (14/15):
+| Provider | Tipo | Quote | OHLCV | Mercati |
+|----------|------|:-----:|:-----:|---------|
+| finnhub | API Key | ✅ | ✅ | US/Global |
+| polygon | API Key | ✅ | ✅ | US |
+| alpha_vantage | API Key | ✅ | ✅ | Global |
+| tiingo | API Key | ✅ | ✅ | US |
+| twelve_data | API Key | ✅ | ✅ | Global |
+| alpaca | API Key | ✅ | ✅ | US |
+| fmp | API Key | ✅ | ✅ | Global |
+| eodhd | API Key | ✅ | ✅ | Global |
+| marketstack | API Key | ✅ | ✅ | Global |
+| stockdata | API Key | ✅ | ✅ | US |
+| yfinance | 🆓 Free | ✅ | ✅ | Global |
+| stooq | 🆓 Free | ❌ | ✅ | Global |
+| nasdaq | 🆓 Free | ✅ | ✅ | US Stocks/ETF |
+| frankfurter | 🆓 Free | ✅ | ✅ | Forex (ECB) |
+
+#### Provider Disabilitati:
+- intrinio - No active subscription
+- nasdaq_datalink - WIKI dataset discontinued
+- investing - Cloudflare blocked (403)
+- investiny - Cloudflare protected
+
 ---
 
 ## 5. FASE 3: Core Trading Engine (Settimane 8-11)
@@ -256,12 +287,14 @@
 | Ven | Bug fixes e polish | Trading stable |
 
 ### 5.3 Milestone Fase 3
-- [x] Paper trading engine completo
-- [x] 3 risk profiles funzionanti
-- [x] Real-time portfolio updates
-- [x] Order execution simulato
-- [x] Watchlists e alerts
-- [x] Frontend trading completo
+- [ ] Paper trading engine completo
+- [ ] 3 risk profiles funzionanti
+- [ ] Real-time portfolio updates
+- [ ] Order execution simulato
+- [ ] Watchlists e alerts
+- [ ] Frontend trading completo
+
+**Status: 🔄 DA INIZIARE**
 
 ---
 
@@ -333,12 +366,14 @@
 | Ven | Feature importance charts | Explainable AI |
 
 ### 6.3 Milestone Fase 4
-- [x] 5 ML models trained e deployed
-- [x] Feature store con 50+ features
-- [x] Real-time predictions
-- [x] Analytics dashboard completo
-- [x] Performance e risk metrics
-- [x] Signal generation working
+- [ ] 5 ML models trained e deployed
+- [ ] Feature store con 50+ features
+- [ ] Real-time predictions
+- [ ] Analytics dashboard completo
+- [ ] Performance e risk metrics
+- [ ] Signal generation working
+
+**Status: ⏳ FUTURO**
 
 ---
 
@@ -396,11 +431,13 @@
 | Ven | Handover e knowledge transfer | Project complete |
 
 ### 7.3 Milestone Fase 5
-- [x] Test coverage >80%
-- [x] Performance ottimizzata
-- [x] Security audit passed
-- [x] Documentation completa
-- [x] Production deployment ready
+- [ ] Test coverage >80%
+- [ ] Performance ottimizzata
+- [ ] Security audit passed
+- [ ] Documentation completa
+- [ ] Production deployment ready
+
+**Status: ⏳ FUTURO**
 
 ---
 
