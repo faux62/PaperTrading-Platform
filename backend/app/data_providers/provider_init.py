@@ -28,6 +28,9 @@ from app.data_providers.adapters.twelve_data import TwelveDataAdapter, create_tw
 from app.data_providers.adapters.yfinance_adapter import YFinanceAdapter, create_yfinance_config
 from app.data_providers.adapters.stooq import StooqAdapter, create_stooq_config
 from app.data_providers.adapters.investing import InvestingAdapter, create_investing_config
+from app.data_providers.adapters.investiny_adapter import InvestinyAdapter, create_investiny_config
+from app.data_providers.adapters.nasdaq import NasdaqAdapter, create_nasdaq_config
+from app.data_providers.adapters.frankfurter import FrankfurterAdapter, create_frankfurter_config
 
 
 # Default rate limits and budgets for free tiers
@@ -107,6 +110,21 @@ PROVIDER_DEFAULTS = {
         "requests_per_day": 0,
         "daily_budget": Decimal("0"),
     },
+    "investiny": {
+        "requests_per_minute": 30,
+        "requests_per_day": 2000,
+        "daily_budget": Decimal("0"),
+    },
+    "nasdaq": {
+        "requests_per_minute": 30,
+        "requests_per_day": 5000,
+        "daily_budget": Decimal("0"),
+    },
+    "frankfurter": {
+        "requests_per_minute": 60,
+        "requests_per_day": 10000,
+        "daily_budget": Decimal("0"),
+    },
 }
 
 
@@ -139,6 +157,9 @@ async def initialize_providers(api_keys: dict[str, str]) -> dict[str, bool]:
         "yfinance": (YFinanceAdapter, create_yfinance_config),
         "stooq": (StooqAdapter, create_stooq_config),
         # "investing": (InvestingAdapter, create_investing_config),  # Disabled - scraping blocked (403)
+        # "investiny": (InvestinyAdapter, create_investiny_config),  # Disabled - TVC API Cloudflare protected
+        "nasdaq": (NasdaqAdapter, create_nasdaq_config),  # Free - US stocks/ETF
+        "frankfurter": (FrankfurterAdapter, create_frankfurter_config),  # Free - Forex (ECB)
     }
     
     # Initialize each provider that has an API key configured
@@ -159,7 +180,7 @@ async def initialize_providers(api_keys: dict[str, str]) -> dict[str, bool]:
                     logger.warning(f"Skipping {provider_name}: missing secret")
                     results[provider_name] = False
                     continue
-            elif provider_name in ("yfinance", "stooq", "investing"):
+            elif provider_name in ("yfinance", "stooq", "investing", "investiny"):
                 # These don't need API keys
                 config = config_factory()
             else:
@@ -201,8 +222,10 @@ async def initialize_providers(api_keys: dict[str, str]) -> dict[str, bool]:
             results[provider_name] = False
     
     # Always initialize free providers that don't need API keys
-    for free_provider in ("yfinance", "stooq", "investing"):
+    for free_provider in ("yfinance", "stooq", "nasdaq", "frankfurter"):
         if free_provider not in results or not results.get(free_provider):
+            if free_provider not in provider_factories:
+                continue  # Skip disabled providers
             try:
                 adapter_class, config_factory = provider_factories[free_provider]
                 config = config_factory()
