@@ -8,7 +8,7 @@ from app.api.v1.endpoints import (
     watchlists, analytics, alerts, ml_features, ml_predictions, currency, settings,
     providers, bot
 )
-from app.api.v1.websockets import market_stream_router, portfolio_stream_router
+from app.api.v1.websockets import market_stream_router, portfolio_stream_router, bot_stream_router
 
 api_router = APIRouter()
 
@@ -43,3 +43,4 @@ api_router.include_router(bot.router, tags=["Trading Assistant Bot"])
 # Include WebSocket routers
 api_router.include_router(market_stream_router, tags=["WebSocket - Market"])
 api_router.include_router(portfolio_stream_router, tags=["WebSocket - Portfolio"])
+api_router.include_router(bot_stream_router, tags=["WebSocket - Bot Advisory"])

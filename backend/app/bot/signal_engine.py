@@ -26,6 +26,67 @@ from app.db.models import (
 )
 
 
+def _signal_to_dict(signal: BotSignal) -> dict:
+    """Convert BotSignal to dictionary for WebSocket notification."""
+    return {
+        "id": signal.id,
+        "signal_type": signal.signal_type.value,
+        "priority": signal.priority.value,
+        "status": signal.status.value,
+        "symbol": signal.symbol,
+        "direction": signal.direction.value if signal.direction else None,
+        "title": signal.title,
+        "message": signal.message,
+        "rationale": signal.rationale,
+        "current_price": float(signal.current_price) if signal.current_price else None,
+        "suggested_entry": float(signal.suggested_entry) if signal.suggested_entry else None,
+        "suggested_stop_loss": float(signal.suggested_stop_loss) if signal.suggested_stop_loss else None,
+        "suggested_take_profit": float(signal.suggested_take_profit) if signal.suggested_take_profit else None,
+        "suggested_quantity": signal.suggested_quantity,
+        "risk_reward_ratio": float(signal.risk_reward_ratio) if signal.risk_reward_ratio else None,
+        "confidence_score": float(signal.confidence_score) if signal.confidence_score else None,
+        "ml_model_used": signal.ml_model_used,
+        "source": signal.source,
+        "portfolio_id": signal.portfolio_id,
+        "valid_until": signal.valid_until.isoformat() if signal.valid_until else None,
+        "created_at": signal.created_at.isoformat() if signal.created_at else None,
+    }
+
+
+async def _notify_websocket(user_id: int, signal: BotSignal):
+    """
+    Send WebSocket notification for a new signal.
+    
+    Lazy import to avoid circular dependencies.
+    """
+    try:
+        from app.api.v1.websockets import (
+            broadcast_new_signal,
+            broadcast_position_alert,
+            broadcast_risk_warning,
+        )
+        
+        signal_data = _signal_to_dict(signal)
+        
+        if signal.signal_type == SignalType.TRADE_SUGGESTION:
+            await broadcast_new_signal(user_id, signal_data)
+        elif signal.signal_type == SignalType.POSITION_ALERT:
+            await broadcast_position_alert(user_id, signal_data)
+        elif signal.signal_type == SignalType.RISK_WARNING:
+            await broadcast_risk_warning(user_id, signal_data)
+        elif signal.signal_type == SignalType.ML_PREDICTION:
+            await broadcast_new_signal(user_id, signal_data)
+        else:
+            # Generic signal notification
+            await broadcast_new_signal(user_id, signal_data)
+            
+        logger.debug(f"WebSocket notification sent for signal {signal.id} to user {user_id}")
+        
+    except Exception as e:
+        # Don't fail the signal creation if WebSocket fails
+        logger.warning(f"Failed to send WebSocket notification: {e}")
+
+
 class SignalEngine:
     """
     Signal generation engine for the Trading Assistant Bot.
@@ -147,6 +208,9 @@ class SignalEngine:
         await self.db.commit()
         await self.db.refresh(signal)
         
+        # Send real-time WebSocket notification
+        await _notify_websocket(user_id, signal)
+        
         logger.info(f"Created trade suggestion: {symbol} {direction.value} for user {user_id}")
         return signal
     
@@ -216,6 +280,9 @@ P/L: {pnl_percent:+.2f}%
         await self.db.commit()
         await self.db.refresh(signal)
         
+        # Send real-time WebSocket notification
+        await _notify_websocket(user_id, signal)
+        
         logger.info(f"Created position alert: {symbol} for user {user_id}")
         return signal
     
@@ -267,6 +334,9 @@ P/L: {pnl_percent:+.2f}%
         await self.db.commit()
         await self.db.refresh(signal)
         
+        # Send real-time WebSocket notification
+        await _notify_websocket(user_id, signal)
+        
         logger.info(f"Created risk warning: {warning_type} for user {user_id}")
         return signal
     
@@ -316,6 +386,9 @@ P/L: {pnl_percent:+.2f}%
         self.db.add(signal)
         await self.db.commit()
         await self.db.refresh(signal)
+        
+        # Send real-time WebSocket notification
+        await _notify_websocket(user_id, signal)
         
         logger.info(f"Created market alert: {symbol} {alert_type} for user {user_id}")
         return signal
@@ -373,6 +446,9 @@ P/L: {pnl_percent:+.2f}%
         self.db.add(signal)
         await self.db.commit()
         await self.db.refresh(signal)
+        
+        # Send real-time WebSocket notification
+        await _notify_websocket(user_id, signal)
         
         logger.info(f"Created ML signal: {symbol} {prediction_direction.value} for user {user_id}")
         return signal

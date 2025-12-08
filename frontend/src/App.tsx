@@ -6,6 +6,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { useUIStore } from './store/uiStore';
 import { Spinner } from './components/common';
+import { BotNotificationToast } from './components/bot';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -65,6 +66,7 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   const { theme } = useUIStore();
+  const { isAuthenticated } = useAuthStore();
 
   // Apply theme class to document
   useEffect(() => {
@@ -74,6 +76,15 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Bot Real-Time Notifications - Only when authenticated */}
+      {isAuthenticated && (
+        <BotNotificationToast 
+          position="top-right"
+          maxToasts={5}
+          autoHideDuration={15000}
+        />
+      )}
+      
       <Routes>
         {/* Public Routes */}
         <Route

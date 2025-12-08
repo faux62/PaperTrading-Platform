@@ -10,6 +10,16 @@ from .portfolio_stream import (
     notify_order_update,
     notify_trade_execution
 )
+from .bot_stream import (
+    router as bot_stream_router,
+    get_bot_manager,
+    broadcast_new_signal,
+    broadcast_position_alert,
+    broadcast_risk_warning,
+    broadcast_report_ready,
+    broadcast_bot_status,
+    broadcast_pre_market_briefing,
+)
 
 __all__ = [
     # Market stream
@@ -22,5 +32,14 @@ __all__ = [
     "broadcast_portfolio_value",
     "broadcast_position_update",
     "notify_order_update",
-    "notify_trade_execution"
+    "notify_trade_execution",
+    # Bot stream
+    "bot_stream_router",
+    "get_bot_manager",
+    "broadcast_new_signal",
+    "broadcast_position_alert",
+    "broadcast_risk_warning",
+    "broadcast_report_ready",
+    "broadcast_bot_status",
+    "broadcast_pre_market_briefing",
 ]
