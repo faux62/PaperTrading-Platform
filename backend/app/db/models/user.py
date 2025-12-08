@@ -35,6 +35,8 @@ class User(Base):
     portfolios = relationship("Portfolio", back_populates="user", cascade="all, delete-orphan")
     watchlists = relationship("Watchlist", back_populates="user", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan")
+    bot_signals = relationship("BotSignal", back_populates="user", cascade="all, delete-orphan")
+    bot_reports = relationship("BotReport", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User {self.username}>"

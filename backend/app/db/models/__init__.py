@@ -8,6 +8,14 @@ from app.db.models.position import Position
 from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.watchlist import Watchlist, watchlist_symbols
 from app.db.models.alert import Alert, AlertType, AlertStatus
+from app.db.models.bot_signal import (
+    BotSignal,
+    BotReport,
+    SignalType,
+    SignalPriority,
+    SignalStatus,
+    SignalDirection,
+)
 
 __all__ = [
     "User",
@@ -24,4 +32,10 @@ __all__ = [
     "Alert",
     "AlertType",
     "AlertStatus",
+    "BotSignal",
+    "BotReport",
+    "SignalType",
+    "SignalPriority",
+    "SignalStatus",
+    "SignalDirection",
 ]

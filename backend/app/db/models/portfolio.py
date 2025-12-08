@@ -46,6 +46,7 @@ class Portfolio(Base):
     user = relationship("User", back_populates="portfolios")
     positions = relationship("Position", back_populates="portfolio", cascade="all, delete-orphan")
     trades = relationship("Trade", back_populates="portfolio", cascade="all, delete-orphan")
+    bot_signals = relationship("BotSignal", back_populates="portfolio")
     
     def __repr__(self):
         return f"<Portfolio {self.name} ({self.risk_profile.value})>"

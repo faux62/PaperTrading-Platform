@@ -94,7 +94,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"⚠️ Provider initialization error (non-fatal): {e}")
     
-    # TODO: Initialize scheduler
+    # Initialize Trading Assistant Bot
+    try:
+        from app.bot import initialize_bot
+        await initialize_bot()
+        logger.info("✅ Trading Assistant Bot initialized")
+    except Exception as e:
+        logger.error(f"⚠️ Bot initialization error (non-fatal): {e}")
+    
     # TODO: Load ML models
     
     logger.info("✅ PaperTrading Platform started successfully!")
@@ -103,6 +110,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Shutting down PaperTrading Platform...")
+    
+    # Shutdown Trading Assistant Bot
+    try:
+        from app.bot import shutdown_bot
+        await shutdown_bot()
+        logger.info("✅ Trading Assistant Bot stopped")
+    except Exception as e:
+        logger.warning(f"Bot shutdown error: {e}")
+    
     await shutdown_providers()
     await redis_client.close()
     await engine.dispose()
