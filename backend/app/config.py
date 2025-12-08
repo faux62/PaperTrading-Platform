@@ -52,14 +52,15 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "papertrading"
     POSTGRES_USER: str = "papertrading_user"
     POSTGRES_PASSWORD: str = "dev_password_123"
-    # Optional: full DATABASE_URL from environment (overrides individual settings)
-    DATABASE_URL_ENV: str = ""
+    # Direct DATABASE_URL from environment (for Docker - overrides individual settings)
+    DATABASE_URL: str = ""
     
     @property
-    def DATABASE_URL(self) -> str:
+    def database_url(self) -> str:
+        """Get the async database URL."""
         # Use environment DATABASE_URL if provided (for Docker)
-        if self.DATABASE_URL_ENV:
-            url = self.DATABASE_URL_ENV
+        if self.DATABASE_URL:
+            url = self.DATABASE_URL
             # Ensure it uses asyncpg driver
             if url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
@@ -68,6 +69,12 @@ class Settings(BaseSettings):
     
     @property
     def DATABASE_URL_SYNC(self) -> str:
+        """Get the sync database URL for Alembic."""
+        if self.DATABASE_URL:
+            url = self.DATABASE_URL
+            if "+asyncpg" in url:
+                url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            return url
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
     
     # =========================
@@ -90,9 +97,15 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str = ""
     REDIS_DB: int = 0
+    # Direct REDIS_URL from environment (for Docker - overrides individual settings)
+    REDIS_URL: str = ""
     
     @property
-    def REDIS_URL(self) -> str:
+    def redis_url(self) -> str:
+        """Get the Redis URL."""
+        # Use environment REDIS_URL if provided (for Docker)
+        if self.REDIS_URL:
+            return self.REDIS_URL
         if self.REDIS_PASSWORD:
             return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"

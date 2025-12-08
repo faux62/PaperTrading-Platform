@@ -322,19 +322,23 @@ async def verify_ws_token(token: str) -> Optional[int]:
     from jose import jwt, JWTError
     
     try:
+        logger.debug(f"Verifying WS token, SECRET_KEY starts with: {settings.SECRET_KEY[:10]}...")
         payload = jwt.decode(
             token,
             settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
+            algorithms=["HS256"]
         )
         user_id = int(payload.get("sub"))
         token_type = payload.get("type")
+        logger.debug(f"WS token verified: user_id={user_id}, type={token_type}")
         
         if token_type != "access":
+            logger.warning(f"WS token invalid type: {token_type}")
             return None
         
         return user_id
-    except (JWTError, ValueError):
+    except (JWTError, ValueError) as e:
+        logger.error(f"WS token verification failed: {e}")
         return None
 
 

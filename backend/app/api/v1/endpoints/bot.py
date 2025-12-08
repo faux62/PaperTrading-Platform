@@ -24,7 +24,7 @@ from app.db.models import (
     SignalDirection,
     User,
 )
-from app.api.v1.endpoints.auth import get_current_user
+from app.dependencies import get_current_user
 from app.bot import get_bot_scheduler
 from app.bot.signal_engine import SignalEngine
 

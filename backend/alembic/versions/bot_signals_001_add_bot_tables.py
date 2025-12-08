@@ -1,7 +1,7 @@
 """Add bot signals and reports tables
 
 Revision ID: bot_signals_001
-Revises: 
+Revises: 20251207_add_native_currency
 Create Date: 2025-12-08
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'bot_signals_001'
-down_revision: Union[str, None] = None  # Update this to your latest migration
+down_revision: Union[str, None] = '20251207_add_native_currency'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -96,12 +96,13 @@ def upgrade() -> None:
         ['portfolio_id'], ['id'],
         ondelete='SET NULL'
     )
-    op.create_foreign_key(
-        'fk_bot_signals_source_alert_id',
-        'bot_signals', 'alerts',
-        ['source_alert_id'], ['id'],
-        ondelete='SET NULL'
-    )
+    # Note: FK to alerts table removed - alerts table may not exist yet
+    # op.create_foreign_key(
+    #     'fk_bot_signals_source_alert_id',
+    #     'bot_signals', 'alerts',
+    #     ['source_alert_id'], ['id'],
+    #     ondelete='SET NULL'
+    # )
     op.create_foreign_key(
         'fk_bot_signals_resulting_trade_id',
         'bot_signals', 'trades',
@@ -157,7 +158,7 @@ def downgrade() -> None:
     # Drop foreign keys first
     op.drop_constraint('fk_bot_reports_user_id', 'bot_reports', type_='foreignkey')
     op.drop_constraint('fk_bot_signals_resulting_trade_id', 'bot_signals', type_='foreignkey')
-    op.drop_constraint('fk_bot_signals_source_alert_id', 'bot_signals', type_='foreignkey')
+    # op.drop_constraint('fk_bot_signals_source_alert_id', 'bot_signals', type_='foreignkey')
     op.drop_constraint('fk_bot_signals_portfolio_id', 'bot_signals', type_='foreignkey')
     op.drop_constraint('fk_bot_signals_user_id', 'bot_signals', type_='foreignkey')
     

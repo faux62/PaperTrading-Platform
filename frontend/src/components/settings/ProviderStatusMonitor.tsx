@@ -3,7 +3,7 @@
  * Real-time monitoring of data provider rate limits, health, and budget
  */
 import React, { useState, useEffect } from 'react';
-import { Activity, AlertCircle, CheckCircle, Clock, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle, Clock, TrendingUp, RefreshCw } from 'lucide-react';
 
 interface RateLimitInfo {
   configured: boolean;

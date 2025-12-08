@@ -178,7 +178,7 @@ async def verify_ws_token(token: str) -> Optional[int]:
         payload = jwt.decode(
             token,
             settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
+            algorithms=["HS256"]
         )
         user_id = int(payload.get("sub"))
         token_type = payload.get("type")

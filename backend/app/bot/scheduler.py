@@ -290,11 +290,16 @@ class BotScheduler:
         if not self.scheduler:
             self.initialize()
         
-        trigger = IntervalTrigger(
-            seconds=seconds,
-            minutes=minutes,
-            hours=hours
-        )
+        # Build trigger kwargs with only non-None values
+        trigger_kwargs = {}
+        if seconds is not None:
+            trigger_kwargs['seconds'] = seconds
+        if minutes is not None:
+            trigger_kwargs['minutes'] = minutes
+        if hours is not None:
+            trigger_kwargs['hours'] = hours
+        
+        trigger = IntervalTrigger(**trigger_kwargs)
         
         self.scheduler.add_job(
             func,

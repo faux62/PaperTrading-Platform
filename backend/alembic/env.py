@@ -1,6 +1,7 @@
 """
 Alembic environment configuration for PaperTrading Platform
 """
+import os
 import sys
 from pathlib import Path
 from logging.config import fileConfig
@@ -26,8 +27,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set SQLAlchemy URL from settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
+# Get DATABASE_URL from environment (for Docker) or settings
+# Convert asyncpg URL to sync URL for Alembic
+database_url = os.environ.get("DATABASE_URL", settings.database_url)
+if "+asyncpg" in database_url:
+    database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+config.set_main_option("sqlalchemy.url", database_url)
 
 # Model's MetaData object for 'autogenerate' support
 target_metadata = Base.metadata

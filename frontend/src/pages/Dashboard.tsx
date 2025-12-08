@@ -1,7 +1,9 @@
 /**
- * Dashboard Page
+ * Dashboard Page - Real Data Implementation
  */
+import { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   TrendingDown,
@@ -10,42 +12,71 @@ import {
   Activity,
   ArrowUpRight,
   ArrowDownRight,
+  Plus,
+  Briefcase,
+  RefreshCw,
 } from 'lucide-react';
 import { Layout } from '../components/layout';
-import { Card, CardHeader, CardContent, Badge } from '../components/common';
+import { Card, CardHeader, CardContent, Badge, Button, Spinner } from '../components/common';
+import { portfolioApi, tradingApi, marketApi } from '../services/api';
 
-// Mock data - will be replaced with real API calls
-const portfolioStats = {
-  totalValue: 125432.50,
-  dailyChange: 2987.50,
-  dailyChangePercent: 2.45,
-  unrealizedPL: 5432.50,
-  unrealizedPLPercent: 4.53,
-  cashAvailable: 24567.50,
-  buyingPower: 49135.00,
+// Types
+interface Portfolio {
+  id: number;
+  name: string;
+  cash_balance: number;
+  initial_capital: number;
+  currency: string;
+}
+
+interface Position {
+  id: number;
+  symbol: string;
+  quantity: number;
+  average_cost: number;
+  current_price?: number;
+  market_value?: number;
+  unrealized_pnl?: number;
+  unrealized_pnl_percent?: number;
+}
+
+interface Trade {
+  id: number;
+  symbol: string;
+  trade_type: string;
+  quantity: number;
+  price: number;
+  created_at: string;
+}
+
+interface MarketIndex {
+  name: string;
+  symbol: string;
+  region: string;
+  type: string;
+  value: number;
+  change: number;
+}
+
+interface DashboardStats {
+  totalValue: number;
+  dailyChange: number;
+  dailyChangePercent: number;
+  unrealizedPL: number;
+  unrealizedPLPercent: number;
+  cashAvailable: number;
+  buyingPower: number;
+}
+
+// Region display order and labels
+const REGION_ORDER = ['US', 'EU', 'Asia', 'Crypto', 'Commodities'];
+const REGION_LABELS: Record<string, string> = {
+  US: '🇺🇸 US Markets',
+  EU: '🇪🇺 European Markets', 
+  Asia: '🌏 Asian Markets',
+  Crypto: '₿ Crypto',
+  Commodities: '🏆 Commodities',
 };
-
-const topPositions = [
-  { symbol: 'AAPL', name: 'Apple Inc.', value: 28450.00, change: 3.24, shares: 150 },
-  { symbol: 'MSFT', name: 'Microsoft Corp.', value: 22340.00, change: -1.12, shares: 55 },
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', value: 18230.00, change: 2.87, shares: 12 },
-  { symbol: 'AMZN', name: 'Amazon.com Inc.', value: 15670.00, change: 1.45, shares: 85 },
-  { symbol: 'NVDA', name: 'NVIDIA Corp.', value: 12890.00, change: 5.67, shares: 25 },
-];
-
-const recentTrades = [
-  { id: 1, symbol: 'AAPL', type: 'BUY', shares: 10, price: 189.50, time: '2 hours ago' },
-  { id: 2, symbol: 'TSLA', type: 'SELL', shares: 5, price: 245.30, time: '4 hours ago' },
-  { id: 3, symbol: 'MSFT', type: 'BUY', shares: 15, price: 406.20, time: 'Yesterday' },
-  { id: 4, symbol: 'NVDA', type: 'BUY', shares: 8, price: 515.80, time: 'Yesterday' },
-];
-
-const marketOverview = [
-  { name: 'S&P 500', value: '5,234.18', change: 0.85 },
-  { name: 'NASDAQ', value: '16,428.82', change: 1.24 },
-  { name: 'DOW', value: '38,996.39', change: 0.32 },
-  { name: 'BTC/USD', value: '67,245.00', change: -2.15 },
-];
 
 const StatCard = ({
   title,
@@ -54,6 +85,7 @@ const StatCard = ({
   changePercent,
   icon: Icon,
   iconBg,
+  loading = false,
 }: {
   title: string;
   value: string;
@@ -61,79 +93,298 @@ const StatCard = ({
   changePercent?: number;
   icon: React.ComponentType<{ className?: string }>;
   iconBg: string;
+  loading?: boolean;
 }) => {
   const isPositive = (change ?? 0) >= 0;
   
   return (
     <Card>
       <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-surface-400">{title}</p>
-            <p className="text-2xl font-bold text-white mt-1">{value}</p>
-            {changePercent !== undefined && (
-              <div className="flex items-center gap-1 mt-2">
-                {isPositive ? (
-                  <ArrowUpRight className="w-4 h-4 text-success-400" />
-                ) : (
-                  <ArrowDownRight className="w-4 h-4 text-danger-400" />
-                )}
-                <span
-                  className={clsx(
-                    'text-sm font-medium',
-                    isPositive ? 'text-success-400' : 'text-danger-400'
+        {loading ? (
+          <div className="flex items-center justify-center h-20">
+            <Spinner size="md" />
+          </div>
+        ) : (
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-surface-400">{title}</p>
+              <p className="text-2xl font-bold text-white mt-1">{value}</p>
+              {changePercent !== undefined && (
+                <div className="flex items-center gap-1 mt-2">
+                  {isPositive ? (
+                    <ArrowUpRight className="w-4 h-4 text-success-400" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4 text-danger-400" />
                   )}
-                >
-                  {isPositive ? '+' : ''}{changePercent.toFixed(2)}%
-                </span>
-                {change !== undefined && (
-                  <span className="text-sm text-surface-400 ml-1">
-                    ({isPositive ? '+' : ''}${Math.abs(change).toLocaleString()})
+                  <span
+                    className={clsx(
+                      'text-sm font-medium',
+                      isPositive ? 'text-success-400' : 'text-danger-400'
+                    )}
+                  >
+                    {isPositive ? '+' : ''}{changePercent.toFixed(2)}%
                   </span>
-                )}
-              </div>
-            )}
+                  {change !== undefined && (
+                    <span className="text-sm text-surface-400 ml-1">
+                      ({isPositive ? '+' : ''}${Math.abs(change).toLocaleString()})
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className={clsx('p-3 rounded-lg', iconBg)}>
+              <Icon className="w-6 h-6 text-white" />
+            </div>
           </div>
-          <div className={clsx('p-3 rounded-lg', iconBg)}>
-            <Icon className="w-6 h-6 text-white" />
-          </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
 };
 
+// Empty State Component
+const EmptyState = ({ 
+  title, 
+  description, 
+  actionLabel, 
+  onAction,
+  icon: Icon 
+}: { 
+  title: string; 
+  description: string; 
+  actionLabel?: string;
+  onAction?: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+}) => (
+  <div className="flex flex-col items-center justify-center py-12 text-center">
+    <div className="p-4 bg-surface-800 rounded-full mb-4">
+      <Icon className="w-8 h-8 text-surface-400" />
+    </div>
+    <h3 className="text-lg font-medium text-white mb-2">{title}</h3>
+    <p className="text-surface-400 mb-4 max-w-md">{description}</p>
+    {actionLabel && onAction && (
+      <Button onClick={onAction} className="gap-2">
+        <Plus className="w-4 h-4" />
+        {actionLabel}
+      </Button>
+    )}
+  </div>
+);
+
 const Dashboard = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
+  const [marketIndices, setMarketIndices] = useState<MarketIndex[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalValue: 0,
+    dailyChange: 0,
+    dailyChangePercent: 0,
+    unrealizedPL: 0,
+    unrealizedPLPercent: 0,
+    cashAvailable: 0,
+    buyingPower: 0,
+  });
+
+  const hasPortfolio = portfolios.length > 0;
+  const hasPositions = positions.length > 0;
+
+  // Fetch market indices using public endpoint
+  const fetchMarketIndices = async () => {
+    try {
+      const indicesData = await marketApi.getIndices();
+      
+      const indices: MarketIndex[] = Object.values(indicesData).map((quote: any) => ({
+        name: quote.name,
+        symbol: quote.symbol,
+        region: quote.region || 'Other',
+        type: quote.type || 'index',
+        value: quote.price || 0,
+        change: quote.change_percent || 0,
+      }));
+      
+      setMarketIndices(indices);
+    } catch (error) {
+      console.warn('Failed to fetch market indices:', error);
+      setMarketIndices([]);
+    }
+  };
+
+  // Fetch all dashboard data
+  const fetchDashboardData = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      // Fetch portfolios
+      const portfoliosData = await portfolioApi.getAll();
+      setPortfolios(portfoliosData);
+
+      if (portfoliosData.length > 0) {
+        let totalCash = 0;
+        let allPositions: Position[] = [];
+        let allTrades: Trade[] = [];
+
+        for (const portfolio of portfoliosData) {
+          totalCash += portfolio.cash_balance || 0;
+
+          try {
+            const positionsData = await portfolioApi.getPositions(portfolio.id);
+            allPositions = [...allPositions, ...positionsData];
+          } catch (e) {
+            console.warn(`Failed to fetch positions for portfolio ${portfolio.id}`);
+          }
+
+          try {
+            const tradesData = await tradingApi.getTradeHistory(portfolio.id);
+            allTrades = [...allTrades, ...tradesData.slice(0, 5)];
+          } catch (e) {
+            console.warn(`Failed to fetch trades for portfolio ${portfolio.id}`);
+          }
+        }
+
+        // Update positions with current prices
+        if (allPositions.length > 0) {
+          const symbols = [...new Set(allPositions.map(p => p.symbol))];
+          try {
+            const quotes = await marketApi.getQuotes(symbols);
+            allPositions = allPositions.map(pos => {
+              const quote = quotes[pos.symbol];
+              if (quote) {
+                const currentPrice = quote.price || quote.regularMarketPrice || pos.average_cost;
+                const marketValue = currentPrice * pos.quantity;
+                const costBasis = pos.average_cost * pos.quantity;
+                const unrealizedPnl = marketValue - costBasis;
+                const unrealizedPnlPercent = costBasis > 0 ? (unrealizedPnl / costBasis) * 100 : 0;
+                return {
+                  ...pos,
+                  current_price: currentPrice,
+                  market_value: marketValue,
+                  unrealized_pnl: unrealizedPnl,
+                  unrealized_pnl_percent: unrealizedPnlPercent,
+                };
+              }
+              return pos;
+            });
+          } catch (e) {
+            console.warn('Failed to fetch quotes for positions');
+          }
+        }
+
+        setPositions(allPositions);
+        setRecentTrades(allTrades.slice(0, 5));
+
+        // Calculate stats
+        const totalMarketValue = allPositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
+        const totalCostBasis = allPositions.reduce((sum, p) => sum + (p.average_cost * p.quantity), 0);
+        const totalUnrealizedPL = totalMarketValue - totalCostBasis;
+        const totalValue = totalCash + totalMarketValue;
+
+        setStats({
+          totalValue,
+          dailyChange: 0,
+          dailyChangePercent: 0,
+          unrealizedPL: totalUnrealizedPL,
+          unrealizedPLPercent: totalCostBasis > 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0,
+          cashAvailable: totalCash,
+          buyingPower: totalCash * 2,
+        });
+      }
+
+      await fetchMarketIndices();
+
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+    const interval = setInterval(() => fetchMarketIndices(), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffDays === 1) return 'Yesterday';
+    return `${diffDays} days ago`;
+  };
+
+  const topPositions = [...positions]
+    .sort((a, b) => (b.market_value || 0) - (a.market_value || 0))
+    .slice(0, 5);
+
   return (
     <Layout title="Dashboard">
+      {/* Refresh Button */}
+      <div className="flex justify-end mb-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fetchDashboardData(true)}
+          disabled={refreshing}
+          className="gap-2"
+        >
+          <RefreshCw className={clsx('w-4 h-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <StatCard
           title="Portfolio Value"
-          value={`$${portfolioStats.totalValue.toLocaleString()}`}
-          change={portfolioStats.dailyChange}
-          changePercent={portfolioStats.dailyChangePercent}
+          value={hasPortfolio ? formatCurrency(stats.totalValue) : '$0.00'}
+          changePercent={hasPortfolio && stats.dailyChangePercent !== 0 ? stats.dailyChangePercent : undefined}
           icon={DollarSign}
           iconBg="bg-primary-500/20"
+          loading={loading}
         />
         <StatCard
           title="Unrealized P&L"
-          value={`${portfolioStats.unrealizedPL >= 0 ? '+' : ''}$${portfolioStats.unrealizedPL.toLocaleString()}`}
-          changePercent={portfolioStats.unrealizedPLPercent}
+          value={hasPositions ? `${stats.unrealizedPL >= 0 ? '+' : ''}${formatCurrency(stats.unrealizedPL)}` : '$0.00'}
+          changePercent={hasPositions ? stats.unrealizedPLPercent : undefined}
           icon={TrendingUp}
           iconBg="bg-success-500/20"
+          loading={loading}
         />
         <StatCard
           title="Cash Available"
-          value={`$${portfolioStats.cashAvailable.toLocaleString()}`}
+          value={hasPortfolio ? formatCurrency(stats.cashAvailable) : '$0.00'}
           icon={PieChart}
           iconBg="bg-secondary-500/20"
+          loading={loading}
         />
         <StatCard
           title="Buying Power"
-          value={`$${portfolioStats.buyingPower.toLocaleString()}`}
+          value={hasPortfolio ? formatCurrency(stats.buyingPower) : '$0.00'}
           icon={Activity}
           iconBg="bg-warning-500/20"
+          loading={loading}
         />
       </div>
 
@@ -145,83 +396,126 @@ const Dashboard = () => {
             <h3 className="text-lg font-semibold text-white">Top Positions</h3>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="border-b border-surface-700">
-                  <tr>
-                    <th className="text-left text-sm font-medium text-surface-400 p-4">Symbol</th>
-                    <th className="text-right text-sm font-medium text-surface-400 p-4">Shares</th>
-                    <th className="text-right text-sm font-medium text-surface-400 p-4">Value</th>
-                    <th className="text-right text-sm font-medium text-surface-400 p-4">Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topPositions.map((position) => (
-                    <tr
-                      key={position.symbol}
-                      className="border-b border-surface-700/50 hover:bg-surface-800/50 transition-colors"
-                    >
-                      <td className="p-4">
-                        <div>
-                          <p className="font-medium text-white">{position.symbol}</p>
-                          <p className="text-sm text-surface-400">{position.name}</p>
-                        </div>
-                      </td>
-                      <td className="p-4 text-right text-surface-300">
-                        {position.shares}
-                      </td>
-                      <td className="p-4 text-right font-medium text-white">
-                        ${position.value.toLocaleString()}
-                      </td>
-                      <td className="p-4 text-right">
-                        <Badge
-                          color={position.change >= 0 ? 'success' : 'danger'}
-                        >
-                          {position.change >= 0 ? '+' : ''}{position.change}%
-                        </Badge>
-                      </td>
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Spinner size="lg" />
+              </div>
+            ) : !hasPortfolio ? (
+              <EmptyState
+                icon={Briefcase}
+                title="No Portfolio Yet"
+                description="Create your first portfolio to start tracking your positions and trades."
+                actionLabel="Create Portfolio"
+                onAction={() => navigate('/portfolio')}
+              />
+            ) : !hasPositions ? (
+              <EmptyState
+                icon={PieChart}
+                title="No Positions"
+                description="You don't have any open positions yet. Start trading to see your positions here."
+                actionLabel="Start Trading"
+                onAction={() => navigate('/trading')}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-surface-700">
+                    <tr>
+                      <th className="text-left text-sm font-medium text-surface-400 p-4">Symbol</th>
+                      <th className="text-right text-sm font-medium text-surface-400 p-4">Shares</th>
+                      <th className="text-right text-sm font-medium text-surface-400 p-4">Value</th>
+                      <th className="text-right text-sm font-medium text-surface-400 p-4">P&L</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {topPositions.map((position) => (
+                      <tr
+                        key={position.id}
+                        className="border-b border-surface-700/50 hover:bg-surface-800/50 transition-colors"
+                      >
+                        <td className="p-4">
+                          <p className="font-medium text-white">{position.symbol}</p>
+                          <p className="text-sm text-surface-400">
+                            Avg: {formatCurrency(position.average_cost)}
+                          </p>
+                        </td>
+                        <td className="p-4 text-right text-surface-300">
+                          {position.quantity}
+                        </td>
+                        <td className="p-4 text-right font-medium text-white">
+                          {formatCurrency(position.market_value || position.average_cost * position.quantity)}
+                        </td>
+                        <td className="p-4 text-right">
+                          <Badge color={(position.unrealized_pnl || 0) >= 0 ? 'success' : 'danger'}>
+                            {(position.unrealized_pnl_percent || 0) >= 0 ? '+' : ''}
+                            {(position.unrealized_pnl_percent || 0).toFixed(2)}%
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Market Overview */}
-        <Card>
+        {/* Market Overview - Grouped by Region */}
+        <Card className="lg:col-span-1 lg:row-span-2">
           <CardHeader>
             <h3 className="text-lg font-semibold text-white">Market Overview</h3>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {marketOverview.map((market) => (
-                <div
-                  key={market.name}
-                  className="flex items-center justify-between p-3 bg-surface-800/50 rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium text-white">{market.name}</p>
-                    <p className="text-sm text-surface-400">{market.value}</p>
-                  </div>
-                  <div
-                    className={clsx(
-                      'flex items-center gap-1',
-                      market.change >= 0 ? 'text-success-400' : 'text-danger-400'
-                    )}
-                  >
-                    {market.change >= 0 ? (
-                      <TrendingUp className="w-4 h-4" />
-                    ) : (
-                      <TrendingDown className="w-4 h-4" />
-                    )}
-                    <span className="font-medium">
-                      {market.change >= 0 ? '+' : ''}{market.change}%
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <CardContent className="max-h-[600px] overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Spinner size="lg" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {REGION_ORDER.map((region) => {
+                  const regionIndices = marketIndices.filter(m => m.region === region);
+                  if (regionIndices.length === 0) return null;
+                  
+                  return (
+                    <div key={region}>
+                      <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">
+                        {REGION_LABELS[region] || region}
+                      </p>
+                      <div className="space-y-2">
+                        {regionIndices.map((market) => (
+                          <div
+                            key={market.symbol}
+                            className="flex items-center justify-between p-2 bg-surface-800/50 rounded-lg"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-white text-sm truncate">{market.name}</p>
+                              <p className="text-xs text-surface-400">
+                                {market.value > 0 ? market.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                              </p>
+                            </div>
+                            <div
+                              className={clsx(
+                                'flex items-center gap-1 ml-2',
+                                market.change >= 0 ? 'text-success-400' : 'text-danger-400'
+                              )}
+                            >
+                              {market.change >= 0 ? (
+                                <TrendingUp className="w-3 h-3" />
+                              ) : (
+                                <TrendingDown className="w-3 h-3" />
+                              )}
+                              <span className="font-medium text-sm">
+                                {market.value > 0 ? `${market.change >= 0 ? '+' : ''}${market.change.toFixed(2)}%` : '—'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -232,39 +526,63 @@ const Dashboard = () => {
           <h3 className="text-lg font-semibold text-white">Recent Trades</h3>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-surface-700">
-                <tr>
-                  <th className="text-left text-sm font-medium text-surface-400 p-4">Symbol</th>
-                  <th className="text-left text-sm font-medium text-surface-400 p-4">Type</th>
-                  <th className="text-right text-sm font-medium text-surface-400 p-4">Shares</th>
-                  <th className="text-right text-sm font-medium text-surface-400 p-4">Price</th>
-                  <th className="text-right text-sm font-medium text-surface-400 p-4">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentTrades.map((trade) => (
-                  <tr
-                    key={trade.id}
-                    className="border-b border-surface-700/50 hover:bg-surface-800/50 transition-colors"
-                  >
-                    <td className="p-4 font-medium text-white">{trade.symbol}</td>
-                    <td className="p-4">
-                      <Badge color={trade.type === 'BUY' ? 'success' : 'danger'}>
-                        {trade.type}
-                      </Badge>
-                    </td>
-                    <td className="p-4 text-right text-surface-300">{trade.shares}</td>
-                    <td className="p-4 text-right font-medium text-white">
-                      ${trade.price.toFixed(2)}
-                    </td>
-                    <td className="p-4 text-right text-surface-400">{trade.time}</td>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner size="lg" />
+            </div>
+          ) : !hasPortfolio ? (
+            <EmptyState
+              icon={Activity}
+              title="No Trades Yet"
+              description="Create a portfolio and start trading to see your trade history."
+              actionLabel="Create Portfolio"
+              onAction={() => navigate('/portfolio')}
+            />
+          ) : recentTrades.length === 0 ? (
+            <EmptyState
+              icon={Activity}
+              title="No Recent Trades"
+              description="You haven't made any trades yet. Go to the trading page to place your first order."
+              actionLabel="Start Trading"
+              onAction={() => navigate('/trading')}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-surface-700">
+                  <tr>
+                    <th className="text-left text-sm font-medium text-surface-400 p-4">Symbol</th>
+                    <th className="text-left text-sm font-medium text-surface-400 p-4">Type</th>
+                    <th className="text-right text-sm font-medium text-surface-400 p-4">Shares</th>
+                    <th className="text-right text-sm font-medium text-surface-400 p-4">Price</th>
+                    <th className="text-right text-sm font-medium text-surface-400 p-4">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {recentTrades.map((trade) => (
+                    <tr
+                      key={trade.id}
+                      className="border-b border-surface-700/50 hover:bg-surface-800/50 transition-colors"
+                    >
+                      <td className="p-4 font-medium text-white">{trade.symbol}</td>
+                      <td className="p-4">
+                        <Badge color={trade.trade_type?.toLowerCase() === 'buy' ? 'success' : 'danger'}>
+                          {trade.trade_type?.toUpperCase() || 'N/A'}
+                        </Badge>
+                      </td>
+                      <td className="p-4 text-right text-surface-300">{trade.quantity}</td>
+                      <td className="p-4 text-right font-medium text-white">
+                        {formatCurrency(trade.price)}
+                      </td>
+                      <td className="p-4 text-right text-surface-400">
+                        {formatTime(trade.created_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </Layout>

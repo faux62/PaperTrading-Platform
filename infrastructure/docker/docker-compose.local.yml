@@ -18,7 +18,7 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=production
-      - DATABASE_URL_ENV=postgresql://papertrading:papertrading@postgres:5432/papertrading
+      - DATABASE_URL_ENV=postgresql://papertrading_user:dev_password_123@postgres:5432/papertrading
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
@@ -73,12 +73,12 @@ services:
 
   # ==================== PostgreSQL ====================
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: papertrading-postgres
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=papertrading
-      - POSTGRES_PASSWORD=papertrading
+      - POSTGRES_USER=papertrading_user
+      - POSTGRES_PASSWORD=dev_password_123
       - POSTGRES_DB=papertrading
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
@@ -86,7 +86,7 @@ services:
     networks:
       - papertrading-local
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U papertrading -d papertrading"]
+      test: ["CMD-SHELL", "pg_isready -U papertrading_user -d papertrading"]
       interval: 10s
       timeout: 5s
       retries: 5

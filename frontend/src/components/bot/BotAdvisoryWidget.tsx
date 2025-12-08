@@ -9,7 +9,6 @@ import {
   FileText, 
   ChevronRight,
   RefreshCw,
-  Settings,
   TrendingUp,
   AlertTriangle,
   CheckCircle2

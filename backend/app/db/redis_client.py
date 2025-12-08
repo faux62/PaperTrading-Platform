@@ -16,14 +16,15 @@ class RedisClient:
     async def initialize(self):
         """Initialize Redis connection."""
         try:
+            redis_url = settings.redis_url
             self._client = redis.from_url(
-                settings.REDIS_URL,
+                redis_url,
                 encoding="utf-8",
                 decode_responses=True,
             )
             # Test connection
             await self._client.ping()
-            logger.info(f"✅ Redis connected at {settings.REDIS_HOST}:{settings.REDIS_PORT}")
+            logger.info(f"✅ Redis connected: {redis_url.split('@')[-1] if '@' in redis_url else redis_url}")
         except Exception as e:
             logger.error(f"❌ Redis connection failed: {e}")
             raise

@@ -76,6 +76,98 @@ def _has_providers() -> bool:
     return len(failover_manager._providers) > 0
 
 
+# Market indices configuration - Global coverage
+MARKET_INDICES = {
+    # US Indices
+    "^GSPC": {"name": "S&P 500", "region": "US", "type": "index"},
+    "^IXIC": {"name": "NASDAQ", "region": "US", "type": "index"},
+    "^DJI": {"name": "Dow Jones", "region": "US", "type": "index"},
+    "^RUT": {"name": "Russell 2000", "region": "US", "type": "index"},
+    "^VIX": {"name": "VIX", "region": "US", "type": "volatility"},
+    # European Indices
+    "^FTSE": {"name": "FTSE 100", "region": "EU", "type": "index"},
+    "^GDAXI": {"name": "DAX", "region": "EU", "type": "index"},
+    "^FCHI": {"name": "CAC 40", "region": "EU", "type": "index"},
+    "^STOXX50E": {"name": "Euro Stoxx 50", "region": "EU", "type": "index"},
+    "FTSEMIB.MI": {"name": "FTSE MIB", "region": "EU", "type": "index"},
+    # Asian Indices
+    "^N225": {"name": "Nikkei 225", "region": "Asia", "type": "index"},
+    "^HSI": {"name": "Hang Seng", "region": "Asia", "type": "index"},
+    "000001.SS": {"name": "Shanghai", "region": "Asia", "type": "index"},
+    # Crypto
+    "BTC-USD": {"name": "Bitcoin", "region": "Crypto", "type": "crypto"},
+    "ETH-USD": {"name": "Ethereum", "region": "Crypto", "type": "crypto"},
+    # Commodities
+    "GC=F": {"name": "Gold", "region": "Commodities", "type": "commodity"},
+    "CL=F": {"name": "Crude Oil", "region": "Commodities", "type": "commodity"},
+}
+
+
+@router.get("/indices")
+async def get_market_indices(
+    region: Optional[str] = Query(None, description="Filter by region: US, EU, Asia, Crypto, Commodities")
+):
+    """
+    Get major market indices - PUBLIC ENDPOINT (no auth required).
+    Returns global indices organized by region.
+    
+    Regions: US, EU, Asia, Crypto, Commodities
+    """
+    # Filter indices by region if specified
+    if region:
+        indices_to_fetch = [k for k, v in MARKET_INDICES.items() if v["region"].lower() == region.lower()]
+    else:
+        # Default: main indices from each region
+        indices_to_fetch = ["^GSPC", "^IXIC", "^DJI", "^FTSE", "^GDAXI", "FTSEMIB.MI", "^N225", "BTC-USD", "ETH-USD", "GC=F", "CL=F"]
+    
+    results = {}
+    
+    # Try real providers
+    if _has_providers():
+        for symbol in indices_to_fetch:
+            try:
+                info = MARKET_INDICES.get(symbol, {})
+                market_type = MarketType.CRYPTO if info.get("type") == "crypto" else MarketType.INDEX
+                
+                quote = await orchestrator.get_quote(
+                    symbol,
+                    market_type=market_type,
+                    force_refresh=False,
+                )
+                
+                results[symbol] = {
+                    "symbol": symbol,
+                    "name": info.get("name", symbol),
+                    "region": info.get("region", "Other"),
+                    "type": info.get("type", "index"),
+                    "price": float(quote.price),
+                    "change": float(quote.change) if quote.change else 0,
+                    "change_percent": float(quote.change_percent) if quote.change_percent else 0,
+                    "timestamp": quote.timestamp.isoformat(),
+                    "source": quote.provider,
+                }
+            except Exception as e:
+                logger.warning(f"Failed to fetch {symbol}: {e}")
+    
+    # Fill in any missing with placeholder
+    for symbol in indices_to_fetch:
+        if symbol not in results:
+            info = MARKET_INDICES.get(symbol, {})
+            results[symbol] = {
+                "symbol": symbol,
+                "name": info.get("name", symbol),
+                "region": info.get("region", "Other"),
+                "type": info.get("type", "index"),
+                "price": 0,
+                "change": 0,
+                "change_percent": 0,
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "unavailable",
+            }
+    
+    return results
+
+
 @router.get("/quote/{symbol}")
 async def get_quote(
     symbol: str,

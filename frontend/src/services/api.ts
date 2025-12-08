@@ -262,6 +262,12 @@ export const marketApi = {
     return response.data;
   },
 
+  // Public endpoint - no auth required
+  getIndices: async () => {
+    const response = await api.get('/market/indices');
+    return response.data;
+  },
+
   getHistorical: async (symbol: string, period: string = '1M') => {
     const response = await api.get(`/market/history/${symbol}`, { params: { period } });
     return response.data;
