@@ -19,6 +19,7 @@ from app.db.repositories.trade import TradeRepository
 from app.core.trading.order_manager import OrderManager, OrderRequest
 from app.core.trading.execution import OrderExecutor, MarketCondition
 from app.core.trading.pnl_calculator import PnLCalculator, TimeFrame
+from app.core.currency_service import CurrencyService
 
 router = APIRouter()
 
@@ -193,8 +194,12 @@ async def create_order(
     order_manager = OrderManager(db)
     executor = OrderExecutor(db)
     repo = TradeRepository(db)
+    currency_service = CurrencyService(db)
     
     try:
+        # Determine the symbol's native currency (IBKR-style)
+        native_currency = await currency_service.get_symbol_currency(request.symbol.upper())
+        
         order_request = OrderRequest(
             portfolio_id=request.portfolio_id,
             symbol=request.symbol.upper(),
@@ -203,7 +208,8 @@ async def create_order(
             order_type=request.order_type if isinstance(request.order_type, OrderType) else OrderType(request.order_type),
             limit_price=request.limit_price,
             stop_price=request.stop_price,
-            notes=request.notes
+            notes=request.notes,
+            native_currency=native_currency  # Pass native currency to order
         )
         
         result = await order_manager.create_order(order_request)

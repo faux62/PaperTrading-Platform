@@ -16,8 +16,10 @@ from sqlalchemy import select, update
 from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.portfolio import Portfolio
 from app.db.models.position import Position
+from app.db.models.cash_balance import CashBalance
 from app.core.portfolio.service import PortfolioService
 from app.core.portfolio.risk_profiles import get_risk_profile
+from app.core.currency_service import CurrencyService
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,7 @@ class OrderRequest:
     stop_price: Optional[Decimal] = None
     exchange: Optional[str] = None
     notes: Optional[str] = None
+    native_currency: str = "USD"  # Symbol's native currency (IBKR-style)
     
     def __post_init__(self):
         """Validate order request."""
@@ -121,6 +124,7 @@ class OrderManager:
                 portfolio_id=request.portfolio_id,
                 symbol=request.symbol.upper(),
                 exchange=request.exchange,
+                native_currency=request.native_currency,  # IBKR-style: track trade's native currency
                 trade_type=request.trade_type,
                 order_type=request.order_type,
                 quantity=request.quantity,
@@ -173,17 +177,31 @@ class OrderManager:
             errors.append(f"Portfolio {request.portfolio_id} not found")
             return errors
         
-        # For buy orders, check available funds
+        # For buy orders, check available funds in the symbol's native currency
         if request.trade_type == TradeType.BUY:
             # Estimate order value (use limit price if available, otherwise we need current price)
             estimated_price = request.limit_price or await self._get_estimated_price(request.symbol)
             if estimated_price:
                 estimated_value = request.quantity * estimated_price
                 
-                if estimated_value > portfolio.cash_balance:
+                # Get the symbol's native currency (IBKR-style)
+                currency_service = CurrencyService(self.db)
+                symbol_currency = await currency_service.get_symbol_currency(request.symbol)
+                
+                # Get cash balance in that currency
+                result = await self.db.execute(
+                    select(CashBalance).where(
+                        CashBalance.portfolio_id == request.portfolio_id,
+                        CashBalance.currency == symbol_currency
+                    )
+                )
+                cash_balance = result.scalar_one_or_none()
+                available_balance = cash_balance.balance if cash_balance else Decimal("0")
+                
+                if estimated_value > available_balance:
                     errors.append(
-                        f"Insufficient funds: need ${estimated_value:.2f}, "
-                        f"available ${portfolio.cash_balance:.2f}"
+                        f"Insufficient {symbol_currency} funds: need {estimated_value:.2f} {symbol_currency}, "
+                        f"available {available_balance:.2f} {symbol_currency}"
                     )
         
         # For sell orders, check available shares

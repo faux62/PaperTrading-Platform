@@ -4,13 +4,14 @@
  * Machine Learning insights dashboard page
  */
 import React from 'react';
+import { Layout } from '../components/layout';
 import { MLInsightsPanel } from '../components/ml';
 
 const MLInsights: React.FC = () => {
   return (
-    <div className="container mx-auto px-4 py-6">
+    <Layout title="ML Insights">
       <MLInsightsPanel />
-    </div>
+    </Layout>
   );
 };
 

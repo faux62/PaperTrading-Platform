@@ -431,3 +431,278 @@ async def get_provider_status(
         "total_registered": len(providers),
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+@router.get("/movers/gainers")
+async def get_top_gainers(
+    limit: int = 10,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get top gaining stocks for the day."""
+    try:
+        import yfinance as yf
+        import pandas as pd
+        
+        # Core stocks to check - smaller list for faster response
+        active_symbols = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM',
+            'V', 'UNH', 'HD', 'MA', 'NFLX', 'ADBE', 'CRM', 'AMD', 'INTC',
+            'ORCL', 'CSCO', 'BA', 'CAT', 'WMT', 'KO', 'PEP', 'MCD'
+        ]
+        
+        quotes = []
+        
+        # Use yf.download which is faster than individual ticker.info calls
+        try:
+            # Use 5d to ensure we have data even over weekends
+            data = yf.download(active_symbols, period='5d', progress=False, threads=True)
+            
+            if not data.empty:
+                # Get the last two UNIQUE closes to calculate change
+                for symbol in active_symbols:
+                    try:
+                        if isinstance(data.columns, pd.MultiIndex):
+                            close_data = data['Close'][symbol].dropna()
+                            volume_data = data['Volume'][symbol]
+                        else:
+                            close_data = data['Close'].dropna()
+                            volume_data = data['Volume']
+                        
+                        if len(close_data) >= 2:
+                            current_price = float(close_data.iloc[-1])
+                            # Find previous different close (skip duplicates from market closed days)
+                            prev_price = current_price
+                            for i in range(2, min(len(close_data) + 1, 6)):
+                                prev_price = float(close_data.iloc[-i])
+                                if abs(prev_price - current_price) > 0.001:
+                                    break
+                            
+                            # If all prices are the same, use the oldest one
+                            if abs(prev_price - current_price) < 0.001:
+                                prev_price = float(close_data.iloc[0])
+                            
+                            change = current_price - prev_price
+                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
+                            volume = int(volume_data.iloc[-1]) if not pd.isna(volume_data.iloc[-1]) else 0
+                            
+                            if change_pct > 0.1:  # Only show meaningful gains
+                                quotes.append({
+                                    "symbol": symbol,
+                                    "name": symbol,
+                                    "price": round(current_price, 2),
+                                    "change": round(change, 2),
+                                    "change_percent": round(change_pct, 2),
+                                    "volume": volume,
+                                })
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"yf.download failed: {e}")
+        
+        # Sort by change_percent descending
+        quotes.sort(key=lambda x: x['change_percent'], reverse=True)
+        return {"gainers": quotes[:limit], "source": "calculated"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching gainers: {str(e)}")
+
+
+@router.get("/movers/losers")
+async def get_top_losers(
+    limit: int = 10,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get top losing stocks for the day."""
+    try:
+        import yfinance as yf
+        import pandas as pd
+        
+        # Core stocks to check
+        active_symbols = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM',
+            'V', 'UNH', 'HD', 'MA', 'NFLX', 'ADBE', 'CRM', 'AMD', 'INTC',
+            'ORCL', 'CSCO', 'BA', 'CAT', 'WMT', 'KO', 'PEP', 'MCD'
+        ]
+        
+        quotes = []
+        
+        try:
+            # Use 5d to ensure we have data even over weekends
+            data = yf.download(active_symbols, period='5d', progress=False, threads=True)
+            
+            if not data.empty:
+                for symbol in active_symbols:
+                    try:
+                        if isinstance(data.columns, pd.MultiIndex):
+                            close_data = data['Close'][symbol].dropna()
+                            volume_data = data['Volume'][symbol]
+                        else:
+                            close_data = data['Close'].dropna()
+                            volume_data = data['Volume']
+                        
+                        if len(close_data) >= 2:
+                            current_price = float(close_data.iloc[-1])
+                            # Find previous different close
+                            prev_price = current_price
+                            for i in range(2, min(len(close_data) + 1, 6)):
+                                prev_price = float(close_data.iloc[-i])
+                                if abs(prev_price - current_price) > 0.001:
+                                    break
+                            
+                            if abs(prev_price - current_price) < 0.001:
+                                prev_price = float(close_data.iloc[0])
+                            
+                            change = current_price - prev_price
+                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
+                            volume = int(volume_data.iloc[-1]) if not pd.isna(volume_data.iloc[-1]) else 0
+                            
+                            if change_pct < -0.1:  # Only show meaningful losses
+                                quotes.append({
+                                    "symbol": symbol,
+                                    "name": symbol,
+                                    "price": round(current_price, 2),
+                                    "change": round(change, 2),
+                                    "change_percent": round(change_pct, 2),
+                                    "volume": volume,
+                                })
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"yf.download failed: {e}")
+        
+        # Sort by change_percent ascending (most negative first)
+        quotes.sort(key=lambda x: x['change_percent'])
+        return {"losers": quotes[:limit], "source": "calculated"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching losers: {str(e)}")
+
+
+@router.get("/movers/most-active")
+async def get_most_active(
+    limit: int = 10,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get most actively traded stocks by volume."""
+    try:
+        import yfinance as yf
+        import pandas as pd
+        
+        # Core stocks to check
+        active_symbols = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM',
+            'V', 'UNH', 'HD', 'MA', 'NFLX', 'ADBE', 'CRM', 'AMD', 'INTC',
+            'ORCL', 'CSCO', 'BA', 'CAT', 'WMT', 'KO', 'PEP', 'MCD', 'SPY', 'QQQ'
+        ]
+        
+        quotes = []
+        
+        try:
+            data = yf.download(active_symbols, period='2d', progress=False, threads=True)
+            
+            if not data.empty:
+                for symbol in active_symbols:
+                    try:
+                        if isinstance(data.columns, pd.MultiIndex):
+                            close_data = data['Close'][symbol]
+                            volume_data = data['Volume'][symbol]
+                        else:
+                            close_data = data['Close']
+                            volume_data = data['Volume']
+                        
+                        if len(close_data) >= 2 and not pd.isna(close_data.iloc[-1]):
+                            current_price = float(close_data.iloc[-1])
+                            prev_price = float(close_data.iloc[-2])
+                            change = current_price - prev_price
+                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
+                            volume = float(volume_data.iloc[-1])
+                            
+                            if volume > 0:
+                                quotes.append({
+                                    "symbol": symbol,
+                                    "name": symbol,
+                                    "price": round(current_price, 2),
+                                    "change": round(change, 2),
+                                    "change_percent": round(change_pct, 2),
+                                    "volume": int(volume),
+                                })
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"yf.download failed: {e}")
+        
+        # Sort by volume descending
+        quotes.sort(key=lambda x: x['volume'], reverse=True)
+        return {"most_active": quotes[:limit], "source": "calculated"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching most active: {str(e)}")
+
+
+@router.get("/movers/trending")
+async def get_trending(
+    limit: int = 10,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get trending stocks based on unusual volume and price movement."""
+    try:
+        import yfinance as yf
+        import pandas as pd
+        
+        # Core stocks to check - mix of popular and volatile stocks
+        trending_candidates = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD',
+            'NFLX', 'PLTR', 'SOFI', 'RIVN', 'NIO', 'COIN', 'HOOD',
+            'RBLX', 'SNAP', 'UBER', 'ABNB', 'ROKU', 'CRWD', 'NET'
+        ]
+        
+        quotes = []
+        
+        try:
+            # Get 5 days to calculate average volume
+            data = yf.download(trending_candidates, period='5d', progress=False, threads=True)
+            
+            if not data.empty:
+                for symbol in trending_candidates:
+                    try:
+                        if isinstance(data.columns, pd.MultiIndex):
+                            close_data = data['Close'][symbol]
+                            volume_data = data['Volume'][symbol]
+                        else:
+                            close_data = data['Close']
+                            volume_data = data['Volume']
+                        
+                        if len(close_data) >= 2 and not pd.isna(close_data.iloc[-1]):
+                            current_price = float(close_data.iloc[-1])
+                            prev_price = float(close_data.iloc[-2])
+                            change = current_price - prev_price
+                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
+                            volume = float(volume_data.iloc[-1])
+                            avg_volume = float(volume_data.mean())
+                            
+                            volume_ratio = volume / avg_volume if avg_volume > 0 else 0
+                            trending_score = (volume_ratio * 0.6) + (abs(change_pct) * 0.4)
+                            
+                            if volume > 0:
+                                quotes.append({
+                                    "symbol": symbol,
+                                    "name": symbol,
+                                    "price": round(current_price, 2),
+                                    "change": round(change, 2),
+                                    "change_percent": round(change_pct, 2),
+                                    "volume": int(volume),
+                                    "avg_volume": int(avg_volume),
+                                    "volume_ratio": round(volume_ratio, 2),
+                                    "trending_score": round(trending_score, 2),
+                                })
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"yf.download failed: {e}")
+        
+        # Sort by trending score descending
+        quotes.sort(key=lambda x: x['trending_score'], reverse=True)
+        return {"trending": quotes[:limit], "source": "calculated"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching trending: {str(e)}")

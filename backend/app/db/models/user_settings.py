@@ -53,6 +53,7 @@ class UserSettings(Base):
     api_key_intrinio = Column(Text, nullable=True)
     
     # No API Key Required (stored for reference only)
+    api_key_yahoo_old = Column('api_key_yahoo_old', Text, nullable=True)  # Legacy column from migration
     api_key_yfinance = Column(Text, nullable=True)
     api_key_stooq = Column(Text, nullable=True)
     api_key_investingcom = Column(Text, nullable=True)

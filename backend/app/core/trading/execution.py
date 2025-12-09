@@ -3,6 +3,7 @@ PaperTrading Platform - Simulated Execution Engine
 
 Simulates realistic order execution with price slippage, partial fills,
 bid/ask spread, commissions, and market conditions simulation.
+IBKR-style multi-currency support.
 """
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -13,11 +14,12 @@ import random
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, and_
 
 from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.portfolio import Portfolio
 from app.db.models.position import Position
+from app.db.models.cash_balance import CashBalance
 
 logger = logging.getLogger(__name__)
 
@@ -657,9 +659,37 @@ class ExecutionEngine:
         
         return total, breakdown
     
+    async def _get_or_create_cash_balance(
+        self, 
+        portfolio_id: int, 
+        currency: str
+    ) -> CashBalance:
+        """Get or create a cash balance for a specific currency (IBKR-style)."""
+        result = await self.db.execute(
+            select(CashBalance).where(
+                and_(
+                    CashBalance.portfolio_id == portfolio_id,
+                    CashBalance.currency == currency
+                )
+            )
+        )
+        balance = result.scalar_one_or_none()
+        
+        if not balance:
+            balance = CashBalance(
+                portfolio_id=portfolio_id,
+                currency=currency,
+                balance=Decimal("0.00")
+            )
+            self.db.add(balance)
+            await self.db.flush()
+        
+        return balance
+    
     async def _update_portfolio_and_positions(self, trade: Trade) -> None:
         """
         Update portfolio cash and positions after execution.
+        IBKR-style: Uses multi-currency cash balances.
         """
         # Get portfolio
         result = await self.db.execute(
@@ -670,25 +700,45 @@ class ExecutionEngine:
         if not portfolio:
             raise ValueError(f"Portfolio {trade.portfolio_id} not found")
         
+        # Determine the currency of the trade
+        # Use trade's native_currency, or default to portfolio currency
+        trade_currency = trade.native_currency or portfolio.currency or "USD"
+        
         total_cost = trade.total_value + trade.commission
         
+        # Get the cash balance for this currency
+        cash_balance = await self._get_or_create_cash_balance(
+            trade.portfolio_id, 
+            trade_currency
+        )
+        
         if trade.trade_type == TradeType.BUY:
-            # Deduct from cash
-            portfolio.cash_balance -= total_cost
+            # Deduct from currency-specific cash balance
+            cash_balance.balance -= total_cost
+            
+            # Also update legacy cash_balance for backwards compatibility
+            # (only if same currency as portfolio base)
+            if trade_currency == portfolio.currency:
+                portfolio.cash_balance -= total_cost
             
             # Add or update position
-            await self._add_to_position(trade)
+            await self._add_to_position(trade, trade_currency)
             
         else:  # SELL
-            # Add to cash
-            portfolio.cash_balance += (trade.total_value - trade.commission)
+            # Add to currency-specific cash balance
+            cash_balance.balance += (trade.total_value - trade.commission)
+            
+            # Update legacy field
+            if trade_currency == portfolio.currency:
+                portfolio.cash_balance += (trade.total_value - trade.commission)
             
             # Reduce position
             await self._reduce_position(trade)
         
+        cash_balance.updated_at = datetime.utcnow()
         await self.db.flush()
     
-    async def _add_to_position(self, trade: Trade) -> None:
+    async def _add_to_position(self, trade: Trade, currency: str) -> None:
         """Add bought shares to position."""
         # Check for existing position
         result = await self.db.execute(
@@ -718,6 +768,7 @@ class ExecutionEngine:
                 avg_cost=trade.executed_price,
                 current_price=trade.executed_price,
                 market_value=trade.total_value,
+                native_currency=currency,  # Track position's native currency (IBKR-style)
                 opened_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )

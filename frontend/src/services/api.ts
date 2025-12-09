@@ -282,6 +282,27 @@ export const marketApi = {
     const response = await api.get('/market/market-hours');
     return response.data;
   },
+
+  // Market Movers endpoints
+  getTopGainers: async (limit: number = 10) => {
+    const response = await api.get('/market/movers/gainers', { params: { limit } });
+    return response.data;
+  },
+
+  getTopLosers: async (limit: number = 10) => {
+    const response = await api.get('/market/movers/losers', { params: { limit } });
+    return response.data;
+  },
+
+  getMostActive: async (limit: number = 10) => {
+    const response = await api.get('/market/movers/most-active', { params: { limit } });
+    return response.data;
+  },
+
+  getTrending: async (limit: number = 10) => {
+    const response = await api.get('/market/movers/trending', { params: { limit } });
+    return response.data;
+  },
 };
 
 // ============================================
@@ -350,6 +371,55 @@ export const currencyApi = {
       amount,
       from_currency: fromCurrency,
       to_currency: toCurrency,
+    });
+    return response.data;
+  },
+
+  // ========== Portfolio Currency Management (IBKR-style) ==========
+  
+  // Get all currency balances for a portfolio
+  getPortfolioBalances: async (portfolioId: number) => {
+    const response = await api.get(`/currency/portfolio/${portfolioId}/balances`);
+    return response.data;
+  },
+
+  // Deposit funds in a specific currency
+  deposit: async (portfolioId: number, currency: string, amount: number) => {
+    const response = await api.post(`/currency/portfolio/${portfolioId}/deposit`, {
+      currency,
+      amount,
+    });
+    return response.data;
+  },
+
+  // Withdraw funds from a specific currency
+  withdraw: async (portfolioId: number, currency: string, amount: number) => {
+    const response = await api.post(`/currency/portfolio/${portfolioId}/withdraw`, {
+      currency,
+      amount,
+    });
+    return response.data;
+  },
+
+  // Convert between currencies (FX transaction)
+  convertFx: async (
+    portfolioId: number, 
+    fromCurrency: string, 
+    toCurrency: string, 
+    amount: number
+  ) => {
+    const response = await api.post(`/currency/portfolio/${portfolioId}/fx-convert`, {
+      from_currency: fromCurrency,
+      to_currency: toCurrency,
+      amount,
+    });
+    return response.data;
+  },
+
+  // Get FX transaction history for a portfolio
+  getFxHistory: async (portfolioId: number, limit: number = 50) => {
+    const response = await api.get(`/currency/portfolio/${portfolioId}/fx-history`, {
+      params: { limit },
     });
     return response.data;
   },

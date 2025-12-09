@@ -9,3 +9,4 @@ export type { PortfolioSummary } from './PortfolioCard';
 
 export { CreatePortfolioModal } from './CreatePortfolioModal';
 export { EditPortfolioModal } from './EditPortfolioModal';
+export { CurrencyBalances } from './CurrencyBalances';

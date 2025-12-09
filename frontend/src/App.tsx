@@ -68,10 +68,12 @@ function App() {
   const { theme } = useUIStore();
   const { isAuthenticated } = useAuthStore();
 
-  // Apply theme class to document
+  // Apply theme class to document and body
   useEffect(() => {
     document.documentElement.classList.remove('light', 'dark');
     document.documentElement.classList.add(theme);
+    document.body.classList.remove('light', 'dark');
+    document.body.classList.add(theme);
   }, [theme]);
 
   return (

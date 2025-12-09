@@ -5,17 +5,12 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/layout';
 import { Card, CardContent } from '../components/common';
-import { Globe, Search, TrendingUp, Clock, Zap, X, BarChart2 } from 'lucide-react';
+import { Globe, Search, TrendingUp, TrendingDown, Clock, Zap, X, BarChart2, Activity, Flame, ArrowUp, ArrowDown } from 'lucide-react';
 import { WatchlistComponent, PriceAlerts } from '../components/market';
 import { CandlestickChart } from '../components/charts';
 import type { CandlestickData } from '../components/charts/types';
 import { useMarketWebSocket } from '../hooks/useWebSocket';
 import { marketApi } from '../services/api';
-
-// Popular stocks for quick access
-const POPULAR_STOCKS = [
-  'AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM'
-];
 
 interface SearchResult {
   symbol: string;
@@ -36,14 +31,32 @@ interface StockQuote {
   open: number;
 }
 
+interface MoverQuote {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  change_percent: number;
+  volume: number;
+  avg_volume?: number;
+  volume_ratio?: number;
+  trending_score?: number;
+}
+
+type MoverTab = 'most-active' | 'gainers' | 'losers' | 'trending';
+
 const Markets = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [selectedQuote, setSelectedQuote] = useState<StockQuote | null>(null);
-  const [popularQuotes, setPopularQuotes] = useState<Map<string, StockQuote>>(new Map());
   const [isSearching, setIsSearching] = useState(false);
+  
+  // Movers state
+  const [activeMoversTab, setActiveMoversTab] = useState<MoverTab>('most-active');
+  const [moversData, setMoversData] = useState<MoverQuote[]>([]);
+  const [isLoadingMovers, setIsLoadingMovers] = useState(false);
   
   // Chart state
   const [chartData, setChartData] = useState<CandlestickData[]>([]);
@@ -54,10 +67,10 @@ const Markets = () => {
   // WebSocket connection status (for display)
   const { status } = useMarketWebSocket();
 
-  // Load popular stocks quotes on mount
+  // Load movers data on mount and when tab changes
   useEffect(() => {
-    loadPopularQuotes();
-  }, []);
+    loadMoversData(activeMoversTab);
+  }, [activeMoversTab]);
 
   // Load chart data when symbol or period changes
   useEffect(() => {
@@ -65,6 +78,36 @@ const Markets = () => {
       loadChartData(selectedSymbol, chartPeriod);
     }
   }, [selectedSymbol, chartPeriod]);
+
+  const loadMoversData = async (tab: MoverTab) => {
+    setIsLoadingMovers(true);
+    try {
+      let result;
+      switch (tab) {
+        case 'most-active':
+          result = await marketApi.getMostActive(10);
+          setMoversData(result.most_active || []);
+          break;
+        case 'gainers':
+          result = await marketApi.getTopGainers(10);
+          setMoversData(result.gainers || []);
+          break;
+        case 'losers':
+          result = await marketApi.getTopLosers(10);
+          setMoversData(result.losers || []);
+          break;
+        case 'trending':
+          result = await marketApi.getTrending(10);
+          setMoversData(result.trending || []);
+          break;
+      }
+    } catch (err) {
+      console.error('Failed to load movers data:', err);
+      setMoversData([]);
+    } finally {
+      setIsLoadingMovers(false);
+    }
+  };
 
   const loadChartData = async (symbol: string, period: string) => {
     setIsLoadingChart(true);
@@ -92,21 +135,6 @@ const Markets = () => {
       setChartData([]);
     } finally {
       setIsLoadingChart(false);
-    }
-  };
-
-  const loadPopularQuotes = async () => {
-    try {
-      const result = await marketApi.getQuotes(POPULAR_STOCKS);
-      if (result.quotes) {
-        const quotesMap = new Map<string, StockQuote>();
-        result.quotes.forEach((q: StockQuote) => {
-          quotesMap.set(q.symbol, q);
-        });
-        setPopularQuotes(quotesMap);
-      }
-    } catch (err) {
-      console.error('Failed to load popular quotes:', err);
     }
   };
 
@@ -172,19 +200,39 @@ const Markets = () => {
     }
   };
 
-  // Handle symbol click from popular stocks
+  // Handle symbol click from movers list
   const handleSymbolClick = async (symbol: string) => {
     setSelectedSymbol(symbol);
-    const quote = popularQuotes.get(symbol);
-    if (quote) {
-      setSelectedQuote(quote);
-    } else {
-      try {
-        const q = await marketApi.getQuote(symbol);
-        setSelectedQuote(q);
-      } catch (err) {
-        console.error('Failed to load quote:', err);
-      }
+    try {
+      const q = await marketApi.getQuote(symbol);
+      setSelectedQuote(q);
+    } catch (err) {
+      console.error('Failed to load quote:', err);
+    }
+  };
+
+  const formatVolume = (vol: number) => {
+    if (vol >= 1_000_000_000) return `${(vol / 1_000_000_000).toFixed(1)}B`;
+    if (vol >= 1_000_000) return `${(vol / 1_000_000).toFixed(1)}M`;
+    if (vol >= 1_000) return `${(vol / 1_000).toFixed(1)}K`;
+    return vol.toString();
+  };
+
+  const getMoversTabIcon = (tab: MoverTab) => {
+    switch (tab) {
+      case 'most-active': return <Activity className="w-4 h-4" />;
+      case 'gainers': return <TrendingUp className="w-4 h-4" />;
+      case 'losers': return <TrendingDown className="w-4 h-4" />;
+      case 'trending': return <Flame className="w-4 h-4" />;
+    }
+  };
+
+  const getMoversTabLabel = (tab: MoverTab) => {
+    switch (tab) {
+      case 'most-active': return 'Most Traded';
+      case 'gainers': return 'Top Gainers';
+      case 'losers': return 'Top Losers';
+      case 'trending': return 'Trending';
     }
   };
 
@@ -323,7 +371,7 @@ const Markets = () => {
                         </div>
                         <div>
                           <p className="text-surface-400">Volume</p>
-                          <p className="text-white font-medium">{(selectedQuote.volume / 1000000).toFixed(1)}M</p>
+                          <p className="text-white font-medium">{formatVolume(selectedQuote.volume)}</p>
                         </div>
                       </div>
                     </div>
@@ -378,46 +426,93 @@ const Markets = () => {
               </Card>
             )}
 
-            {/* Popular Stocks */}
+            {/* Market Movers - Tabbed Section */}
             <Card>
               <CardContent className="p-4">
+                {/* Tab Header */}
                 <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-green-500" />
-                    <h2 className="font-semibold text-white">Popular Stocks</h2>
+                  <div className="flex gap-1 bg-surface-800 p-1 rounded-lg">
+                    {(['most-active', 'gainers', 'losers', 'trending'] as MoverTab[]).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveMoversTab(tab)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                          activeMoversTab === tab
+                            ? 'bg-primary-600 text-white'
+                            : 'text-surface-400 hover:text-white hover:bg-surface-700'
+                        }`}
+                      >
+                        {getMoversTabIcon(tab)}
+                        <span className="hidden sm:inline">{getMoversTabLabel(tab)}</span>
+                      </button>
+                    ))}
                   </div>
                   <button
-                    onClick={loadPopularQuotes}
+                    onClick={() => loadMoversData(activeMoversTab)}
                     className="text-xs text-primary-400 hover:text-primary-300 transition-colors"
                   >
-                    Refresh All
+                    Refresh
                   </button>
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {POPULAR_STOCKS.map((symbol) => {
-                    const quote = popularQuotes.get(symbol);
-                    return (
+                {/* Movers List */}
+                {isLoadingMovers ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                  </div>
+                ) : moversData.length === 0 ? (
+                  <div className="text-center py-8 text-surface-400">
+                    No data available. Market may be closed.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Table Header */}
+                    <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-surface-400 border-b border-surface-700">
+                      <div className="col-span-4">Symbol</div>
+                      <div className="col-span-2 text-right">Price</div>
+                      <div className="col-span-3 text-right">Change</div>
+                      <div className="col-span-3 text-right">
+                        {activeMoversTab === 'trending' ? 'Score' : 'Volume'}
+                      </div>
+                    </div>
+                    
+                    {/* Movers Items */}
+                    {moversData.map((mover, index) => (
                       <button
-                        key={symbol}
-                        onClick={() => handleSymbolClick(symbol)}
-                        className="flex items-center justify-between p-3 bg-surface-800 rounded-lg hover:bg-surface-700 transition-colors text-left"
+                        key={mover.symbol}
+                        onClick={() => handleSymbolClick(mover.symbol)}
+                        className="w-full grid grid-cols-12 gap-2 px-3 py-2.5 bg-surface-800 rounded-lg hover:bg-surface-700 transition-colors text-left items-center"
                       >
-                        <span className="font-medium text-white">{symbol}</span>
-                        {quote ? (
-                          <div className="text-right">
-                            <span className="text-white font-medium">${quote.price?.toFixed(2)}</span>
-                            <span className={`ml-2 text-sm ${quote.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                              {quote.change >= 0 ? '+' : ''}{quote.change_percent?.toFixed(2)}%
-                            </span>
+                        <div className="col-span-4 flex items-center gap-2">
+                          <span className="text-surface-500 text-xs w-4">{index + 1}</span>
+                          <div>
+                            <span className="font-medium text-white">{mover.symbol}</span>
+                            <p className="text-xs text-surface-400 truncate max-w-[120px]">{mover.name}</p>
                           </div>
-                        ) : (
-                          <span className="text-surface-400 text-sm">Loading...</span>
-                        )}
+                        </div>
+                        <div className="col-span-2 text-right">
+                          <span className="text-white font-medium">${mover.price?.toFixed(2)}</span>
+                        </div>
+                        <div className="col-span-3 text-right">
+                          <div className={`flex items-center justify-end gap-1 ${mover.change_percent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {mover.change_percent >= 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                            <span className="font-medium">{Math.abs(mover.change_percent || 0).toFixed(2)}%</span>
+                          </div>
+                        </div>
+                        <div className="col-span-3 text-right">
+                          {activeMoversTab === 'trending' ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-yellow-500 font-medium">{mover.trending_score}</span>
+                              <span className="text-xs text-surface-400">{mover.volume_ratio}x vol</span>
+                            </div>
+                          ) : (
+                            <span className="text-surface-300">{formatVolume(mover.volume)}</span>
+                          )}
+                        </div>
                       </button>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
