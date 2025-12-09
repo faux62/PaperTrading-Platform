@@ -3,7 +3,7 @@ PaperTrading Platform - Portfolio Model
 """
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Enum as SQLEnum, Boolean, CheckConstraint
 from sqlalchemy.orm import relationship
 import enum
 
@@ -21,6 +21,9 @@ class Portfolio(Base):
     """Portfolio model."""
     
     __tablename__ = "portfolios"
+    __table_args__ = (
+        CheckConstraint('initial_capital >= 100', name='ck_portfolios_initial_capital_min'),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -30,13 +33,16 @@ class Portfolio(Base):
     description = Column(String(1000), nullable=True)
     risk_profile = Column(SQLEnum(RiskProfile), default=RiskProfile.BALANCED)
     
-    # Financials
-    initial_capital = Column(Numeric(15, 2), default=Decimal("100000.00"))
-    cash_balance = Column(Numeric(15, 2), default=Decimal("100000.00"))
+    # Strategy configuration
+    strategy_period_weeks = Column(Integer, default=12, nullable=False)  # Weeks to calibrate strategies
+    
+    # Financials (min 100, step 100)
+    initial_capital = Column(Numeric(15, 2), default=Decimal("10000.00"))
+    cash_balance = Column(Numeric(15, 2), default=Decimal("10000.00"))
     currency = Column(String(3), default="USD")
     
-    # Status
-    is_active = Column(String(20), default="active")  # active, archived, closed
+    # Status (true = active and processed, false = inactive/paused)
+    is_active = Column(Boolean, default=True, nullable=False)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

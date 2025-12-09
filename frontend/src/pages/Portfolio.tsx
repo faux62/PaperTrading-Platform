@@ -78,15 +78,20 @@ const Portfolio = () => {
     risk_profile: string;
     initial_capital: number;
     currency: string;
+    strategy_period_weeks: number;
+    is_active: boolean;
   }) => {
     setIsCreating(true);
     setCreateError(null);
     try {
       await portfolioApi.create({
         name: data.name,
+        description: data.description,
         initial_capital: data.initial_capital,
         risk_profile: data.risk_profile,
         currency: data.currency,
+        strategy_period_weeks: data.strategy_period_weeks,
+        is_active: data.is_active,
       });
       setIsCreateModalOpen(false);
       await fetchPortfolios();

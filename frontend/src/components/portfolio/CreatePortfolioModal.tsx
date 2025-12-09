@@ -4,7 +4,7 @@
  * Modal form for creating a new portfolio with risk profile selection.
  */
 import { useState } from 'react';
-import { X, Briefcase, DollarSign, AlertCircle } from 'lucide-react';
+import { X, Briefcase, DollarSign, AlertCircle, Calendar, Power } from 'lucide-react';
 import { RiskProfileSelector } from './RiskProfileSelector';
 import { cn } from '../../utils/cn';
 
@@ -17,12 +17,23 @@ interface CreatePortfolioModalProps {
     risk_profile: string;
     initial_capital: number;
     currency: string;
+    strategy_period_weeks: number;
+    is_active: boolean;
   }) => Promise<void>;
   isLoading?: boolean;
   error?: string | null;
 }
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF'];
+
+// Strategy period options (in weeks)
+const STRATEGY_PERIODS = [
+  { value: 4, label: '4 weeks (1 month)' },
+  { value: 8, label: '8 weeks (2 months)' },
+  { value: 12, label: '12 weeks (3 months)' },
+  { value: 26, label: '26 weeks (6 months)' },
+  { value: 52, label: '52 weeks (1 year)' },
+];
 
 export const CreatePortfolioModal = ({
   isOpen,
@@ -34,8 +45,10 @@ export const CreatePortfolioModal = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [riskProfile, setRiskProfile] = useState('balanced');
-  const [initialCapital, setInitialCapital] = useState('100000');
+  const [initialCapital, setInitialCapital] = useState('10000');
   const [currency, setCurrency] = useState('USD');
+  const [strategyPeriodWeeks, setStrategyPeriodWeeks] = useState(12);
+  const [isActive, setIsActive] = useState(true);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,8 +62,8 @@ export const CreatePortfolioModal = ({
     }
 
     const capital = parseFloat(initialCapital);
-    if (isNaN(capital) || capital < 1000) {
-      setValidationError('Initial capital must be at least 1,000');
+    if (isNaN(capital) || capital < 100) {
+      setValidationError('Initial capital must be at least 100');
       return;
     }
 
@@ -59,12 +72,17 @@ export const CreatePortfolioModal = ({
       return;
     }
 
+    // Round to nearest 100
+    const roundedCapital = Math.round(capital / 100) * 100;
+
     await onSubmit({
       name: name.trim(),
       description: description.trim() || undefined,
       risk_profile: riskProfile,
-      initial_capital: capital,
+      initial_capital: roundedCapital,
       currency,
+      strategy_period_weeks: strategyPeriodWeeks,
+      is_active: isActive,
     });
   };
 
@@ -73,10 +91,25 @@ export const CreatePortfolioModal = ({
       setName('');
       setDescription('');
       setRiskProfile('balanced');
-      setInitialCapital('100000');
+      setInitialCapital('10000');
       setCurrency('USD');
+      setStrategyPeriodWeeks(12);
+      setIsActive(true);
       setValidationError(null);
       onClose();
+    }
+  };
+
+  // Handle capital input to enforce step of 100
+  const handleCapitalChange = (value: string) => {
+    setInitialCapital(value);
+  };
+
+  const handleCapitalBlur = () => {
+    const capital = parseFloat(initialCapital);
+    if (!isNaN(capital) && capital >= 100) {
+      const rounded = Math.round(capital / 100) * 100;
+      setInitialCapital(rounded.toString());
     }
   };
 
@@ -165,15 +198,16 @@ export const CreatePortfolioModal = ({
                 <input
                   type="number"
                   value={initialCapital}
-                  onChange={(e) => setInitialCapital(e.target.value)}
-                  min={1000}
+                  onChange={(e) => handleCapitalChange(e.target.value)}
+                  onBlur={handleCapitalBlur}
+                  min={100}
                   max={100000000}
-                  step={1000}
+                  step={100}
                   className="w-full pl-10 pr-4 py-2.5 bg-surface-900 border border-surface-700 rounded-lg text-white focus:outline-none focus:border-primary-500 transition-colors"
                   disabled={isLoading}
                 />
               </div>
-              <p className="text-xs text-surface-500 mt-1">Min: 1,000 - Max: 100,000,000</p>
+              <p className="text-xs text-surface-500 mt-1">Min: 100 - Step: 100</p>
             </div>
 
             <div>
@@ -193,6 +227,62 @@ export const CreatePortfolioModal = ({
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Strategy Period */}
+          <div>
+            <label className="block text-sm font-medium text-surface-300 mb-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Strategy Calibration Period
+              </div>
+            </label>
+            <select
+              value={strategyPeriodWeeks}
+              onChange={(e) => setStrategyPeriodWeeks(parseInt(e.target.value))}
+              className="w-full px-4 py-2.5 bg-surface-900 border border-surface-700 rounded-lg text-white focus:outline-none focus:border-primary-500 transition-colors"
+              disabled={isLoading}
+            >
+              {STRATEGY_PERIODS.map((period) => (
+                <option key={period.value} value={period.value}>
+                  {period.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-surface-500 mt-1">
+              Period used to calibrate trading strategies for maximum returns
+            </p>
+          </div>
+
+          {/* Active Status */}
+          <div className="flex items-center justify-between p-4 bg-surface-900 border border-surface-700 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Power className={cn("w-5 h-5", isActive ? "text-green-400" : "text-surface-500")} />
+              <div>
+                <p className="text-sm font-medium text-white">Portfolio Active</p>
+                <p className="text-xs text-surface-400">
+                  {isActive 
+                    ? "Portfolio will be processed by the platform" 
+                    : "Portfolio is paused and won't be processed"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsActive(!isActive)}
+              disabled={isLoading}
+              className={cn(
+                "relative w-12 h-6 rounded-full transition-colors",
+                isActive ? "bg-green-500" : "bg-surface-600"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
+                  isActive ? "translate-x-7" : "translate-x-1"
+                )}
+              />
+            </button>
           </div>
 
           {/* Risk Profile */}

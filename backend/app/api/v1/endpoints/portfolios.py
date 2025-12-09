@@ -27,8 +27,17 @@ class PortfolioCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=1000)
     risk_profile: str = Field(default="balanced", pattern="^(aggressive|balanced|prudent)$")
-    initial_capital: float = Field(default=100000, ge=1000, le=100000000)
+    initial_capital: float = Field(default=10000, ge=100, le=100000000)  # Min 100
     currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
+    strategy_period_weeks: int = Field(default=12, ge=1, le=52)  # 1-52 weeks
+    is_active: bool = Field(default=True)
+    
+    def validate_capital_step(self) -> float:
+        """Ensure initial_capital is a multiple of 100."""
+        if self.initial_capital % 100 != 0:
+            # Round to nearest 100
+            return round(self.initial_capital / 100) * 100
+        return self.initial_capital
 
 
 class PortfolioUpdate(BaseModel):
@@ -36,7 +45,8 @@ class PortfolioUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=1000)
     risk_profile: Optional[str] = Field(None, pattern="^(aggressive|balanced|prudent)$")
-    is_active: Optional[str] = Field(None, pattern="^(active|archived|closed)$")
+    strategy_period_weeks: Optional[int] = Field(None, ge=1, le=52)
+    is_active: Optional[bool] = Field(None)
 
 
 class ValidateTradeRequest(BaseModel):
@@ -99,16 +109,24 @@ async def create_portfolio(
     Create a new portfolio.
     
     Creates portfolio with specified risk profile and initial capital.
+    Initial capital must be at least 100 and a multiple of 100.
     """
     service = PortfolioService(db)
+    
+    # Ensure capital is multiple of 100
+    initial_capital = round(data.initial_capital / 100) * 100
+    if initial_capital < 100:
+        initial_capital = 100
     
     portfolio = await service.create_portfolio(
         user_id=current_user.id,
         name=data.name,
         description=data.description,
         risk_profile=data.risk_profile,
-        initial_capital=Decimal(str(data.initial_capital)),
+        initial_capital=Decimal(str(initial_capital)),
         currency=data.currency,
+        strategy_period_weeks=data.strategy_period_weeks,
+        is_active=data.is_active,
     )
     
     return await service.get_portfolio_with_positions(portfolio.id)
@@ -174,6 +192,7 @@ async def update_portfolio(
         name=data.name,
         description=data.description,
         risk_profile=data.risk_profile,
+        strategy_period_weeks=data.strategy_period_weeks,
         is_active=data.is_active,
     )
     

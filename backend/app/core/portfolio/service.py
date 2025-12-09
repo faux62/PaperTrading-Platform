@@ -54,9 +54,11 @@ class PortfolioService:
         user_id: int,
         name: str,
         risk_profile: str = "balanced",
-        initial_capital: Decimal = Decimal("100000"),
+        initial_capital: Decimal = Decimal("10000"),
         description: Optional[str] = None,
         currency: str = "USD",
+        strategy_period_weeks: int = 12,
+        is_active: bool = True,
     ) -> Portfolio:
         """
         Create a new portfolio.
@@ -65,9 +67,11 @@ class PortfolioService:
             user_id: Owner user ID
             name: Portfolio name
             risk_profile: One of 'aggressive', 'balanced', 'prudent'
-            initial_capital: Starting capital
+            initial_capital: Starting capital (min 100, step 100)
             description: Optional description
             currency: Base currency (default USD)
+            strategy_period_weeks: Weeks for strategy calibration (1-52)
+            is_active: Whether portfolio is active for processing
             
         Returns:
             Created Portfolio object
@@ -83,7 +87,8 @@ class PortfolioService:
             initial_capital=initial_capital,
             cash_balance=initial_capital,
             currency=currency,
-            is_active="active",
+            strategy_period_weeks=strategy_period_weeks,
+            is_active=is_active,
         )
         
         self.db.add(portfolio)
@@ -115,7 +120,8 @@ class PortfolioService:
         name: Optional[str] = None,
         description: Optional[str] = None,
         risk_profile: Optional[str] = None,
-        is_active: Optional[str] = None,
+        strategy_period_weeks: Optional[int] = None,
+        is_active: Optional[bool] = None,
     ) -> Optional[Portfolio]:
         """Update portfolio fields."""
         portfolio = await self.get_portfolio(portfolio_id)
@@ -128,6 +134,8 @@ class PortfolioService:
             portfolio.description = description
         if risk_profile is not None:
             portfolio.risk_profile = DBRiskProfile(risk_profile.lower())
+        if strategy_period_weeks is not None:
+            portfolio.strategy_period_weeks = strategy_period_weeks
         if is_active is not None:
             portfolio.is_active = is_active
         
@@ -547,6 +555,7 @@ class PortfolioService:
             "position_count": len(positions),
             "is_active": portfolio.is_active,
             "currency": portfolio.currency,
+            "strategy_period_weeks": portfolio.strategy_period_weeks,
         }
 
 

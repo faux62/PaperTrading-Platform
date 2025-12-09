@@ -3,7 +3,7 @@
  * 
  * Displays portfolio summary in a card format for list views.
  */
-import { TrendingUp, TrendingDown, Briefcase, MoreVertical, Trash2, Edit, Eye } from 'lucide-react';
+import { TrendingUp, TrendingDown, Briefcase, MoreVertical, Trash2, Edit, Eye, Power, Calendar } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { Card, CardContent } from '../common';
 
@@ -15,8 +15,9 @@ export interface PortfolioSummary {
   total_return: number;
   total_return_percent: number;
   position_count: number;
-  is_active: string;
+  is_active: boolean;
   currency: string;
+  strategy_period_weeks?: number;
 }
 
 interface PortfolioCardProps {
@@ -63,18 +64,35 @@ export const PortfolioCard = ({
 }: PortfolioCardProps) => {
   const isPositive = portfolio.total_return >= 0;
   const TrendIcon = isPositive ? TrendingUp : TrendingDown;
+  // Handle both boolean and legacy string types for backwards compatibility
+  const isActive = portfolio.is_active === true || (portfolio.is_active as unknown) === 'active';
 
   return (
-    <Card className={cn('hover:border-surface-600 transition-colors', className)}>
+    <Card className={cn(
+      'hover:border-surface-600 transition-colors',
+      !isActive && 'opacity-60',
+      className
+    )}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           {/* Left: Portfolio Info */}
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-primary-500/20 rounded-lg flex items-center justify-center">
-              <Briefcase className="w-5 h-5 text-primary-400" />
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center",
+              isActive ? "bg-primary-500/20" : "bg-surface-700"
+            )}>
+              <Briefcase className={cn("w-5 h-5", isActive ? "text-primary-400" : "text-surface-500")} />
             </div>
             <div>
-              <h3 className="font-semibold text-white">{portfolio.name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-white">{portfolio.name}</h3>
+                {!isActive && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-surface-700 text-surface-400">
+                    <Power className="w-3 h-3" />
+                    Inactive
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2 mt-1">
                 <span
                   className={cn(
@@ -87,6 +105,12 @@ export const PortfolioCard = ({
                 <span className="text-xs text-surface-500">
                   {portfolio.position_count} positions
                 </span>
+                {portfolio.strategy_period_weeks && (
+                  <span className="flex items-center gap-1 text-xs text-surface-500">
+                    <Calendar className="w-3 h-3" />
+                    {portfolio.strategy_period_weeks}w
+                  </span>
+                )}
               </div>
             </div>
           </div>

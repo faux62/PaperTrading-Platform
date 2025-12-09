@@ -159,12 +159,26 @@ export const portfolioApi = {
     return response.data;
   },
 
-  create: async (data: { name: string; initial_capital: number; risk_profile: string; currency?: string }) => {
+  create: async (data: { 
+    name: string; 
+    description?: string;
+    initial_capital: number; 
+    risk_profile: string; 
+    currency?: string;
+    strategy_period_weeks?: number;
+    is_active?: boolean;
+  }) => {
     const response = await api.post('/portfolios/', data);
     return response.data;
   },
 
-  update: async (id: number, data: Partial<{ name: string; risk_profile: string }>) => {
+  update: async (id: number, data: Partial<{ 
+    name: string; 
+    description: string;
+    risk_profile: string;
+    strategy_period_weeks: number;
+    is_active: boolean;
+  }>) => {
     const response = await api.put(`/portfolios/${id}`, data);
     return response.data;
   },
