@@ -78,16 +78,26 @@ const PortfolioDetail = () => {
       }
 
       const portfolioData = await portfolioRes.json();
-      const positionsData = positionsRes.ok ? await positionsRes.json() : [];
+      
+      // Parse positions from response
+      let positionsData: any[] = [];
+      if (positionsRes.ok) {
+        const rawPositions = await positionsRes.json();
+        // API returns {portfolio_id, positions: [...], count, total_market_value, ...}
+        positionsData = Array.isArray(rawPositions) 
+          ? rawPositions 
+          : rawPositions.positions || rawPositions.items || [];
+      }
+      
       const tradesData = tradesRes.ok ? await tradesRes.json() : [];
 
       setPortfolio(portfolioData);
-      setPositions(Array.isArray(positionsData) ? positionsData : positionsData.items || []);
+      setPositions(positionsData);
       setTrades(Array.isArray(tradesData) ? tradesData : tradesData.items || []);
 
       // Calculate stats
       const investedValue = positionsData.reduce?.(
-        (sum: number, p: Position) => sum + (p.current_value || p.quantity * (p.current_price || p.average_price)),
+        (sum: number, p: Position) => sum + (p.market_value || p.current_value || p.quantity * (p.current_price || p.average_price || 0)),
         0
       ) || 0;
       const totalReturn = positionsData.reduce?.(
@@ -411,8 +421,8 @@ const PortfolioDetail = () => {
                         className="flex items-center justify-between p-2 bg-surface-800/50 rounded-lg"
                       >
                         <div className="flex items-center gap-3">
-                          <Badge variant={trade.side === 'buy' ? 'success' : 'danger'}>
-                            {trade.side.toUpperCase()}
+                          <Badge variant={(trade.trade_type || trade.side) === 'buy' ? 'success' : 'danger'}>
+                            {(trade.trade_type || trade.side || 'N/A').toUpperCase()}
                           </Badge>
                           <div>
                             <p className="text-sm font-medium text-white">{trade.symbol}</p>
@@ -506,6 +516,10 @@ const PortfolioDetail = () => {
             riskProfile={(portfolio as any).risk_profile || 'balanced'}
             capital={(portfolio as any).initial_capital || 100000}
             strategyPeriodWeeks={(portfolio as any).strategy_period_weeks || 12}
+            onTradesExecuted={() => {
+              // Refresh portfolio data after trades are executed
+              fetchPortfolioData();
+            }}
           />
         )}
 

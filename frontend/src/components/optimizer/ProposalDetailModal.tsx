@@ -14,7 +14,8 @@ import {
   Clock,
   DollarSign,
   Percent,
-  Activity
+  Activity,
+  PlayCircle
 } from 'lucide-react';
 import type { PortfolioProposal } from '../../types/optimizer';
 
@@ -22,6 +23,7 @@ interface Props {
   proposal: PortfolioProposal;
   onApprove: () => void;
   onReject: () => void;
+  onExecute: () => void;
   onClose: () => void;
 }
 
@@ -29,9 +31,11 @@ const ProposalDetailModal: React.FC<Props> = ({
   proposal,
   onApprove,
   onReject,
+  onExecute,
   onClose,
 }) => {
   const isPending = proposal.status === 'pending';
+  const isApproved = proposal.status === 'approved';
   const sectorColors = [
     'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500',
     'bg-pink-500', 'bg-cyan-500', 'bg-red-500', 'bg-indigo-500'
@@ -316,6 +320,35 @@ const ProposalDetailModal: React.FC<Props> = ({
             >
               <CheckCircle className="w-4 h-4" />
               Approve Proposal
+            </button>
+          </div>
+        )}
+
+        {/* Execute Actions - Show when approved */}
+        {isApproved && (
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 
+                        bg-green-50 dark:bg-green-900/20 flex gap-3 flex-shrink-0">
+            <div className="flex-1 flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
+              <CheckCircle className="w-5 h-5" />
+              <span>Proposal approved. Ready for execution.</span>
+            </div>
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 text-sm font-medium text-gray-700 
+                       dark:text-gray-300 bg-white dark:bg-gray-700 border 
+                       border-gray-300 dark:border-gray-600 rounded-lg 
+                       hover:bg-gray-50 dark:hover:bg-gray-600"
+            >
+              Close
+            </button>
+            <button
+              onClick={onExecute}
+              className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 
+                       rounded-lg hover:bg-blue-700 flex items-center gap-2
+                       shadow-lg shadow-blue-500/30"
+            >
+              <PlayCircle className="w-4 h-4" />
+              Execute Trades
             </button>
           </div>
         )}

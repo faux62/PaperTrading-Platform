@@ -32,6 +32,7 @@ interface Props {
   riskProfile: string;
   capital: number;
   strategyPeriodWeeks: number;
+  onTradesExecuted?: () => void;  // Callback when trades are executed
 }
 
 const methodIcons: Record<OptimizationMethod, React.ReactNode> = {
@@ -49,6 +50,7 @@ const PortfolioOptimizer: React.FC<Props> = ({
   riskProfile,
   capital,
   strategyPeriodWeeks,
+  onTradesExecuted,
 }) => {
   const [methods, setMethods] = useState<OptimizationMethodInfo[]>([]);
   const [proposals, setProposals] = useState<PortfolioProposal[]>([]);
@@ -128,6 +130,35 @@ const PortfolioOptimizer: React.FC<Props> = ({
       }
     } catch (err) {
       setError('Failed to delete proposal');
+    }
+  };
+
+  const handleExecute = async (proposalId: string) => {
+    try {
+      setOptimizing(true);
+      setError(null);
+      
+      const result = await optimizerService.executeProposal(proposalId);
+      
+      // Close the modal first
+      setSelectedProposal(null);
+      
+      // Show success message
+      alert(`Successfully created ${result.total_trades} trades!\n\n${result.message}`);
+      
+      // Reload optimizer data
+      await loadData();
+      
+      // Notify parent to refresh portfolio data (positions, etc.)
+      if (onTradesExecuted) {
+        onTradesExecuted();
+      }
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.detail || 'Failed to execute proposal';
+      setError(errorMsg);
+      console.error('Execute error:', err);
+    } finally {
+      setOptimizing(false);
     }
   };
 
@@ -404,6 +435,7 @@ const PortfolioOptimizer: React.FC<Props> = ({
           proposal={selectedProposal}
           onApprove={() => handleAction(selectedProposal.id, 'approve')}
           onReject={() => handleAction(selectedProposal.id, 'reject')}
+          onExecute={() => handleExecute(selectedProposal.id)}
           onClose={() => setSelectedProposal(null)}
         />
       )}

@@ -15,6 +15,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
+import json
 
 from app.db.database import get_db
 from app.db.models.user import User
@@ -23,6 +24,7 @@ from app.core.security import get_current_user
 from app.core.optimizer import PortfolioOptimizer, OptimizationMethod
 from app.core.optimizer.optimizer import OptimizationRequest, OptimizationResponse
 from app.core.optimizer.proposal import ProposalStatus, ProposalType
+from app.db.redis_client import redis_client
 
 router = APIRouter(prefix="/optimizer", tags=["Portfolio Optimizer"])
 
@@ -147,10 +149,35 @@ class RebalanceCheckSchema(BaseModel):
     threshold: float = Field(0.05, ge=0.01, le=0.20, description="Drift threshold to trigger rebalance")
 
 
-# ============== In-Memory Proposal Storage ==============
-# In production, this would be stored in database
+# ============== Redis-based Proposal Storage ==============
+# Proposals are stored in Redis for multi-worker support
 
-_proposals: Dict[str, Dict] = {}
+PROPOSAL_PREFIX = "optimizer:proposal:"
+PROPOSAL_TTL = 86400 * 7  # 7 days
+
+async def _save_proposal(proposal_id: str, data: Dict) -> None:
+    """Save proposal to Redis."""
+    key = f"{PROPOSAL_PREFIX}{proposal_id}"
+    await redis_client.client.setex(key, PROPOSAL_TTL, json.dumps(data, default=str))
+
+async def _get_proposal(proposal_id: str) -> Optional[Dict]:
+    """Get proposal from Redis."""
+    key = f"{PROPOSAL_PREFIX}{proposal_id}"
+    data = await redis_client.client.get(key)
+    return json.loads(data) if data else None
+
+async def _delete_proposal(proposal_id: str) -> None:
+    """Delete proposal from Redis."""
+    key = f"{PROPOSAL_PREFIX}{proposal_id}"
+    await redis_client.client.delete(key)
+
+async def _get_all_proposals() -> List[Dict]:
+    """Get all proposals from Redis."""
+    keys = await redis_client.client.keys(f"{PROPOSAL_PREFIX}*")
+    if not keys:
+        return []
+    values = await redis_client.client.mget(keys)
+    return [json.loads(v) for v in values if v]
 
 
 # ============== API Endpoints ==============
@@ -228,7 +255,7 @@ async def request_optimization(
     if response.success and response.proposal:
         proposal_data = response.proposal.to_dict()
         proposal_data['user_id'] = str(current_user.id)
-        _proposals[response.proposal.id] = proposal_data
+        await _save_proposal(response.proposal.id, proposal_data)
     
     # Build response
     return OptimizationResponseSchema(
@@ -256,8 +283,9 @@ async def list_proposals(
     
     Can be filtered by portfolio ID and/or status.
     """
+    all_proposals = await _get_all_proposals()
     user_proposals = [
-        p for p in _proposals.values()
+        p for p in all_proposals
         if p.get('user_id') == str(current_user.id)
     ]
     
@@ -286,7 +314,7 @@ async def get_proposal(
     """
     Get detailed information about a specific optimization proposal.
     """
-    proposal = _proposals.get(proposal_id)
+    proposal = await _get_proposal(proposal_id)
     
     if not proposal or proposal.get('user_id') != str(current_user.id):
         raise HTTPException(
@@ -318,7 +346,7 @@ async def action_proposal(
     Note: This endpoint only changes the proposal status. 
     To actually execute the trades, use the trading endpoints.
     """
-    proposal = _proposals.get(proposal_id)
+    proposal = await _get_proposal(proposal_id)
     
     if not proposal or proposal.get('user_id') != str(current_user.id):
         raise HTTPException(
@@ -337,6 +365,7 @@ async def action_proposal(
         expires = datetime.fromisoformat(proposal['expires_at'])
         if datetime.now() > expires:
             proposal['status'] = ProposalStatus.EXPIRED.value
+            await _save_proposal(proposal_id, proposal)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Proposal has expired"
@@ -353,7 +382,231 @@ async def action_proposal(
     
     proposal['action_at'] = datetime.now().isoformat()
     
+    # Save updated proposal back to Redis
+    await _save_proposal(proposal_id, proposal)
+    
     return ProposalSchema(**proposal)
+
+
+@router.post(
+    "/proposals/{proposal_id}/execute",
+    response_model=Dict[str, Any],
+    summary="Execute Approved Proposal",
+    description="Execute an approved proposal by creating the actual trades"
+)
+async def execute_proposal(
+    proposal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Execute an approved optimization proposal.
+    
+    This will:
+    1. Verify the proposal is in 'approved' status
+    2. Create buy/sell orders for each allocation
+    3. Update portfolio positions
+    4. Mark proposal as 'executed'
+    
+    Returns the list of created trades.
+    """
+    from sqlalchemy import select
+    from app.db.models.position import Position
+    from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
+    from decimal import Decimal
+    
+    proposal = await _get_proposal(proposal_id)
+    
+    if not proposal or proposal.get('user_id') != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Proposal not found"
+        )
+    
+    if proposal['status'] != ProposalStatus.APPROVED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Proposal must be approved first. Current status: {proposal['status']}"
+        )
+    
+    # Get portfolio
+    portfolio_id = int(proposal['portfolio_id'])
+    result = await db.execute(
+        select(Portfolio).where(
+            Portfolio.id == portfolio_id,
+            Portfolio.user_id == current_user.id
+        )
+    )
+    portfolio = result.scalar_one_or_none()
+    
+    if not portfolio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found"
+        )
+    
+    # Get current positions
+    result = await db.execute(
+        select(Position).where(Position.portfolio_id == portfolio_id)
+    )
+    current_positions = {p.symbol: p for p in result.scalars().all()}
+    
+    # Calculate total portfolio value
+    cash_balance = float(portfolio.cash_balance)
+    total_value = cash_balance
+    for pos in current_positions.values():
+        total_value += float(pos.quantity) * float(pos.current_price or pos.avg_cost)
+    
+    created_trades = []
+    allocations = proposal.get('allocations', [])
+    
+    for alloc in allocations:
+        symbol = alloc['symbol']
+        target_weight = alloc['weight']
+        target_value = total_value * target_weight
+        
+        current_pos = current_positions.get(symbol)
+        current_value = 0.0
+        current_qty = 0.0
+        
+        # Calculate price from allocation data (value / shares)
+        alloc_value = float(alloc.get('value', 0))
+        alloc_shares = float(alloc.get('shares', 0))
+        if alloc_shares > 0 and alloc_value > 0:
+            current_price = alloc_value / alloc_shares
+        else:
+            current_price = float(alloc.get('current_price', 0))
+        
+        if current_price <= 0:
+            # Skip if no valid price - use a reasonable default or fetch
+            continue
+        
+        if current_pos:
+            current_qty = float(current_pos.quantity)
+            # Prefer position's current price if available
+            if current_pos.current_price and float(current_pos.current_price) > 0:
+                current_price = float(current_pos.current_price)
+            elif current_pos.avg_cost and float(current_pos.avg_cost) > 0:
+                current_price = float(current_pos.avg_cost)
+            current_value = current_qty * current_price
+        
+        # Calculate difference
+        value_diff = target_value - current_value
+        
+        # Skip small changes (less than $50 or 1%)
+        if abs(value_diff) < 50 or abs(value_diff / total_value) < 0.01:
+            continue
+        
+        # Determine trade type and quantity
+        if value_diff > 0:
+            # BUY
+            trade_type = TradeType.BUY
+            quantity = int(value_diff / current_price)
+            if quantity < 1:
+                continue
+            trade_value = quantity * current_price
+            
+            # Check if we have enough cash
+            if trade_value > cash_balance:
+                quantity = int(cash_balance / current_price)
+                if quantity < 1:
+                    continue
+                trade_value = quantity * current_price
+        else:
+            # SELL
+            trade_type = TradeType.SELL
+            quantity = min(int(abs(value_diff) / current_price), int(current_qty))
+            if quantity < 1:
+                continue
+            trade_value = quantity * current_price
+        
+        # Create trade with EXECUTED status
+        trade = Trade(
+            portfolio_id=portfolio_id,
+            symbol=symbol,
+            trade_type=trade_type,
+            order_type=OrderType.MARKET,
+            status=TradeStatus.EXECUTED,
+            quantity=Decimal(str(quantity)),
+            price=Decimal(str(current_price)),
+            executed_price=Decimal(str(current_price)),
+            executed_quantity=Decimal(str(quantity)),
+            total_value=Decimal(str(trade_value)),
+            executed_at=datetime.now(),
+            notes=f"AI Optimizer proposal {proposal_id[:8]}"
+        )
+        db.add(trade)
+        
+        # Update or create position
+        if trade_type == TradeType.BUY:
+            if current_pos:
+                # Update existing position
+                new_qty = float(current_pos.quantity) + quantity
+                new_cost = ((float(current_pos.quantity) * float(current_pos.avg_cost)) + trade_value) / new_qty
+                current_pos.quantity = Decimal(str(new_qty))
+                current_pos.avg_cost = Decimal(str(new_cost))
+                current_pos.current_price = Decimal(str(current_price))
+                current_pos.market_value = Decimal(str(new_qty * current_price))
+            else:
+                # Create new position
+                new_position = Position(
+                    portfolio_id=portfolio_id,
+                    symbol=symbol,
+                    quantity=Decimal(str(quantity)),
+                    avg_cost=Decimal(str(current_price)),
+                    current_price=Decimal(str(current_price)),
+                    market_value=Decimal(str(trade_value)),
+                    unrealized_pnl=Decimal('0'),
+                    unrealized_pnl_percent=Decimal('0')
+                )
+                db.add(new_position)
+                current_positions[symbol] = new_position
+            
+            # Reduce cash
+            cash_balance -= trade_value
+        else:
+            # SELL - update position
+            if current_pos:
+                new_qty = float(current_pos.quantity) - quantity
+                if new_qty <= 0:
+                    # Remove position
+                    await db.delete(current_pos)
+                    del current_positions[symbol]
+                else:
+                    current_pos.quantity = Decimal(str(new_qty))
+                    current_pos.market_value = Decimal(str(new_qty * current_price))
+            
+            # Add cash
+            cash_balance += trade_value
+        
+        created_trades.append({
+            'symbol': symbol,
+            'trade_type': trade_type.value,
+            'quantity': quantity,
+            'price': current_price,
+            'estimated_value': trade_value
+        })
+    
+    # Update portfolio cash balance
+    portfolio.cash_balance = Decimal(str(cash_balance))
+    
+    # Mark proposal as executed
+    proposal['status'] = ProposalStatus.EXECUTED.value
+    proposal['executed_at'] = datetime.now().isoformat()
+    proposal['trades_created'] = len(created_trades)
+    
+    # Save updated proposal to Redis
+    await _save_proposal(proposal_id, proposal)
+    
+    await db.commit()
+    
+    return {
+        'success': True,
+        'proposal_id': proposal_id,
+        'trades_created': created_trades,
+        'total_trades': len(created_trades),
+        'message': f"Created {len(created_trades)} trades from proposal"
+    }
 
 
 @router.delete(
@@ -371,7 +624,7 @@ async def delete_proposal(
     
     Can only delete proposals that are not in 'executed' status.
     """
-    proposal = _proposals.get(proposal_id)
+    proposal = await _get_proposal(proposal_id)
     
     if not proposal or proposal.get('user_id') != str(current_user.id):
         raise HTTPException(
@@ -385,7 +638,7 @@ async def delete_proposal(
             detail="Cannot delete executed proposals"
         )
     
-    del _proposals[proposal_id]
+    await _delete_proposal(proposal_id)
 
 
 @router.post(
@@ -463,7 +716,7 @@ async def check_rebalance(
     if proposal:
         proposal_data = proposal.to_dict()
         proposal_data['user_id'] = str(current_user.id)
-        _proposals[proposal.id] = proposal_data
+        await _save_proposal(proposal.id, proposal_data)
         
         return OptimizationResponseSchema(
             success=True,

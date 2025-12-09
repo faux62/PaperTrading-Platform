@@ -64,6 +64,26 @@ export const optimizerService = {
   },
 
   /**
+   * Execute an approved proposal (create actual trades)
+   */
+  async executeProposal(proposalId: string): Promise<{
+    success: boolean;
+    proposal_id: string;
+    trades_created: Array<{
+      symbol: string;
+      trade_type: string;
+      quantity: number;
+      price: number;
+      estimated_value: number;
+    }>;
+    total_trades: number;
+    message: string;
+  }> {
+    const response = await api.post(`${BASE_URL}/proposals/${proposalId}/execute`);
+    return response.data;
+  },
+
+  /**
    * Check if rebalancing is needed
    */
   async checkRebalance(

@@ -102,16 +102,23 @@ export interface Order {
 export interface Trade {
   id: number;
   portfolio_id: number;
-  order_id: number;
+  order_id?: number;
   symbol: string;
-  side: OrderSide;
+  side?: OrderSide;
+  trade_type?: string;  // Backend uses trade_type (buy/sell)
+  order_type?: string;
+  status?: string;
   quantity: number;
   price: number;
   limit_price?: number;
+  executed_price?: number;
+  executed_quantity?: number;
   total_value: number;
   commission: number;
-  executed_at: string;
+  realized_pnl?: number;
+  executed_at?: string;
   created_at: string;
+  notes?: string;
 }
 
 // ============================================

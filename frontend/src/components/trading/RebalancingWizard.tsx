@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Card, { CardContent, CardHeader } from '../common/Card';
 import Button from '../common/Button';
+import { tokenStorage } from '../../services/tokenStorage';
 
 // Types
 interface AllocationTarget {
@@ -115,7 +116,7 @@ export function RebalancingWizard({
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(
         `/api/v1/portfolios/${portfolioId}/rebalance?risk_profile=${selectedProfile}`,
         {
@@ -154,7 +155,7 @@ export function RebalancingWizard({
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       const response = await fetch(
         `/api/v1/portfolios/${portfolioId}/rebalance/preview`,
         {
@@ -218,7 +219,7 @@ export function RebalancingWizard({
     setStep('execute');
     
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = tokenStorage.getAccessToken();
       
       // Execute batch orders
       const ordersToExecute = preview.orders_to_create.map(o => ({
