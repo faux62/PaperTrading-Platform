@@ -18,12 +18,15 @@ import {
   Clock,
   Wallet,
   Scale,
+  Sparkles,
 } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Card, CardContent, CardHeader, CardTitle, Spinner, Badge } from '../components/common';
 import { RebalancingWizard, TradeHistory } from '../components/trading';
 import { CurrencyBalances } from '../components/portfolio';
+import { PortfolioOptimizer } from '../components/optimizer';
 import { Position, Portfolio, Trade } from '../types';
+import { tokenStorage } from '../services/tokenStorage';
 
 interface PortfolioStats {
   total_value: number;
@@ -47,7 +50,7 @@ const PortfolioDetail = () => {
   const [stats, setStats] = useState<PortfolioStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'rebalance' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'optimizer' | 'rebalance' | 'history'>('overview');
   const [showRebalanceWizard, setShowRebalanceWizard] = useState(false);
 
   const fetchPortfolioData = useCallback(async () => {
@@ -57,7 +60,7 @@ const PortfolioDetail = () => {
     setError(null);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = tokenStorage.getAccessToken();
       const headers = {
         'Content-Type': 'application/json',
         ...(token && { Authorization: `Bearer ${token}` }),
@@ -66,7 +69,7 @@ const PortfolioDetail = () => {
       // Fetch portfolio details, positions, and trades in parallel
       const [portfolioRes, positionsRes, tradesRes] = await Promise.all([
         fetch(`/api/v1/portfolios/${portfolioId}`, { headers }),
-        fetch(`/api/v1/positions?portfolio_id=${portfolioId}`, { headers }),
+        fetch(`/api/v1/positions/portfolio/${portfolioId}`, { headers }),
         fetch(`/api/v1/trades?portfolio_id=${portfolioId}&limit=50`, { headers }),
       ]);
 
@@ -290,6 +293,19 @@ const PortfolioDetail = () => {
             </div>
           </button>
           <button
+            onClick={() => setActiveTab('optimizer')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
+              activeTab === 'optimizer'
+                ? 'text-primary-400 border-primary-400'
+                : 'text-surface-400 border-transparent hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              AI Optimizer
+            </div>
+          </button>
+          <button
             onClick={() => setActiveTab('rebalance')}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
               activeTab === 'rebalance'
@@ -481,6 +497,16 @@ const PortfolioDetail = () => {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {activeTab === 'optimizer' && (
+          <PortfolioOptimizer
+            portfolioId={portfolioId}
+            portfolioName={portfolio.name}
+            riskProfile={(portfolio as any).risk_profile || 'balanced'}
+            capital={(portfolio as any).initial_capital || 100000}
+            strategyPeriodWeeks={(portfolio as any).strategy_period_weeks || 12}
+          />
         )}
 
         {activeTab === 'rebalance' && (
