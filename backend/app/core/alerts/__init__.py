@@ -6,8 +6,10 @@ from typing import Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_
+from loguru import logger
 
 from app.db.models.alert import Alert, AlertType, AlertStatus
+from app.services.email_service import email_service, should_send_notification
 
 
 class AlertService:
@@ -137,10 +139,29 @@ class AlertService:
         alert: Alert,
         triggered_price: float
     ) -> Alert:
-        """Mark an alert as triggered."""
+        """Mark an alert as triggered and send email notification."""
         alert.status = AlertStatus.TRIGGERED
         alert.triggered_at = datetime.utcnow()
         alert.triggered_price = triggered_price
+        
+        # Send email notification
+        try:
+            should_send, user_email = await should_send_notification(
+                self.db, alert.user_id, "price_alert"
+            )
+            if should_send and user_email:
+                # Determine direction based on alert type
+                direction = "above" if alert.alert_type == AlertType.PRICE_ABOVE else "below"
+                await email_service.send_price_alert(
+                    to_email=user_email,
+                    symbol=alert.symbol,
+                    current_price=triggered_price,
+                    target_price=float(alert.target_value),
+                    direction=direction,
+                )
+                logger.info(f"Sent price alert email to {user_email} for {alert.symbol}")
+        except Exception as e:
+            logger.warning(f"Failed to send price alert email: {e}")
         
         # If recurring, create a new alert
         if alert.is_recurring:

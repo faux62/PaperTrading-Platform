@@ -129,7 +129,7 @@ const Analytics: React.FC = () => {
       let portfolio = activePortfolio;
       if (!portfolio) {
         const portfoliosResponse = await portfolioApi.getAll();
-        const portfolios = portfoliosResponse.portfolios || [];
+        const portfolios = Array.isArray(portfoliosResponse) ? portfoliosResponse : (portfoliosResponse.portfolios || []);
         if (portfolios.length === 0) {
           setError('No portfolios found. Create a portfolio first.');
           setIsLoading(false);
@@ -154,7 +154,9 @@ const Analytics: React.FC = () => {
       if (positionsData.length > 0) {
         const symbols = positionsData.map((p: PortfolioPosition) => p.symbol);
         try {
-          const quotes: Quote[] = await marketApi.getQuotes(symbols);
+          const quotesResponse = await marketApi.getQuotes(symbols);
+          // Handle both array and {quotes: [...]} response
+          const quotes: Quote[] = Array.isArray(quotesResponse) ? quotesResponse : (quotesResponse.quotes || []);
           const quotesMap = new Map(quotes.map((q: Quote) => [q.symbol, q]));
           
           const enrichedPositions = positionsData.map((pos: PortfolioPosition) => {
@@ -217,7 +219,7 @@ const Analytics: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [activePortfolio, timeRange, getDays]);
+  }, [activePortfolio, timeRange]);
 
   useEffect(() => {
     fetchData();

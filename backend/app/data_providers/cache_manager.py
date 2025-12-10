@@ -138,7 +138,7 @@ class CacheManager:
         key = self._key("quote", symbol.upper())
         
         try:
-            data = await redis_client.get(key)
+            data = await redis_client.client.get(key)
             if data:
                 self._stats["hits"] += 1
                 return CacheSerializer.deserialize_quote(data)
@@ -154,7 +154,7 @@ class CacheManager:
         
         try:
             data = CacheSerializer.serialize_quote(quote)
-            await redis_client.setex(key, self.config.quote_ttl, data)
+            await redis_client.client.setex(key, self.config.quote_ttl, data)
             self._stats["sets"] += 1
         except Exception as e:
             logger.error(f"Cache set error for {quote.symbol}: {e}")
@@ -168,7 +168,7 @@ class CacheManager:
         
         try:
             # Use pipeline for batch get
-            values = await redis_client.mget(keys)
+            values = await redis_client.client.mget(keys)
             
             for symbol, value in zip(symbols, values):
                 if value:
@@ -190,7 +190,7 @@ class CacheManager:
         
         try:
             # Use pipeline for batch set
-            pipe = redis_client._redis.pipeline()
+            pipe = redis_client.client.pipeline()
             
             for quote in quotes:
                 key = self._key("quote", quote.symbol.upper())
@@ -221,7 +221,7 @@ class CacheManager:
         )
         
         try:
-            data = await redis_client.get(key)
+            data = await redis_client.client.get(key)
             if data:
                 self._stats["hits"] += 1
                 return CacheSerializer.deserialize_ohlcv_list(data)
@@ -250,7 +250,7 @@ class CacheManager:
         
         try:
             serialized = CacheSerializer.serialize_ohlcv_list(data)
-            await redis_client.setex(key, self.config.historical_ttl, serialized)
+            await redis_client.client.setex(key, self.config.historical_ttl, serialized)
             self._stats["sets"] += 1
         except Exception as e:
             logger.error(f"Cache set historical error for {symbol}: {e}")
@@ -266,7 +266,7 @@ class CacheManager:
         key = self._key("bar", symbol.upper(), timeframe.value, "latest")
         
         try:
-            data = await redis_client.get(key)
+            data = await redis_client.client.get(key)
             if data:
                 self._stats["hits"] += 1
                 return CacheSerializer.deserialize_ohlcv(data)
@@ -283,7 +283,7 @@ class CacheManager:
         try:
             data = CacheSerializer.serialize_ohlcv(bar)
             # Use historical TTL for bars
-            await redis_client.setex(key, self.config.historical_ttl, data)
+            await redis_client.client.setex(key, self.config.historical_ttl, data)
             self._stats["sets"] += 1
         except Exception as e:
             logger.error(f"Cache set bar error for {bar.symbol}: {e}")
@@ -295,7 +295,7 @@ class CacheManager:
         cache_key = self._key("meta", key)
         
         try:
-            data = await redis_client.get(cache_key)
+            data = await redis_client.client.get(cache_key)
             if data:
                 self._stats["hits"] += 1
                 return json.loads(data)
@@ -311,7 +311,7 @@ class CacheManager:
         
         try:
             data = json.dumps(value)
-            await redis_client.setex(cache_key, self.config.metadata_ttl, data)
+            await redis_client.client.setex(cache_key, self.config.metadata_ttl, data)
             self._stats["sets"] += 1
         except Exception as e:
             logger.error(f"Cache set metadata error for {key}: {e}")
@@ -323,7 +323,7 @@ class CacheManager:
         key = self._key("quote", symbol.upper())
         
         try:
-            await redis_client.delete(key)
+            await redis_client.client.delete(key)
             self._stats["deletes"] += 1
         except Exception as e:
             logger.error(f"Cache invalidate error for {symbol}: {e}")
@@ -339,9 +339,9 @@ class CacheManager:
             pattern = self._key("historical", symbol.upper(), timeframe.value, "*")
         
         try:
-            keys = await redis_client.keys(pattern)
+            keys = await redis_client.client.keys(pattern)
             if keys:
-                await redis_client.delete(*keys)
+                await redis_client.client.delete(*keys)
                 self._stats["deletes"] += len(keys)
         except Exception as e:
             logger.error(f"Cache invalidate historical error for {symbol}: {e}")
@@ -356,9 +356,9 @@ class CacheManager:
         
         try:
             for pattern in patterns:
-                keys = await redis_client.keys(pattern)
+                keys = await redis_client.client.keys(pattern)
                 if keys:
-                    await redis_client.delete(*keys)
+                    await redis_client.client.delete(*keys)
                     self._stats["deletes"] += len(keys)
         except Exception as e:
             logger.error(f"Cache invalidate all error for {symbol}: {e}")
@@ -368,9 +368,9 @@ class CacheManager:
         pattern = f"{self.config.prefix}:*"
         
         try:
-            keys = await redis_client.keys(pattern)
+            keys = await redis_client.client.keys(pattern)
             if keys:
-                await redis_client.delete(*keys)
+                await redis_client.client.delete(*keys)
                 self._stats["deletes"] += len(keys)
             logger.info(f"Cleared {len(keys)} cache entries")
         except Exception as e:

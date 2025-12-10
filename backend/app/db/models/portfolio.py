@@ -3,7 +3,7 @@ PaperTrading Platform - Portfolio Model
 """
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Enum as SQLEnum, Boolean, CheckConstraint
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Enum as SQLEnum, Boolean, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 import enum
 
@@ -23,6 +23,7 @@ class Portfolio(Base):
     __tablename__ = "portfolios"
     __table_args__ = (
         CheckConstraint('initial_capital >= 100', name='ck_portfolios_initial_capital_min'),
+        UniqueConstraint('user_id', 'name', name='uq_portfolios_user_name'),
     )
     
     id = Column(Integer, primary_key=True, index=True)

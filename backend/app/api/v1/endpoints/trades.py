@@ -13,6 +13,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi import BackgroundTasks
+
 from app.db.database import get_db
 from app.db.models.trade import TradeType, OrderType, TradeStatus
 from app.db.repositories.trade import TradeRepository
@@ -20,6 +22,7 @@ from app.core.trading.order_manager import OrderManager, OrderRequest
 from app.core.trading.execution import OrderExecutor, MarketCondition
 from app.core.trading.pnl_calculator import PnLCalculator, TimeFrame
 from app.core.currency_service import CurrencyService
+from app.services.email_service import email_service, should_send_notification
 
 router = APIRouter()
 
@@ -266,6 +269,7 @@ async def create_order(
 async def execute_order(
     order_id: int,
     request: OrderExecuteRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -304,6 +308,37 @@ async def execute_order(
     
     # Refresh trade
     await db.refresh(trade)
+    
+    # Send email notification for trade execution
+    try:
+        from app.db.models.portfolio import Portfolio
+        from sqlalchemy import select
+        
+        # Get portfolio name and user email
+        portfolio_result = await db.execute(
+            select(Portfolio).where(Portfolio.id == trade.portfolio_id)
+        )
+        portfolio = portfolio_result.scalar_one_or_none()
+        
+        if portfolio:
+            should_send, user_email = await should_send_notification(
+                db, portfolio.user_id, "trade_execution"
+            )
+            if should_send and user_email:
+                background_tasks.add_task(
+                    email_service.send_trade_notification,
+                    to_email=user_email,
+                    symbol=trade.symbol,
+                    trade_type=trade.trade_type.value,
+                    quantity=float(trade.executed_quantity or trade.quantity),
+                    price=float(trade.executed_price or trade.price),
+                    total_value=float(trade.total_value or 0),
+                    portfolio_name=portfolio.name,
+                    executed_at=trade.executed_at or datetime.now(),
+                )
+    except Exception as e:
+        # Don't fail the trade if notification fails
+        pass
     
     return TradeResponse(
         id=trade.id,

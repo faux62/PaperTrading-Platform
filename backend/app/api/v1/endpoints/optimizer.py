@@ -8,6 +8,7 @@ Provides REST API for portfolio optimization:
 - Get efficient frontier data
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
@@ -25,6 +26,9 @@ from app.core.optimizer import PortfolioOptimizer, OptimizationMethod
 from app.core.optimizer.optimizer import OptimizationRequest, OptimizationResponse
 from app.core.optimizer.proposal import ProposalStatus, ProposalType
 from app.db.redis_client import redis_client
+from app.services.email_service import email_service, should_send_notification
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/optimizer", tags=["Portfolio Optimizer"])
 
@@ -256,6 +260,33 @@ async def request_optimization(
         proposal_data = response.proposal.to_dict()
         proposal_data['user_id'] = str(current_user.id)
         await _save_proposal(response.proposal.id, proposal_data)
+        
+        # Send email notification for new proposal
+        try:
+            should_send, user_email = await should_send_notification(
+                db, current_user.id, "portfolio_update"
+            )
+            if should_send and user_email:
+                # Format actions for email
+                actions = []
+                for alloc in response.proposal.allocations[:5]:  # Top 5 actions
+                    actions.append({
+                        'type': 'BUY',
+                        'symbol': alloc.symbol,
+                        'quantity': int(alloc.shares),
+                        'price': float(alloc.current_price or 0),
+                        'rationale': alloc.rationale or 'AI optimized allocation'
+                    })
+                
+                background_tasks.add_task(
+                    email_service.send_optimizer_proposal,
+                    to_email=user_email,
+                    portfolio_name=portfolio.name,
+                    actions=actions,
+                    review_url=f"http://localhost/portfolio?proposal={response.proposal.id}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to send optimizer proposal email: {e}")
     
     # Build response
     return OptimizationResponseSchema(
@@ -404,15 +435,17 @@ async def execute_proposal(
     
     This will:
     1. Verify the proposal is in 'approved' status
-    2. Create buy/sell orders for each allocation
-    3. Update portfolio positions
-    4. Mark proposal as 'executed'
+    2. Fetch current market prices for all symbols
+    3. Create buy/sell orders for each allocation
+    4. Update portfolio positions
+    5. Mark proposal as 'executed'
     
     Returns the list of created trades.
     """
     from sqlalchemy import select
     from app.db.models.position import Position
     from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
+    from app.data_providers import orchestrator
     from decimal import Decimal
     
     proposal = await _get_proposal(proposal_id)
@@ -451,14 +484,32 @@ async def execute_proposal(
     )
     current_positions = {p.symbol: p for p in result.scalars().all()}
     
+    # Fetch current market prices for all symbols in allocations
+    allocations = proposal.get('allocations', [])
+    symbols = [alloc['symbol'] for alloc in allocations]
+    
+    market_prices = {}
+    try:
+        quotes = await orchestrator.get_quotes(symbols)
+        # quotes is a dict mapping symbol -> Quote
+        logger.info(f"Fetched {len(quotes)} quotes for {len(symbols)} symbols")
+        for symbol, quote in quotes.items():
+            if quote and hasattr(quote, 'price') and quote.price:
+                market_prices[symbol] = float(quote.price)
+                logger.debug(f"Price for {symbol}: {quote.price}")
+        logger.info(f"Got market prices for {len(market_prices)} symbols: {list(market_prices.keys())}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch market prices: {e}")
+    
     # Calculate total portfolio value
     cash_balance = float(portfolio.cash_balance)
     total_value = cash_balance
     for pos in current_positions.values():
-        total_value += float(pos.quantity) * float(pos.current_price or pos.avg_cost)
+        # Use market price if available, otherwise position's price
+        price = market_prices.get(pos.symbol, float(pos.current_price or pos.avg_cost))
+        total_value += float(pos.quantity) * price
     
     created_trades = []
-    allocations = proposal.get('allocations', [])
     
     for alloc in allocations:
         symbol = alloc['symbol']
@@ -469,25 +520,31 @@ async def execute_proposal(
         current_value = 0.0
         current_qty = 0.0
         
-        # Calculate price from allocation data (value / shares)
-        alloc_value = float(alloc.get('value', 0))
-        alloc_shares = float(alloc.get('shares', 0))
-        if alloc_shares > 0 and alloc_value > 0:
-            current_price = alloc_value / alloc_shares
-        else:
-            current_price = float(alloc.get('current_price', 0))
+        # Get current market price (priority: market_prices > position > allocation fallback)
+        current_price = market_prices.get(symbol, 0)
         
         if current_price <= 0:
-            # Skip if no valid price - use a reasonable default or fetch
+            # Fallback to position's price
+            if current_pos:
+                if current_pos.current_price and float(current_pos.current_price) > 0:
+                    current_price = float(current_pos.current_price)
+                elif current_pos.avg_cost and float(current_pos.avg_cost) > 0:
+                    current_price = float(current_pos.avg_cost)
+        
+        if current_price <= 0:
+            # Last resort: calculate from allocation data (value / shares)
+            alloc_value = float(alloc.get('value', 0))
+            alloc_shares = float(alloc.get('shares', 0))
+            if alloc_shares > 0 and alloc_value > 0:
+                current_price = alloc_value / alloc_shares
+        
+        if current_price <= 0:
+            # Skip if still no valid price
+            logger.warning(f"No valid price for {symbol}, skipping")
             continue
         
         if current_pos:
             current_qty = float(current_pos.quantity)
-            # Prefer position's current price if available
-            if current_pos.current_price and float(current_pos.current_price) > 0:
-                current_price = float(current_pos.current_price)
-            elif current_pos.avg_cost and float(current_pos.avg_cost) > 0:
-                current_price = float(current_pos.avg_cost)
             current_value = current_qty * current_price
         
         # Calculate difference
@@ -599,6 +656,27 @@ async def execute_proposal(
     await _save_proposal(proposal_id, proposal)
     
     await db.commit()
+    
+    # Send email notification for executed trades
+    try:
+        should_send, user_email = await should_send_notification(
+            db, current_user.id, "trade_execution"
+        )
+        if should_send and user_email and created_trades:
+            # Send summary of executed trades
+            for trade_info in created_trades[:3]:  # First 3 trades
+                await email_service.send_trade_notification(
+                    to_email=user_email,
+                    symbol=trade_info['symbol'],
+                    trade_type=trade_info['trade_type'],
+                    quantity=trade_info['quantity'],
+                    price=trade_info['price'],
+                    total_value=trade_info['estimated_value'],
+                    portfolio_name=portfolio.name,
+                    executed_at=datetime.now(),
+                )
+    except Exception as e:
+        logger.warning(f"Failed to send trade execution emails: {e}")
     
     return {
         'success': True,

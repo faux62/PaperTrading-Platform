@@ -91,3 +91,7 @@ orjson>=3.9.12  # fast JSON
 psutil==5.9.8
 gunicorn==21.2.0
 investpy>=1.0.8
+
+# Email notifications
+aiosmtplib>=3.0.0
+jinja2>=3.1.0

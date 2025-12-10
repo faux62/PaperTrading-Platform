@@ -55,6 +55,8 @@ export const CreatePortfolioModal = ({
     e.preventDefault();
     setValidationError(null);
 
+    console.log('CreatePortfolioModal: handleSubmit called');
+
     // Validation
     if (!name.trim()) {
       setValidationError('Portfolio name is required');
@@ -75,6 +77,8 @@ export const CreatePortfolioModal = ({
     // Round to nearest 100
     const roundedCapital = Math.round(capital / 100) * 100;
 
+    console.log('CreatePortfolioModal: submitting', { name: name.trim(), roundedCapital, riskProfile });
+
     await onSubmit({
       name: name.trim(),
       description: description.trim() || undefined,
@@ -84,6 +88,8 @@ export const CreatePortfolioModal = ({
       strategy_period_weeks: strategyPeriodWeeks,
       is_active: isActive,
     });
+    
+    console.log('CreatePortfolioModal: submit successful');
   };
 
   const handleClose = () => {

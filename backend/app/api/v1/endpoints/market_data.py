@@ -37,6 +37,9 @@ MOCK_STOCKS = {
     "INTC": {"name": "Intel Corporation", "exchange": "NASDAQ", "sector": "Technology", "base_price": 45.20},
     "AMD": {"name": "Advanced Micro Devices", "exchange": "NASDAQ", "sector": "Technology", "base_price": 138.60},
     "CRM": {"name": "Salesforce Inc.", "exchange": "NYSE", "sector": "Technology", "base_price": 265.30},
+    "SPY": {"name": "SPDR S&P 500 ETF", "exchange": "NYSE", "sector": "ETF", "base_price": 595.00},
+    "QQQ": {"name": "Invesco QQQ Trust", "exchange": "NASDAQ", "sector": "ETF", "base_price": 520.00},
+    "IWM": {"name": "iShares Russell 2000 ETF", "exchange": "NYSE", "sector": "ETF", "base_price": 235.00},
 }
 
 
@@ -293,10 +296,10 @@ async def get_history(
     
     # Map timeframe
     tf_map = {
-        "1m": TimeFrame.MIN_1,
-        "5m": TimeFrame.MIN_5,
-        "15m": TimeFrame.MIN_15,
-        "1h": TimeFrame.HOUR,
+        "1m": TimeFrame.MINUTE_1,
+        "5m": TimeFrame.MINUTE_5,
+        "15m": TimeFrame.MINUTE_15,
+        "1h": TimeFrame.HOUR_1,
         "1d": TimeFrame.DAY,
     }
     tf = tf_map.get(timeframe.lower(), TimeFrame.DAY)

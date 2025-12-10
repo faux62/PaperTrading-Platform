@@ -105,6 +105,16 @@ class PortfolioService:
         )
         return result.scalar_one_or_none()
     
+    async def get_portfolio_by_name(self, user_id: int, name: str) -> Optional[Portfolio]:
+        """Get portfolio by user ID and name."""
+        result = await self.db.execute(
+            select(Portfolio).where(
+                Portfolio.user_id == user_id,
+                Portfolio.name == name
+            )
+        )
+        return result.scalar_one_or_none()
+    
     async def get_portfolios_by_user(self, user_id: int) -> list[Portfolio]:
         """Get all portfolios for a user."""
         result = await self.db.execute(

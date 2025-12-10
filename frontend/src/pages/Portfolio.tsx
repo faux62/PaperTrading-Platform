@@ -55,11 +55,12 @@ const Portfolio = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [response] = await Promise.all([
+      const [portfoliosData] = await Promise.all([
         portfolioApi.getAll(),
         fetchCurrencyData(), // Always refresh currency data too
       ]);
-      setPortfolios(response.portfolios || []);
+      // portfolioApi.getAll() returns the array directly
+      setPortfolios(Array.isArray(portfoliosData) ? portfoliosData : portfoliosData.portfolios || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load portfolios');
     } finally {

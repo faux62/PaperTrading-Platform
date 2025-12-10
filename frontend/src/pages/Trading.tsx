@@ -80,7 +80,8 @@ const Trading = () => {
     try {
       setIsLoading(true);
       const data = await portfolioApi.getAll();
-      const portfolioList = data.portfolios || [];
+      // portfolioApi.getAll() returns array directly
+      const portfolioList = Array.isArray(data) ? data : (data.portfolios || []);
       setPortfolios(portfolioList);
       if (portfolioList.length > 0 && !selectedPortfolio) {
         // Load full portfolio details for the first one

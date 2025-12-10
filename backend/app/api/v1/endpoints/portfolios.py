@@ -110,8 +110,17 @@ async def create_portfolio(
     
     Creates portfolio with specified risk profile and initial capital.
     Initial capital must be at least 100 and a multiple of 100.
+    Portfolio name must be unique per user.
     """
     service = PortfolioService(db)
+    
+    # Check if portfolio name already exists for this user
+    existing = await service.get_portfolio_by_name(current_user.id, data.name)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A portfolio with name '{data.name}' already exists"
+        )
     
     # Ensure capital is multiple of 100
     initial_capital = round(data.initial_capital / 100) * 100

@@ -151,7 +151,7 @@ export const authApi = {
 export const portfolioApi = {
   getAll: async () => {
     const response = await api.get('/portfolios/');
-    return response.data;
+    return response.data.portfolios || response.data || [];
   },
 
   getById: async (id: number) => {
