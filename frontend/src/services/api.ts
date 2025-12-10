@@ -494,4 +494,51 @@ export const settingsApi = {
   },
 };
 
+// ============================================
+// ML Predictions API
+// ============================================
+export const mlApi = {
+  /**
+   * Get all active ML signals
+   */
+  getActiveSignals: async (symbol?: string) => {
+    const params = symbol ? { symbol } : {};
+    const response = await api.get('/ml/signals/active', { params });
+    return response.data;
+  },
+
+  /**
+   * Get ML prediction for a specific symbol
+   */
+  getPrediction: async (symbol: string) => {
+    const response = await api.get(`/ml/predictions/${symbol.toUpperCase()}`);
+    return response.data;
+  },
+
+  /**
+   * Get ML predictions for multiple symbols
+   */
+  getPredictions: async (symbols?: string[]) => {
+    const params = symbols ? { symbols: symbols.join(',') } : {};
+    const response = await api.get('/ml/predictions', { params });
+    return response.data;
+  },
+
+  /**
+   * Manually trigger the ML predictions job
+   */
+  runJob: async (force: boolean = false) => {
+    const response = await api.post('/ml/job/run', null, { params: { force } });
+    return response.data;
+  },
+
+  /**
+   * Get ML job status
+   */
+  getJobStatus: async () => {
+    const response = await api.get('/ml/job/status');
+    return response.data;
+  },
+};
+
 export default api;

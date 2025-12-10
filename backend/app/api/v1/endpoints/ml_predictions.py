@@ -340,9 +340,137 @@ async def get_active_signals(
     symbol: Optional[str] = None,
     signals: SignalGenerator = Depends(get_signals)
 ):
-    """Get currently active (valid) signals."""
+    """
+    Get currently active (valid) signals.
+    
+    First checks Redis for cached predictions from ML job,
+    then falls back to in-memory signal history.
+    """
+    import json
+    from app.db.redis_client import redis_client
+    
+    try:
+        # Get active signals from Redis
+        active_signals_raw = await redis_client.client.get("ml:active_signals")
+        
+        if active_signals_raw:
+            active_signals = json.loads(active_signals_raw)
+            
+            # Filter by symbol if specified
+            if symbol:
+                active_signals = [s for s in active_signals if s.get('symbol') == symbol]
+            
+            return active_signals
+            
+    except Exception as e:
+        logger.warning(f"Redis lookup failed, falling back to in-memory: {e}")
+    
+    # Fallback to in-memory signals
     active = signals.get_active_signals(symbol)
     return [s.to_dict() for s in active]
+
+
+@router.get("/predictions/{symbol}")
+async def get_prediction(symbol: str):
+    """Get the latest ML prediction for a symbol."""
+    import json
+    from app.db.redis_client import redis_client
+    
+    try:
+        # Get prediction from Redis
+        prediction_raw = await redis_client.client.get(f"ml:predictions:{symbol}")
+        
+        if prediction_raw:
+            return json.loads(prediction_raw)
+        
+        raise HTTPException(
+            status_code=404,
+            detail=f"No prediction found for {symbol}. Run the ML job first."
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching prediction for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/predictions")
+async def get_all_predictions(
+    symbols: Optional[str] = Query(default=None, description="Comma-separated symbols")
+):
+    """Get ML predictions for multiple symbols."""
+    import json
+    from app.db.redis_client import redis_client
+    
+    try:
+        predictions = []
+        
+        if symbols:
+            symbol_list = [s.strip().upper() for s in symbols.split(',')]
+        else:
+            # Get all predictions from active signals
+            active_raw = await redis_client.client.get("ml:active_signals")
+            if active_raw:
+                active = json.loads(active_raw)
+                symbol_list = [s['symbol'] for s in active]
+            else:
+                return []
+        
+        # Fetch each prediction
+        for symbol in symbol_list:
+            pred_raw = await redis_client.client.get(f"ml:predictions:{symbol}")
+            if pred_raw:
+                predictions.append(json.loads(pred_raw))
+        
+        return predictions
+        
+    except Exception as e:
+        logger.error(f"Error fetching predictions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/job/run")
+async def run_ml_job(force: bool = Query(default=False)):
+    """
+    Manually trigger the ML predictions job.
+    
+    This will generate predictions for all portfolio symbols,
+    watchlist symbols, and popular stocks.
+    """
+    from app.scheduler.jobs import run_ml_predictions_job
+    
+    try:
+        result = await run_ml_predictions_job(force=force)
+        return result
+    except Exception as e:
+        logger.error(f"ML job error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/job/status")
+async def get_ml_job_status():
+    """Get the status of the ML predictions job."""
+    from app.scheduler.jobs import get_ml_predictions_job
+    import json
+    from app.db.redis_client import redis_client
+    
+    try:
+        job = get_ml_predictions_job()
+        
+        # Get active signals count
+        active_raw = await redis_client.client.get("ml:active_signals")
+        active_count = len(json.loads(active_raw)) if active_raw else 0
+        
+        return {
+            'last_run': job._last_run.isoformat() if job._last_run else None,
+            'is_running': job._running,
+            'active_predictions': active_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting job status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/portfolio/optimize", response_model=PortfolioResponse)
