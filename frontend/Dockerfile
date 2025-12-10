@@ -3,8 +3,10 @@
 # ================================
 # Multi-stage build for optimized static assets
 
-# Stage 1: Build
-FROM node:20-alpine as builder
+# Stage 1: Build (not included in final image)
+# Note: Build-stage vulnerabilities don't affect production
+# as only static assets are copied to the final nginx image
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -22,7 +24,7 @@ RUN npm run build
 
 
 # Stage 2: Production with Nginx
-FROM nginx:alpine as production
+FROM nginx:alpine AS production
 
 # Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
