@@ -743,8 +743,9 @@ async def auto_generate_predictions(
                 if use_trained_model:
                     try:
                         # Fetch historical data using orchestrator
+                        # Need 1 year for SMA_200 and 52-week high/low calculations
                         end_date = datetime.utcnow().date()
-                        start_date = end_date - timedelta(days=90)  # 3 months
+                        start_date = end_date - timedelta(days=365)  # 1 year
                         
                         hist_data = await orchestrator.get_historical(
                             symbol=symbol,
@@ -767,6 +768,7 @@ async def auto_generate_predictions(
                             trained_pred = await trained_service.predict(df, symbol, price)
                             if trained_pred:
                                 model_used = f"RandomForest (trained)"
+                                change_pct = quote.get('change_percent') or 0.0
                                 prediction = SymbolPrediction(
                                     symbol=symbol,
                                     signal=trained_pred.signal.lower(),
@@ -775,7 +777,7 @@ async def auto_generate_predictions(
                                     price_target=trained_pred.price_target,
                                     stop_loss=trained_pred.stop_loss,
                                     take_profit=trained_pred.take_profit,
-                                    change_percent=quote.get('change_percent', 0),
+                                    change_percent=change_pct,
                                     predicted_change=(trained_pred.probability_up - 0.5) * 10,
                                     direction=1 if trained_pred.signal == "BUY" else (-1 if trained_pred.signal == "SELL" else 0),
                                     source=f"Trained {trained_pred.model_type}",
