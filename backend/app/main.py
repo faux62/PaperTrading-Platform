@@ -102,24 +102,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"⚠️ Bot initialization error (non-fatal): {e}")
     
-    # Run initial ML predictions job
-    try:
-        from app.scheduler.jobs import run_ml_predictions_job
-        import asyncio
-        
-        # Run ML job in background after startup
-        async def run_initial_ml_job():
-            await asyncio.sleep(5)  # Wait for all services to initialize
-            try:
-                result = await run_ml_predictions_job(force=True)
-                logger.info(f"✅ Initial ML predictions generated: {result.get('predictions_generated', 0)} predictions")
-            except Exception as e:
-                logger.warning(f"Initial ML job error (non-fatal): {e}")
-        
-        asyncio.create_task(run_initial_ml_job())
-        logger.info("📊 ML Predictions job scheduled")
-    except Exception as e:
-        logger.warning(f"⚠️ ML job initialization error (non-fatal): {e}")
+    # TODO: Load ML models
     
     logger.info("✅ PaperTrading Platform started successfully!")
     

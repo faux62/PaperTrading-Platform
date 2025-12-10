@@ -498,45 +498,52 @@ export const settingsApi = {
 // ML Predictions API
 // ============================================
 export const mlApi = {
-  /**
-   * Get all active ML signals
-   */
+  // Auto-generate predictions for symbols
+  autoPredictions: async (symbols: string[]) => {
+    const response = await api.post('/ml/auto-predict', {
+      symbols,
+      include_technical: true,
+    });
+    return response.data;
+  },
+
+  // Get predictions for a portfolio
+  portfolioPredictions: async (portfolioId: number) => {
+    const response = await api.get(`/ml/portfolio-predictions/${portfolioId}`);
+    return response.data;
+  },
+
+  // Get active trading signals
   getActiveSignals: async (symbol?: string) => {
     const params = symbol ? { symbol } : {};
     const response = await api.get('/ml/signals/active', { params });
     return response.data;
   },
 
-  /**
-   * Get ML prediction for a specific symbol
-   */
-  getPrediction: async (symbol: string) => {
-    const response = await api.get(`/ml/predictions/${symbol.toUpperCase()}`);
+  // Get signal history for a symbol
+  getSignalHistory: async (symbol: string, limit: number = 10) => {
+    const response = await api.get(`/ml/signals/${symbol}/history`, {
+      params: { limit },
+    });
     return response.data;
   },
 
-  /**
-   * Get ML predictions for multiple symbols
-   */
-  getPredictions: async (symbols?: string[]) => {
-    const params = symbols ? { symbols: symbols.join(',') } : {};
-    const response = await api.get('/ml/predictions', { params });
+  // Generate aggregated signal
+  aggregateSignals: async (
+    symbol: string,
+    predictions: Record<string, unknown>,
+    currentPrice: number
+  ) => {
+    const response = await api.post('/ml/signal/aggregate', null, {
+      params: { symbol, current_price: currentPrice },
+      data: predictions,
+    });
     return response.data;
   },
 
-  /**
-   * Manually trigger the ML predictions job
-   */
-  runJob: async (force: boolean = false) => {
-    const response = await api.post('/ml/job/run', null, { params: { force } });
-    return response.data;
-  },
-
-  /**
-   * Get ML job status
-   */
-  getJobStatus: async () => {
-    const response = await api.get('/ml/job/status');
+  // Get ML health check
+  healthCheck: async () => {
+    const response = await api.get('/ml/health');
     return response.data;
   },
 };

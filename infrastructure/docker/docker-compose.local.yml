@@ -18,7 +18,7 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=production
-      - DATABASE_URL_ENV=postgresql://papertrading_user:dev_password_123@postgres:5432/papertrading
+      - DATABASE_URL=postgresql://papertrading_user:dev_password_123@postgres:5432/papertrading
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
