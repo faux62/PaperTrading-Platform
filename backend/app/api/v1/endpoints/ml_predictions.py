@@ -706,6 +706,8 @@ async def auto_generate_predictions(
     """
     from app.data_providers import orchestrator
     from app.ml.trained_service import get_trained_model_service
+    from datetime import timedelta
+    import pandas as pd
     
     # Try to load trained models
     trained_service = get_trained_model_service()
@@ -740,13 +742,29 @@ async def auto_generate_predictions(
                 # Try trained model first if available
                 if use_trained_model:
                     try:
-                        # For trained model, we need historical data
-                        # Try to fetch from yfinance or cache
-                        import yfinance as yf
-                        hist = yf.download(symbol, period="3mo", progress=False)
+                        # Fetch historical data using orchestrator
+                        end_date = datetime.utcnow().date()
+                        start_date = end_date - timedelta(days=90)  # 3 months
                         
-                        if len(hist) >= 50:
-                            trained_pred = await trained_service.predict(hist, symbol, price)
+                        hist_data = await orchestrator.get_historical(
+                            symbol=symbol,
+                            start_date=start_date,
+                            end_date=end_date
+                        )
+                        
+                        if hist_data and len(hist_data) >= 50:
+                            # Convert to DataFrame format expected by trained model
+                            # Note: Use lowercase columns to match training pipeline
+                            df = pd.DataFrame([{
+                                'open': float(bar.open),
+                                'high': float(bar.high),
+                                'low': float(bar.low),
+                                'close': float(bar.close),
+                                'volume': int(bar.volume)
+                            } for bar in hist_data])
+                            df.index = pd.to_datetime([bar.timestamp for bar in hist_data])
+                            
+                            trained_pred = await trained_service.predict(df, symbol, price)
                             if trained_pred:
                                 model_used = f"RandomForest (trained)"
                                 prediction = SymbolPrediction(
@@ -769,8 +787,8 @@ async def auto_generate_predictions(
                                         "model_type": trained_pred.model_type
                                     }
                                 )
-                    except ImportError:
-                        logger.debug("yfinance not available, falling back to rule-based")
+                        else:
+                            logger.debug(f"Not enough historical data for {symbol}: {len(hist_data) if hist_data else 0} bars")
                     except Exception as e:
                         logger.debug(f"Trained model failed for {symbol}: {e}")
                 

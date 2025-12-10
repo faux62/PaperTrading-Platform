@@ -16,6 +16,9 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    volumes:
+      # Mount ML models directory
+      - ../../ml-pipeline/models:/app/ml_models:ro
     environment:
       - ENVIRONMENT=production
       - DATABASE_URL=postgresql://papertrading_user:dev_password_123@postgres:5432/papertrading

@@ -72,6 +72,7 @@ class TrainedModelService:
     
     # Default paths relative to project root
     DEFAULT_MODEL_PATHS = [
+        "/app/ml_models",  # Docker mount point
         "ml-pipeline/models",
         "backend/ml_models",
         "models"
@@ -166,12 +167,22 @@ class TrainedModelService:
                 logger.debug(f"RF model not found in {self.model_dir}")
                 return False
             
-            self.rf_model = joblib.load(model_path)
+            # Load the saved model (can be dict or direct model)
+            loaded = joblib.load(model_path)
+            
+            # Handle both dict format and direct model
+            if isinstance(loaded, dict):
+                self.rf_model = loaded.get('model')
+                self.feature_scaler = loaded.get('scaler')
+                self.feature_columns = loaded.get('feature_names', [])
+            else:
+                self.rf_model = loaded
             
             if metadata_path and metadata_path.exists():
                 with open(metadata_path, 'r') as f:
                     self.rf_metadata = json.load(f)
-                    self.feature_columns = self.rf_metadata.get('feature_columns', [])
+                    if not self.feature_columns:
+                        self.feature_columns = self.rf_metadata.get('feature_names', [])
             
             logger.info(f"Loaded Random Forest model from {model_path}")
             return True
@@ -214,73 +225,149 @@ class TrainedModelService:
         """
         Calculate technical indicator features for prediction.
         Must match the feature engineering used during training.
+        Uses lowercase column names to match training pipeline.
         """
+        df = df.copy()
+        
+        # Normalize column names to lowercase
+        df.columns = [col.lower() for col in df.columns]
+        
+        # Ensure required columns exist
+        required = ['open', 'high', 'low', 'close', 'volume']
+        for col in required:
+            if col not in df.columns:
+                logger.warning(f"Missing column: {col}")
+                return pd.DataFrame()
+        
         try:
             import ta
+            from ta.trend import SMAIndicator, EMAIndicator, MACD, ADXIndicator, CCIIndicator
+            from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator, ROCIndicator
+            from ta.volatility import BollingerBands, AverageTrueRange, KeltnerChannel
+            from ta.volume import OnBalanceVolumeIndicator, MFIIndicator
         except ImportError:
             logger.warning("ta library not available - using basic features")
             return self._calculate_basic_features(df)
         
-        features = df.copy()
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        volume = df['volume']
         
-        # Price-based features
-        features['Returns'] = features['Close'].pct_change()
-        features['Log_Returns'] = np.log(features['Close'] / features['Close'].shift(1))
+        # === TREND INDICATORS ===
+        for period in [5, 10, 20, 50, 200]:
+            sma = SMAIndicator(close, window=period)
+            df[f'sma_{period}'] = sma.sma_indicator()
+            df[f'close_sma_{period}_ratio'] = close / df[f'sma_{period}']
         
-        # Moving Averages
-        for window in [5, 10, 20, 50]:
-            features[f'SMA_{window}'] = features['Close'].rolling(window=window).mean()
-            features[f'EMA_{window}'] = features['Close'].ewm(span=window, adjust=False).mean()
+        for period in [12, 26, 50]:
+            ema = EMAIndicator(close, window=period)
+            df[f'ema_{period}'] = ema.ema_indicator()
         
-        # RSI
-        features['RSI_14'] = ta.momentum.RSIIndicator(features['Close'], window=14).rsi()
+        macd = MACD(close)
+        df['macd'] = macd.macd()
+        df['macd_signal'] = macd.macd_signal()
+        df['macd_histogram'] = macd.macd_diff()
         
-        # MACD
-        macd = ta.trend.MACD(features['Close'])
-        features['MACD'] = macd.macd()
-        features['MACD_Signal'] = macd.macd_signal()
-        features['MACD_Hist'] = macd.macd_diff()
+        adx = ADXIndicator(high, low, close)
+        df['adx'] = adx.adx()
+        df['adx_pos'] = adx.adx_pos()
+        df['adx_neg'] = adx.adx_neg()
         
-        # Bollinger Bands
-        bb = ta.volatility.BollingerBands(features['Close'], window=20, window_dev=2)
-        features['BB_High'] = bb.bollinger_hband()
-        features['BB_Low'] = bb.bollinger_lband()
-        features['BB_Mid'] = bb.bollinger_mavg()
-        features['BB_Width'] = (features['BB_High'] - features['BB_Low']) / features['BB_Mid']
+        cci = CCIIndicator(high, low, close)
+        df['cci'] = cci.cci()
         
-        # ATR
-        features['ATR_14'] = ta.volatility.AverageTrueRange(
-            features['High'], features['Low'], features['Close'], window=14
-        ).average_true_range()
+        # === MOMENTUM INDICATORS ===
+        for period in [7, 14, 21]:
+            rsi = RSIIndicator(close, window=period)
+            df[f'rsi_{period}'] = rsi.rsi()
         
-        # Volume features
-        features['Volume_SMA_20'] = features['Volume'].rolling(window=20).mean()
-        features['Volume_Ratio'] = features['Volume'] / features['Volume_SMA_20']
+        stoch = StochasticOscillator(high, low, close)
+        df['stoch_k'] = stoch.stoch()
+        df['stoch_d'] = stoch.stoch_signal()
         
-        # Price position
-        features['Price_Position'] = (features['Close'] - features['Low']) / (features['High'] - features['Low'] + 1e-10)
+        williams = WilliamsRIndicator(high, low, close)
+        df['williams_r'] = williams.williams_r()
         
-        # Momentum
-        features['ROC_5'] = features['Close'].pct_change(periods=5) * 100
-        features['ROC_10'] = features['Close'].pct_change(periods=10) * 100
+        for period in [5, 10, 20]:
+            roc = ROCIndicator(close, window=period)
+            df[f'roc_{period}'] = roc.roc()
         
-        return features.dropna()
+        # === VOLATILITY INDICATORS ===
+        bb = BollingerBands(close)
+        df['bb_high'] = bb.bollinger_hband()
+        df['bb_low'] = bb.bollinger_lband()
+        df['bb_mid'] = bb.bollinger_mavg()
+        df['bb_width'] = (df['bb_high'] - df['bb_low']) / df['bb_mid']
+        df['bb_pct'] = (close - df['bb_low']) / (df['bb_high'] - df['bb_low'])
+        
+        for period in [7, 14, 21]:
+            atr = AverageTrueRange(high, low, close, window=period)
+            df[f'atr_{period}'] = atr.average_true_range()
+            df[f'atr_{period}_pct'] = df[f'atr_{period}'] / close * 100
+        
+        kc = KeltnerChannel(high, low, close)
+        df['kc_high'] = kc.keltner_channel_hband()
+        df['kc_low'] = kc.keltner_channel_lband()
+        df['kc_mid'] = kc.keltner_channel_mband()
+        
+        # === VOLUME INDICATORS ===
+        obv = OnBalanceVolumeIndicator(close, volume)
+        df['obv'] = obv.on_balance_volume()
+        
+        mfi = MFIIndicator(high, low, close, volume)
+        df['mfi'] = mfi.money_flow_index()
+        
+        df['volume_sma_20'] = volume.rolling(window=20).mean()
+        df['volume_ratio'] = volume / df['volume_sma_20']
+        
+        # === PRICE FEATURES ===
+        df['return_1d'] = close.pct_change()
+        df['return_5d'] = close.pct_change(5)
+        df['return_10d'] = close.pct_change(10)
+        df['return_20d'] = close.pct_change(20)
+        
+        df['volatility_5d'] = df['return_1d'].rolling(5).std()
+        df['volatility_20d'] = df['return_1d'].rolling(20).std()
+        
+        df['hl_range'] = (high - low) / close
+        df['hl_range_avg'] = df['hl_range'].rolling(window=20).mean()
+        
+        df['gap'] = (df['open'] - close.shift(1)) / close.shift(1)
+        df['intraday_position'] = (close - low) / (high - low + 1e-10)
+        
+        df['high_52w'] = high.rolling(window=252, min_periods=1).max()
+        df['low_52w'] = low.rolling(window=252, min_periods=1).min()
+        df['dist_from_high'] = (close - df['high_52w']) / df['high_52w']
+        df['dist_from_low'] = (close - df['low_52w']) / df['low_52w']
+        
+        df['above_sma_20'] = (close > df['sma_20']).astype(int)
+        df['above_sma_50'] = (close > df['sma_50']).astype(int)
+        df['above_sma_200'] = (close > df['sma_200']).astype(int)
+        
+        df['sma_20_50_cross'] = (df['sma_20'] > df['sma_50']).astype(int)
+        df['sma_50_200_cross'] = (df['sma_50'] > df['sma_200']).astype(int)
+        
+        return df.dropna()
     
     def _calculate_basic_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate basic features without ta library."""
         features = df.copy()
+        features.columns = [col.lower() for col in features.columns]
         
-        features['Returns'] = features['Close'].pct_change()
+        close = features['close']
+        features['return_1d'] = close.pct_change()
         
         for window in [5, 10, 20]:
-            features[f'SMA_{window}'] = features['Close'].rolling(window=window).mean()
+            features[f'sma_{window}'] = close.rolling(window=window).mean()
+            features[f'close_sma_{window}_ratio'] = close / features[f'sma_{window}']
         
         # Simple RSI calculation
-        delta = features['Close'].diff()
+        delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / (loss + 1e-10)
-        features['RSI_14'] = 100 - (100 / (1 + rs))
+        features['rsi_14'] = 100 - (100 / (1 + rs))
         
         return features.dropna()
     
@@ -325,9 +412,19 @@ class TrainedModelService:
             # Get last row for prediction
             X = features_df[feature_cols].iloc[[-1]].fillna(0)
             
+            # Apply scaler if available
+            if self.feature_scaler is not None:
+                try:
+                    X_scaled = self.feature_scaler.transform(X)
+                except Exception as scale_err:
+                    logger.warning(f"Scaler transform failed, using raw values: {scale_err}")
+                    X_scaled = X.values
+            else:
+                X_scaled = X.values
+            
             # Make prediction
-            pred = self.rf_model.predict(X)[0]
-            proba = self.rf_model.predict_proba(X)[0]
+            pred = self.rf_model.predict(X_scaled)[0]
+            proba = self.rf_model.predict_proba(X_scaled)[0]
             
             prob_down = proba[0]
             prob_up = proba[1] if len(proba) > 1 else 1 - proba[0]
