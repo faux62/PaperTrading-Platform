@@ -162,6 +162,23 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
     
+    # Add cache control headers to prevent browser caching of API responses
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+    from starlette.responses import Response
+    
+    class NoCacheMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            response: Response = await call_next(request)
+            # Only add no-cache headers for API endpoints
+            if request.url.path.startswith("/api/"):
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            return response
+    
+    app.add_middleware(NoCacheMiddleware)
+    
     # Include API router
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
     

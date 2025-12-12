@@ -177,31 +177,21 @@ class UserRepository:
     
     async def authenticate(
         self, 
-        email_or_username: str, 
+        username: str, 
         password: str
     ) -> Optional[User]:
         """
-        Authenticate a user by email/username and password.
+        Authenticate a user by username and password.
         
         Args:
-            email_or_username: User's email address or username
+            username: User's username (NOT email)
             password: Plain text password
             
         Returns:
             User object if authentication successful, None otherwise
         """
-        # Try to find user by email first, then by username
-        if "@" in email_or_username:
-            user = await self.get_by_email(email_or_username)
-        else:
-            user = await self.get_by_username(email_or_username)
-        
-        # If not found by primary method, try the other
-        if not user:
-            if "@" in email_or_username:
-                user = await self.get_by_username(email_or_username)
-            else:
-                user = await self.get_by_email(email_or_username)
+        # Find user by username only (email is not unique)
+        user = await self.get_by_username(username)
         
         if not user:
             return None

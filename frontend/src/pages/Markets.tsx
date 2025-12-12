@@ -43,6 +43,20 @@ interface MoverQuote {
   trending_score?: number;
 }
 
+interface MarketHourInfo {
+  code: string;
+  name: string;
+  region: string;
+  is_open: boolean;
+  session: string;
+  local_time: string;
+  timezone: string;
+  open_time: string | null;
+  close_time: string | null;
+  day_type: string;
+  reason: string | null;
+}
+
 type MoverTab = 'most-active' | 'gainers' | 'losers' | 'trending';
 
 const Markets = () => {
@@ -63,9 +77,21 @@ const Markets = () => {
   const [chartPeriod, setChartPeriod] = useState('1M');
   const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
+  
+  // Market hours state
+  const [marketHours, setMarketHours] = useState<MarketHourInfo[]>([]);
+  const [isLoadingMarketHours, setIsLoadingMarketHours] = useState(false);
+  const [lastMarketHoursUpdate, setLastMarketHoursUpdate] = useState<Date | null>(null);
 
   // WebSocket connection status (for display)
   const { status } = useMarketWebSocket();
+
+  // Load market hours on mount and every 30 seconds
+  useEffect(() => {
+    loadMarketHours();
+    const interval = setInterval(loadMarketHours, 30000); // 30 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   // Load movers data on mount and when tab changes
   useEffect(() => {
@@ -78,6 +104,22 @@ const Markets = () => {
       loadChartData(selectedSymbol, chartPeriod);
     }
   }, [selectedSymbol, chartPeriod]);
+
+  const loadMarketHours = async () => {
+    setIsLoadingMarketHours(true);
+    try {
+      const response = await fetch('/api/v1/market/market-hours');
+      const data = await response.json();
+      if (data.markets) {
+        setMarketHours(data.markets);
+        setLastMarketHoursUpdate(new Date());
+      }
+    } catch (err) {
+      console.error('Failed to load market hours:', err);
+    } finally {
+      setIsLoadingMarketHours(false);
+    }
+  };
 
   const loadMoversData = async (tab: MoverTab) => {
     setIsLoadingMovers(true);
@@ -519,22 +561,82 @@ const Markets = () => {
             {/* Market Hours Info */}
             <Card>
               <CardContent className="p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Clock className="w-4 h-4 text-blue-400" />
-                  <h2 className="font-semibold text-white">Market Hours</h2>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="p-3 rounded-lg bg-surface-800">
-                    <p className="text-surface-400 mb-1">US Markets (NYSE/NASDAQ)</p>
-                    <p className="text-white font-medium">9:30 AM - 4:00 PM ET</p>
-                    <p className="text-xs text-surface-500 mt-1">Pre-market: 4:00 AM | After-hours: 8:00 PM</p>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-blue-400" />
+                    <h2 className="font-semibold text-white">Market Hours</h2>
                   </div>
-                  <div className="p-3 rounded-lg bg-surface-800">
-                    <p className="text-surface-400 mb-1">Crypto Markets</p>
-                    <p className="text-white font-medium">24/7</p>
-                    <p className="text-xs text-surface-500 mt-1">Always open for trading</p>
+                  <div className="flex items-center gap-2">
+                    {lastMarketHoursUpdate && (
+                      <span className="text-xs text-surface-500">
+                        Updated: {lastMarketHoursUpdate.toLocaleTimeString()}
+                      </span>
+                    )}
+                    <button 
+                      onClick={loadMarketHours}
+                      disabled={isLoadingMarketHours}
+                      className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
+                    >
+                      {isLoadingMarketHours ? '...' : '↻'}
+                    </button>
                   </div>
                 </div>
+                
+                {marketHours.length === 0 ? (
+                  <div className="text-center py-4 text-surface-400">
+                    {isLoadingMarketHours ? 'Loading market hours...' : 'No market data'}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Group markets by region */}
+                    {['US', 'Europe', 'Asia', 'Global'].map(region => {
+                      const regionMarkets = marketHours.filter(m => m.region === region);
+                      if (regionMarkets.length === 0) return null;
+                      
+                      return (
+                        <div key={region}>
+                          <h3 className="text-xs font-medium text-surface-400 mb-2 uppercase tracking-wide">
+                            {region}
+                          </h3>
+                          <div className="grid grid-cols-2 gap-2">
+                            {regionMarkets.map(market => (
+                              <div 
+                                key={market.code}
+                                className={`p-2 rounded-lg ${market.is_open ? 'bg-green-900/30 border border-green-700/50' : 'bg-surface-800'}`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-medium text-white truncate" title={market.name}>
+                                    {market.code}
+                                  </span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                    market.is_open 
+                                      ? 'bg-green-500/20 text-green-400' 
+                                      : 'bg-surface-600 text-surface-400'
+                                  }`}>
+                                    {market.is_open ? 'OPEN' : 'CLOSED'}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-surface-400 truncate" title={market.name}>
+                                  {market.name}
+                                </p>
+                                <div className="flex justify-between items-center mt-1">
+                                  <span className="text-[10px] text-surface-500">
+                                    {market.open_time && market.close_time 
+                                      ? `${market.open_time} - ${market.close_time}` 
+                                      : '24/7'}
+                                  </span>
+                                  <span className="text-[10px] text-blue-400">
+                                    {market.local_time}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

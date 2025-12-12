@@ -57,22 +57,14 @@ async def register(
     """
     Register a new user.
     
-    - **email**: Valid email address (unique)
+    - **email**: Valid email address (NOT unique - multiple users can share)
     - **username**: Username (3-50 chars, unique)
     - **password**: Password (min 8 chars)
     - **full_name**: Optional full name
     """
-    # Check if user already exists
-    existing_user = await user_repo.get_by_email_or_username(
-        email=user_data.email,
-        username=user_data.username
-    )
+    # Check if username already exists (email is NOT unique)
+    existing_user = await user_repo.get_by_username(user_data.username)
     if existing_user:
-        if existing_user.email == user_data.email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already taken"
@@ -133,16 +125,16 @@ async def login(
     - **username**: User's email address or username
     - **password**: User's password
     """
-    # Authenticate user (username field can contain email or username)
+    # Authenticate user by username only
     user = await user_repo.authenticate(
-        email_or_username=form_data.username,
+        username=form_data.username,
         password=form_data.password
     )
     
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -199,18 +191,18 @@ async def login_json(
     """
     JSON login endpoint (alternative to OAuth2 form).
     
-    - **email_or_username**: User's email address or username
+    - **username**: User's username (NOT email)
     - **password**: User's password
     """
     user = await user_repo.authenticate(
-        email_or_username=credentials.email_or_username,
+        username=credentials.username,
         password=credentials.password
     )
     
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username or password",
         )
     
     if not user.is_active:

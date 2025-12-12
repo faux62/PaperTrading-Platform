@@ -61,13 +61,13 @@ class UserCreate(UserBase):
 
 class UserLogin(BaseModel):
     """Schema for user login."""
-    email_or_username: str = Field(..., description="Email address or username")
+    username: str = Field(..., description="Username")
     password: str
     
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "email_or_username": "user@example.com",
+                "username": "admin",
                 "password": "strongpassword123"
             }
         }

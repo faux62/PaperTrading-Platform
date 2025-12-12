@@ -371,27 +371,82 @@ async def search_symbols(
 
 
 @router.get("/market-hours")
-async def get_market_hours(
-    current_user: User = Depends(get_current_active_user)
-):
-    """Get market hours status."""
-    now = datetime.utcnow()
-    hour = now.hour
-    weekday = now.weekday()
+async def get_market_hours():
+    """
+    Get market hours status for all major exchanges - PUBLIC ENDPOINT.
+    Returns current status, local time, and trading hours for each market.
+    """
+    from app.scheduler.market_hours import MarketHoursManager, EXCHANGE_HOURS
     
-    # US market open 14:30-21:00 UTC (9:30-16:00 ET)
-    is_open = weekday < 5 and 14 <= hour < 21
+    manager = MarketHoursManager()
+    markets = []
+    
+    # Define market groups with display names
+    market_groups = {
+        "US": [
+            ("NYSE", "New York Stock Exchange"),
+            ("NASDAQ", "NASDAQ"),
+        ],
+        "Europe": [
+            ("LSE", "London Stock Exchange"),
+            ("XETRA", "Frankfurt (XETRA)"),
+            ("EURONEXT", "Euronext Paris"),
+            ("BIT", "Borsa Italiana"),
+            ("BME", "Bolsa de Madrid"),
+            ("SIX", "Swiss Exchange"),
+        ],
+        "Asia": [
+            ("TSE", "Tokyo Stock Exchange"),
+            ("HKEX", "Hong Kong Exchange"),
+            ("SSE", "Shanghai Stock Exchange"),
+            ("SZSE", "Shenzhen Stock Exchange"),
+            ("KRX", "Korea Exchange"),
+            ("SGX", "Singapore Exchange"),
+            ("ASX", "Australian Securities"),
+            ("NSE", "National Stock Exchange India"),
+        ],
+    }
+    
+    for region, exchanges in market_groups.items():
+        for exchange_code, display_name in exchanges:
+            try:
+                status = manager.get_market_status(exchange_code)
+                hours = EXCHANGE_HOURS.get(exchange_code)
+                
+                markets.append({
+                    "code": exchange_code,
+                    "name": display_name,
+                    "region": region,
+                    "is_open": status.is_open,
+                    "session": status.session.value,
+                    "local_time": status.local_time.strftime("%H:%M"),
+                    "timezone": hours.timezone if hours else "UTC",
+                    "open_time": hours.open_time.strftime("%H:%M") if hours else None,
+                    "close_time": hours.close_time.strftime("%H:%M") if hours else None,
+                    "day_type": status.day_type.value,
+                    "reason": status.reason,
+                })
+            except Exception as e:
+                logger.warning(f"Could not get status for {exchange_code}: {e}")
+    
+    # Add Crypto (always open)
+    markets.append({
+        "code": "CRYPTO",
+        "name": "Cryptocurrency",
+        "region": "Global",
+        "is_open": True,
+        "session": "regular",
+        "local_time": datetime.utcnow().strftime("%H:%M"),
+        "timezone": "UTC",
+        "open_time": "00:00",
+        "close_time": "24:00",
+        "day_type": "regular",
+        "reason": None,
+    })
     
     return {
-        "us_market": {
-            "is_open": is_open,
-            "status": "open" if is_open else "closed",
-            "next_open": "09:30 ET" if not is_open else None,
-            "next_close": "16:00 ET" if is_open else None,
-            "timezone": "America/New_York"
-        },
-        "current_time_utc": now.isoformat(),
-        "trading_day": weekday < 5
+        "markets": markets,
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 

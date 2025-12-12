@@ -109,7 +109,7 @@ const Login = () => {
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             <Input
-              label="Username or Email"
+              label="Username"
               name="username"
               type="text"
               value={formData.username}
