@@ -17,6 +17,8 @@ from app.db.models.bot_signal import (
     SignalStatus,
     SignalDirection,
 )
+from app.db.models.market_universe import MarketUniverse, MarketRegion, AssetType
+from app.db.models.price_bar import PriceBar, TimeFrame
 
 __all__ = [
     "User",
@@ -41,4 +43,11 @@ __all__ = [
     "SignalPriority",
     "SignalStatus",
     "SignalDirection",
+    # Market Universe
+    "MarketUniverse",
+    "MarketRegion",
+    "AssetType",
+    # Price Bars
+    "PriceBar",
+    "TimeFrame",
 ]

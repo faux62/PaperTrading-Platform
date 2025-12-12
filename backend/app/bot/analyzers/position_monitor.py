@@ -60,7 +60,7 @@ class PositionMonitor:
             select(Portfolio).where(
                 and_(
                     Portfolio.user_id == user_id,
-                    Portfolio.is_active == "active"
+                    Portfolio.is_active == True
                 )
             )
         )
@@ -298,18 +298,54 @@ Consider reducing position size to manage concentration risk.""",
     
     async def _get_current_price(self, symbol: str) -> Optional[float]:
         """
-        Get current price for a symbol.
-        
-        In production, this would integrate with the data provider aggregator.
-        For now, returns None to indicate price unavailable.
+        Get current price for a symbol from the data provider orchestrator.
         """
-        # TODO: Integrate with actual data provider
-        # from app.data_providers.aggregator import get_aggregator
-        # aggregator = get_aggregator()
-        # quote = await aggregator.get_quote(symbol)
-        # return quote.price if quote else None
+        try:
+            from app.data_providers import orchestrator
+            
+            quote = await orchestrator.get_quote(symbol)
+            if quote and quote.price:
+                return float(quote.price)
+            return None
+        except Exception as e:
+            logger.debug(f"Could not fetch price for {symbol}: {e}")
+            return None
+    
+    async def update_position_prices(self, portfolio: Portfolio) -> int:
+        """
+        Update current prices for all positions in a portfolio.
+        Returns number of positions updated.
+        """
+        result = await self.db.execute(
+            select(Position).where(
+                and_(
+                    Position.portfolio_id == portfolio.id,
+                    Position.quantity != 0
+                )
+            )
+        )
+        positions = result.scalars().all()
         
-        return None
+        if not positions:
+            return 0
+        
+        updated = 0
+        for position in positions:
+            current_price = await self._get_current_price(position.symbol)
+            if current_price:
+                position.current_price = Decimal(str(current_price))
+                position.market_value = position.quantity * position.current_price
+                position.unrealized_pnl = position.market_value - (position.quantity * position.avg_cost)
+                if position.avg_cost > 0:
+                    position.unrealized_pnl_percent = float((position.current_price - position.avg_cost) / position.avg_cost * 100)
+                position.updated_at = datetime.utcnow()
+                updated += 1
+        
+        if updated > 0:
+            await self.db.commit()
+            logger.info(f"Updated {updated} position prices for portfolio {portfolio.id}")
+        
+        return updated
     
     def _should_skip_alert(self, alert_key: str, hours: int = 4) -> bool:
         """Check if we recently sent this alert."""

@@ -69,8 +69,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Run with gunicorn for production
+# NOTE: Using 1 worker because APScheduler runs in each worker process.
+# For multiple workers, use a distributed job store (Redis) with APScheduler.
 CMD ["gunicorn", "app.main:app", \
-     "--workers", "4", \
+     "--workers", "1", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
      "--access-logfile", "-", \

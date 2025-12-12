@@ -45,8 +45,8 @@ class RedisClient:
     # =========================
     # Quote Cache Methods
     # =========================
-    async def set_quote(self, symbol: str, data: dict, ttl: int = 300):
-        """Cache quote data with TTL (default 5 minutes)."""
+    async def set_quote(self, symbol: str, data: dict, ttl: int = 1800):
+        """Cache quote data with TTL (default 30 minutes)."""
         import json
         key = f"quote:{symbol.upper()}"
         await self._client.setex(key, ttl, json.dumps(data))

@@ -83,6 +83,22 @@ async def lifespan(app: FastAPI):
     await redis_client.initialize()
     logger.info("✅ Redis connected")
     
+    # Seed Market Universe (if empty)
+    try:
+        from app.db.database import async_session_maker
+        from app.db.seeds import seed_market_universe, get_universe_stats
+        
+        async with async_session_maker() as db:
+            stats = await get_universe_stats(db)
+            if stats["total"] == 0:
+                logger.info("📈 Seeding market universe with ~900 symbols...")
+                seed_stats = await seed_market_universe(db)
+                logger.info(f"✅ Market universe seeded: {seed_stats['inserted']} symbols")
+            else:
+                logger.info(f"📈 Market universe: {stats['total']} symbols ({stats['active']} active)")
+    except Exception as e:
+        logger.warning(f"⚠️ Market universe seed skipped: {e}")
+    
     # Initialize data providers
     try:
         api_keys = await load_api_keys_from_settings()

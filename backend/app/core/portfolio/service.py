@@ -560,6 +560,8 @@ class PortfolioService:
             "name": portfolio.name,
             "risk_profile": portfolio.risk_profile.value,
             "total_value": float(total_value),
+            "cash_balance": float(portfolio.cash_balance),
+            "initial_capital": float(portfolio.initial_capital),
             "total_return": float(total_return),
             "total_return_percent": float(total_return_percent),
             "position_count": len(positions),

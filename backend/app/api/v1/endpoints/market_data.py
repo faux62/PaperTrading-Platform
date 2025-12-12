@@ -116,6 +116,8 @@ async def get_market_indices(
     
     Regions: US, EU, Asia, Crypto, Commodities
     """
+    import yfinance as yf
+    
     # Filter indices by region if specified
     if region:
         indices_to_fetch = [k for k, v in MARKET_INDICES.items() if v["region"].lower() == region.lower()]
@@ -125,37 +127,41 @@ async def get_market_indices(
     
     results = {}
     
-    # Try real providers
-    if _has_providers():
-        for symbol in indices_to_fetch:
-            try:
-                info = MARKET_INDICES.get(symbol, {})
-                market_type = MarketType.CRYPTO if info.get("type") == "crypto" else MarketType.INDEX
+    # Use yfinance directly for indices (orchestrator doesn't support them well)
+    for symbol in indices_to_fetch:
+        info = MARKET_INDICES.get(symbol, {})
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="2d")
+            
+            if not hist.empty and len(hist) >= 1:
+                latest = hist.iloc[-1]
+                price = float(latest["Close"])
                 
-                quote = await orchestrator.get_quote(
-                    symbol,
-                    market_type=market_type,
-                    force_refresh=False,
-                )
+                # Calculate change from previous day or open
+                if len(hist) >= 2:
+                    prev_close = float(hist.iloc[-2]["Close"])
+                else:
+                    prev_close = float(latest.get("Open", price))
+                
+                change = price - prev_close
+                change_pct = (change / prev_close * 100) if prev_close else 0
                 
                 results[symbol] = {
                     "symbol": symbol,
                     "name": info.get("name", symbol),
                     "region": info.get("region", "Other"),
                     "type": info.get("type", "index"),
-                    "price": float(quote.price),
-                    "change": float(quote.change) if quote.change else 0,
-                    "change_percent": float(quote.change_percent) if quote.change_percent else 0,
-                    "timestamp": quote.timestamp.isoformat(),
-                    "source": quote.provider,
+                    "price": price,
+                    "change": change,
+                    "change_percent": round(change_pct, 2),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": "yfinance",
                 }
-            except Exception as e:
-                logger.warning(f"Failed to fetch {symbol}: {e}")
-    
-    # Fill in any missing with placeholder
-    for symbol in indices_to_fetch:
-        if symbol not in results:
-            info = MARKET_INDICES.get(symbol, {})
+            else:
+                raise ValueError("No data")
+        except Exception as e:
+            logger.warning(f"Failed to fetch index {symbol}: {e}")
             results[symbol] = {
                 "symbol": symbol,
                 "name": info.get("name", symbol),
@@ -281,84 +287,64 @@ async def get_quotes(
 async def get_history(
     symbol: str,
     period: str = Query("1M", description="Period: 1D, 1W, 1M, 3M, 1Y"),
-    timeframe: str = Query("1d", description="Timeframe: 1m, 5m, 15m, 1h, 1d"),
-    current_user: User = Depends(get_current_active_user)
+    timeframe: str = Query("auto", description="Timeframe: auto, 1m, 5m, 15m, 1h, 1d"),
 ):
-    """Get historical OHLCV data."""
+    """Get historical OHLCV data. PUBLIC endpoint."""
+    import yfinance as yf
+    
     symbol = symbol.upper()
     
-    # Map period to start date
-    period_map = {"1D": 1, "1W": 7, "1M": 30, "3M": 90, "1Y": 365}
-    days = period_map.get(period.upper(), 30)
-    
-    start_date = date.today() - timedelta(days=days)
-    end_date = date.today()
-    
-    # Map timeframe
-    tf_map = {
-        "1m": TimeFrame.MINUTE_1,
-        "5m": TimeFrame.MINUTE_5,
-        "15m": TimeFrame.MINUTE_15,
-        "1h": TimeFrame.HOUR_1,
-        "1d": TimeFrame.DAY,
+    # Intelligent period and interval mapping for good chart display
+    # yfinance: period is how far back, interval is bar size
+    period_config = {
+        "1D": {"period": "1d", "interval": "5m"},    # 1 day of 5-min bars
+        "1W": {"period": "5d", "interval": "15m"},   # 5 days of 15-min bars  
+        "1M": {"period": "1mo", "interval": "1d"},   # 1 month of daily bars
+        "3M": {"period": "3mo", "interval": "1d"},   # 3 months of daily bars
+        "1Y": {"period": "1y", "interval": "1d"},    # 1 year of daily bars
+        "5Y": {"period": "5y", "interval": "1wk"},   # 5 years of weekly bars
     }
-    tf = tf_map.get(timeframe.lower(), TimeFrame.DAY)
     
-    # Try real providers
-    if _has_providers():
-        try:
-            bars = await orchestrator.get_historical(
-                symbol,
-                timeframe=tf,
-                start_date=start_date,
-                end_date=end_date,
-                market_type=MarketType.US_STOCK,
-            )
+    config = period_config.get(period.upper(), {"period": "1mo", "interval": "1d"})
+    yf_period = config["period"]
+    yf_interval = config["interval"] if timeframe == "auto" else timeframe
+    
+    # Use yfinance directly for reliable data
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=yf_period, interval=yf_interval)
+        
+        if hist.empty:
+            raise HTTPException(status_code=404, detail=f"No historical data for {symbol}")
+        
+        data = []
+        for idx, row in hist.iterrows():
+            # Format date based on interval
+            if yf_interval in ["1m", "5m", "15m", "1h"]:
+                date_str = idx.strftime("%Y-%m-%d %H:%M")
+            else:
+                date_str = idx.strftime("%Y-%m-%d")
             
-            data = []
-            for bar in bars:
-                data.append({
-                    "date": bar.timestamp.strftime("%Y-%m-%d") if isinstance(bar.timestamp, datetime) else str(bar.timestamp),
-                    "open": float(bar.open),
-                    "high": float(bar.high),
-                    "low": float(bar.low),
-                    "close": float(bar.close),
-                    "volume": bar.volume,
-                })
-            
-            return {
-                "symbol": symbol,
-                "period": period,
-                "timeframe": timeframe,
-                "data": data,
-                "source": bars[0].provider if bars else "unknown",
-            }
-            
-        except Exception as e:
-            logger.warning(f"Error fetching history for {symbol}, using mock: {e}")
-    
-    # Fallback to mock
-    stock = MOCK_STOCKS.get(symbol)
-    if not stock:
-        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
-    
-    base = stock["base_price"]
-    data = []
-    
-    for i in range(days):
-        variation = random.uniform(-0.03, 0.03)
-        price = round(base * (1 + variation), 2)
-        d = date.today() - timedelta(days=days - i)
-        data.append({
-            "date": d.strftime("%Y-%m-%d"),
-            "open": round(price * 0.99, 2),
-            "high": round(price * 1.02, 2),
-            "low": round(price * 0.98, 2),
-            "close": price,
-            "volume": random.randint(1000000, 50000000)
-        })
-    
-    return {"symbol": symbol, "period": period, "timeframe": timeframe, "data": data, "source": "mock"}
+            data.append({
+                "date": date_str,
+                "open": round(float(row["Open"]), 2),
+                "high": round(float(row["High"]), 2),
+                "low": round(float(row["Low"]), 2),
+                "close": round(float(row["Close"]), 2),
+                "volume": int(row["Volume"]) if row["Volume"] > 0 else 0,
+            })
+        
+        return {
+            "symbol": symbol,
+            "period": period,
+            "timeframe": yf_interval,
+            "data": data,
+            "source": "yfinance",
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching history for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
 
 
 @router.get("/search")
@@ -439,273 +425,244 @@ async def get_provider_status(
 @router.get("/movers/gainers")
 async def get_top_gainers(
     limit: int = 10,
-    current_user: User = Depends(get_current_active_user)
+    region: Optional[str] = Query(None, description="Filter by region: US, UK, EU, ASIA"),
 ):
-    """Get top gaining stocks for the day."""
+    """
+    Get top gaining stocks for the day - PUBLIC ENDPOINT.
+    Uses the global market universe.
+    """
+    from app.db.database import async_session_maker
+    from app.db.models.market_universe import MarketUniverse, MarketRegion
+    from app.db.redis_client import redis_client
+    from sqlalchemy import select
+    
     try:
-        import yfinance as yf
-        import pandas as pd
-        
-        # Core stocks to check - smaller list for faster response
-        active_symbols = [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM',
-            'V', 'UNH', 'HD', 'MA', 'NFLX', 'ADBE', 'CRM', 'AMD', 'INTC',
-            'ORCL', 'CSCO', 'BA', 'CAT', 'WMT', 'KO', 'PEP', 'MCD'
-        ]
-        
-        quotes = []
-        
-        # Use yf.download which is faster than individual ticker.info calls
-        try:
-            # Use 5d to ensure we have data even over weekends
-            data = yf.download(active_symbols, period='5d', progress=False, threads=True)
+        async with async_session_maker() as db:
+            query = select(MarketUniverse).where(
+                MarketUniverse.is_active == True
+            )
             
-            if not data.empty:
-                # Get the last two UNIQUE closes to calculate change
-                for symbol in active_symbols:
-                    try:
-                        if isinstance(data.columns, pd.MultiIndex):
-                            close_data = data['Close'][symbol].dropna()
-                            volume_data = data['Volume'][symbol]
-                        else:
-                            close_data = data['Close'].dropna()
-                            volume_data = data['Volume']
-                        
-                        if len(close_data) >= 2:
-                            current_price = float(close_data.iloc[-1])
-                            # Find previous different close (skip duplicates from market closed days)
-                            prev_price = current_price
-                            for i in range(2, min(len(close_data) + 1, 6)):
-                                prev_price = float(close_data.iloc[-i])
-                                if abs(prev_price - current_price) > 0.001:
-                                    break
-                            
-                            # If all prices are the same, use the oldest one
-                            if abs(prev_price - current_price) < 0.001:
-                                prev_price = float(close_data.iloc[0])
-                            
-                            change = current_price - prev_price
-                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
-                            volume = int(volume_data.iloc[-1]) if not pd.isna(volume_data.iloc[-1]) else 0
-                            
-                            if change_pct > 0.1:  # Only show meaningful gains
-                                quotes.append({
-                                    "symbol": symbol,
-                                    "name": symbol,
-                                    "price": round(current_price, 2),
-                                    "change": round(change, 2),
-                                    "change_percent": round(change_pct, 2),
-                                    "volume": volume,
-                                })
-                    except Exception:
-                        continue
-        except Exception as e:
-            print(f"yf.download failed: {e}")
-        
-        # Sort by change_percent descending
-        quotes.sort(key=lambda x: x['change_percent'], reverse=True)
-        return {"gainers": quotes[:limit], "source": "calculated"}
+            if region:
+                try:
+                    region_enum = MarketRegion(region.upper())
+                    query = query.where(MarketUniverse.region == region_enum)
+                except ValueError:
+                    pass
+            
+            query = query.order_by(
+                MarketUniverse.last_quote_update.desc().nullslast()
+            ).limit(300)
+            
+            result = await db.execute(query)
+            symbols = result.scalars().all()
+            
+            quotes = []
+            for sym in symbols:
+                cached = await redis_client.get_quote(sym.symbol)
+                if cached and cached.get("price"):
+                    change_pct = float(cached.get("change_percent") or 0)
+                    if change_pct > 0.1:  # Only show meaningful gains
+                        quotes.append({
+                            "symbol": sym.symbol,
+                            "name": sym.name or sym.symbol,
+                            "region": sym.region.value,
+                            "exchange": sym.exchange,
+                            "price": round(float(cached.get("price", 0)), 2),
+                            "change": round(float(cached.get("change") or 0), 2),
+                            "change_percent": round(change_pct, 2),
+                            "volume": int(cached.get("volume") or 0),
+                        })
+            
+            quotes.sort(key=lambda x: x['change_percent'], reverse=True)
+            return {"gainers": quotes[:limit], "source": "universe"}
         
     except Exception as e:
+        logger.error(f"Error fetching gainers: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching gainers: {str(e)}")
 
 
 @router.get("/movers/losers")
 async def get_top_losers(
     limit: int = 10,
-    current_user: User = Depends(get_current_active_user)
+    region: Optional[str] = Query(None, description="Filter by region: US, UK, EU, ASIA"),
 ):
-    """Get top losing stocks for the day."""
+    """
+    Get top losing stocks for the day - PUBLIC ENDPOINT.
+    Uses the global market universe.
+    """
+    from app.db.database import async_session_maker
+    from app.db.models.market_universe import MarketUniverse, MarketRegion
+    from app.db.redis_client import redis_client
+    from sqlalchemy import select
+    
     try:
-        import yfinance as yf
-        import pandas as pd
-        
-        # Core stocks to check
-        active_symbols = [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM',
-            'V', 'UNH', 'HD', 'MA', 'NFLX', 'ADBE', 'CRM', 'AMD', 'INTC',
-            'ORCL', 'CSCO', 'BA', 'CAT', 'WMT', 'KO', 'PEP', 'MCD'
-        ]
-        
-        quotes = []
-        
-        try:
-            # Use 5d to ensure we have data even over weekends
-            data = yf.download(active_symbols, period='5d', progress=False, threads=True)
+        async with async_session_maker() as db:
+            query = select(MarketUniverse).where(
+                MarketUniverse.is_active == True
+            )
             
-            if not data.empty:
-                for symbol in active_symbols:
-                    try:
-                        if isinstance(data.columns, pd.MultiIndex):
-                            close_data = data['Close'][symbol].dropna()
-                            volume_data = data['Volume'][symbol]
-                        else:
-                            close_data = data['Close'].dropna()
-                            volume_data = data['Volume']
-                        
-                        if len(close_data) >= 2:
-                            current_price = float(close_data.iloc[-1])
-                            # Find previous different close
-                            prev_price = current_price
-                            for i in range(2, min(len(close_data) + 1, 6)):
-                                prev_price = float(close_data.iloc[-i])
-                                if abs(prev_price - current_price) > 0.001:
-                                    break
-                            
-                            if abs(prev_price - current_price) < 0.001:
-                                prev_price = float(close_data.iloc[0])
-                            
-                            change = current_price - prev_price
-                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
-                            volume = int(volume_data.iloc[-1]) if not pd.isna(volume_data.iloc[-1]) else 0
-                            
-                            if change_pct < -0.1:  # Only show meaningful losses
-                                quotes.append({
-                                    "symbol": symbol,
-                                    "name": symbol,
-                                    "price": round(current_price, 2),
-                                    "change": round(change, 2),
-                                    "change_percent": round(change_pct, 2),
-                                    "volume": volume,
-                                })
-                    except Exception:
-                        continue
-        except Exception as e:
-            print(f"yf.download failed: {e}")
-        
-        # Sort by change_percent ascending (most negative first)
-        quotes.sort(key=lambda x: x['change_percent'])
-        return {"losers": quotes[:limit], "source": "calculated"}
+            if region:
+                try:
+                    region_enum = MarketRegion(region.upper())
+                    query = query.where(MarketUniverse.region == region_enum)
+                except ValueError:
+                    pass
+            
+            query = query.order_by(
+                MarketUniverse.last_quote_update.desc().nullslast()
+            ).limit(300)
+            
+            result = await db.execute(query)
+            symbols = result.scalars().all()
+            
+            quotes = []
+            for sym in symbols:
+                cached = await redis_client.get_quote(sym.symbol)
+                if cached and cached.get("price"):
+                    change_pct = float(cached.get("change_percent") or 0)
+                    if change_pct < -0.1:  # Only show meaningful losses
+                        quotes.append({
+                            "symbol": sym.symbol,
+                            "name": sym.name or sym.symbol,
+                            "region": sym.region.value,
+                            "exchange": sym.exchange,
+                            "price": round(float(cached.get("price", 0)), 2),
+                            "change": round(float(cached.get("change") or 0), 2),
+                            "change_percent": round(change_pct, 2),
+                            "volume": int(cached.get("volume") or 0),
+                        })
+            
+            # Sort by change_percent ascending (most negative first)
+            quotes.sort(key=lambda x: x['change_percent'])
+            return {"losers": quotes[:limit], "source": "universe"}
         
     except Exception as e:
+        logger.error(f"Error fetching losers: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching losers: {str(e)}")
 
 
 @router.get("/movers/most-active")
 async def get_most_active(
     limit: int = 10,
-    current_user: User = Depends(get_current_active_user)
+    region: Optional[str] = Query(None, description="Filter by region: US, UK, EU, ASIA"),
 ):
-    """Get most actively traded stocks by volume."""
+    """
+    Get most actively traded stocks by volume - PUBLIC ENDPOINT.
+    Uses the global market universe, not just US stocks.
+    """
+    from app.db.database import async_session_maker
+    from app.db.models.market_universe import MarketUniverse, MarketRegion
+    from app.db.redis_client import redis_client
+    from sqlalchemy import select, desc
+    
     try:
-        import yfinance as yf
-        import pandas as pd
-        
-        # Core stocks to check
-        active_symbols = [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM',
-            'V', 'UNH', 'HD', 'MA', 'NFLX', 'ADBE', 'CRM', 'AMD', 'INTC',
-            'ORCL', 'CSCO', 'BA', 'CAT', 'WMT', 'KO', 'PEP', 'MCD', 'SPY', 'QQQ'
-        ]
-        
-        quotes = []
-        
-        try:
-            data = yf.download(active_symbols, period='2d', progress=False, threads=True)
+        async with async_session_maker() as db:
+            # Query active symbols from universe
+            query = select(MarketUniverse).where(
+                MarketUniverse.is_active == True
+            )
             
-            if not data.empty:
-                for symbol in active_symbols:
-                    try:
-                        if isinstance(data.columns, pd.MultiIndex):
-                            close_data = data['Close'][symbol]
-                            volume_data = data['Volume'][symbol]
-                        else:
-                            close_data = data['Close']
-                            volume_data = data['Volume']
-                        
-                        if len(close_data) >= 2 and not pd.isna(close_data.iloc[-1]):
-                            current_price = float(close_data.iloc[-1])
-                            prev_price = float(close_data.iloc[-2])
-                            change = current_price - prev_price
-                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
-                            volume = float(volume_data.iloc[-1])
-                            
-                            if volume > 0:
-                                quotes.append({
-                                    "symbol": symbol,
-                                    "name": symbol,
-                                    "price": round(current_price, 2),
-                                    "change": round(change, 2),
-                                    "change_percent": round(change_pct, 2),
-                                    "volume": int(volume),
-                                })
-                    except Exception:
-                        continue
-        except Exception as e:
-            print(f"yf.download failed: {e}")
-        
-        # Sort by volume descending
-        quotes.sort(key=lambda x: x['volume'], reverse=True)
-        return {"most_active": quotes[:limit], "source": "calculated"}
+            if region:
+                try:
+                    region_enum = MarketRegion(region.upper())
+                    query = query.where(MarketUniverse.region == region_enum)
+                except ValueError:
+                    pass
+            
+            # Order by recent updates (symbols with fresh data)
+            query = query.order_by(
+                MarketUniverse.last_quote_update.desc().nullslast()
+            ).limit(200)  # Get more to filter by volume
+            
+            result = await db.execute(query)
+            symbols = result.scalars().all()
+            
+            quotes = []
+            for sym in symbols:
+                # Get cached quote from Redis
+                cached = await redis_client.get_quote(sym.symbol)
+                if cached and cached.get("volume") and cached.get("price"):
+                    quotes.append({
+                        "symbol": sym.symbol,
+                        "name": sym.name or sym.symbol,
+                        "region": sym.region.value,
+                        "exchange": sym.exchange,
+                        "price": round(float(cached.get("price", 0)), 2),
+                        "change": round(float(cached.get("change") or 0), 2),
+                        "change_percent": round(float(cached.get("change_percent") or 0), 2),
+                        "volume": int(cached.get("volume", 0)),
+                    })
+            
+            # Sort by volume descending
+            quotes.sort(key=lambda x: x['volume'], reverse=True)
+            return {"most_active": quotes[:limit], "source": "universe"}
         
     except Exception as e:
+        logger.error(f"Error fetching most active: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching most active: {str(e)}")
 
 
 @router.get("/movers/trending")
 async def get_trending(
     limit: int = 10,
-    current_user: User = Depends(get_current_active_user)
+    region: Optional[str] = Query(None, description="Filter by region: US, UK, EU, ASIA"),
 ):
-    """Get trending stocks based on unusual volume and price movement."""
+    """
+    Get trending stocks based on high volume and price movement - PUBLIC ENDPOINT.
+    Uses the global market universe.
+    """
+    from app.db.database import async_session_maker
+    from app.db.models.market_universe import MarketUniverse, MarketRegion
+    from app.db.redis_client import redis_client
+    from sqlalchemy import select
+    
     try:
-        import yfinance as yf
-        import pandas as pd
-        
-        # Core stocks to check - mix of popular and volatile stocks
-        trending_candidates = [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD',
-            'NFLX', 'PLTR', 'SOFI', 'RIVN', 'NIO', 'COIN', 'HOOD',
-            'RBLX', 'SNAP', 'UBER', 'ABNB', 'ROKU', 'CRWD', 'NET'
-        ]
-        
-        quotes = []
-        
-        try:
-            # Get 5 days to calculate average volume
-            data = yf.download(trending_candidates, period='5d', progress=False, threads=True)
+        async with async_session_maker() as db:
+            query = select(MarketUniverse).where(
+                MarketUniverse.is_active == True
+            )
             
-            if not data.empty:
-                for symbol in trending_candidates:
-                    try:
-                        if isinstance(data.columns, pd.MultiIndex):
-                            close_data = data['Close'][symbol]
-                            volume_data = data['Volume'][symbol]
-                        else:
-                            close_data = data['Close']
-                            volume_data = data['Volume']
-                        
-                        if len(close_data) >= 2 and not pd.isna(close_data.iloc[-1]):
-                            current_price = float(close_data.iloc[-1])
-                            prev_price = float(close_data.iloc[-2])
-                            change = current_price - prev_price
-                            change_pct = (change / prev_price) * 100 if prev_price > 0 else 0
-                            volume = float(volume_data.iloc[-1])
-                            avg_volume = float(volume_data.mean())
-                            
-                            volume_ratio = volume / avg_volume if avg_volume > 0 else 0
-                            trending_score = (volume_ratio * 0.6) + (abs(change_pct) * 0.4)
-                            
-                            if volume > 0:
-                                quotes.append({
-                                    "symbol": symbol,
-                                    "name": symbol,
-                                    "price": round(current_price, 2),
-                                    "change": round(change, 2),
-                                    "change_percent": round(change_pct, 2),
-                                    "volume": int(volume),
-                                    "avg_volume": int(avg_volume),
-                                    "volume_ratio": round(volume_ratio, 2),
-                                    "trending_score": round(trending_score, 2),
-                                })
-                    except Exception:
-                        continue
-        except Exception as e:
-            print(f"yf.download failed: {e}")
-        
-        # Sort by trending score descending
-        quotes.sort(key=lambda x: x['trending_score'], reverse=True)
-        return {"trending": quotes[:limit], "source": "calculated"}
+            if region:
+                try:
+                    region_enum = MarketRegion(region.upper())
+                    query = query.where(MarketUniverse.region == region_enum)
+                except ValueError:
+                    pass
+            
+            query = query.order_by(
+                MarketUniverse.last_quote_update.desc().nullslast()
+            ).limit(300)
+            
+            result = await db.execute(query)
+            symbols = result.scalars().all()
+            
+            quotes = []
+            for sym in symbols:
+                cached = await redis_client.get_quote(sym.symbol)
+                if cached and cached.get("price") and cached.get("volume"):
+                    volume = int(cached.get("volume") or 0)
+                    change_pct = abs(float(cached.get("change_percent") or 0))
+                    
+                    # Calculate trending score based on volume and movement
+                    # High volume + high movement = trending
+                    trending_score = (volume / 1000000) * 0.4 + change_pct * 0.6
+                    
+                    if volume > 100000 and change_pct > 0.5:  # Minimum thresholds
+                        quotes.append({
+                            "symbol": sym.symbol,
+                            "name": sym.name or sym.symbol,
+                            "region": sym.region.value,
+                            "exchange": sym.exchange,
+                            "price": round(float(cached.get("price", 0)), 2),
+                            "change": round(float(cached.get("change") or 0), 2),
+                            "change_percent": round(float(cached.get("change_percent") or 0), 2),
+                            "volume": volume,
+                            "trending_score": round(trending_score, 2),
+                        })
+            
+            quotes.sort(key=lambda x: x['trending_score'], reverse=True)
+            return {"trending": quotes[:limit], "source": "universe"}
         
     except Exception as e:
+        logger.error(f"Error fetching trending: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching trending: {str(e)}")

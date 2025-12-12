@@ -277,7 +277,7 @@ class ReportGenerator:
             select(Portfolio).where(
                 and_(
                     Portfolio.user_id == user_id,
-                    Portfolio.is_active == "active"
+                    Portfolio.is_active == True
                 )
             )
         )

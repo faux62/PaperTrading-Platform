@@ -190,7 +190,12 @@ export const portfolioApi = {
 
   getPositions: async (portfolioId: number) => {
     const response = await api.get(`/positions/portfolio/${portfolioId}`);
-    return response.data.positions || [];
+    const positions = response.data.positions || [];
+    // Map backend field names to frontend expected names
+    return positions.map((p: any) => ({
+      ...p,
+      average_cost: p.avg_cost ?? p.average_cost ?? 0,
+    }));
   },
 };
 

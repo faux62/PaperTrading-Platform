@@ -154,7 +154,7 @@ class BotScheduler:
         
         async def market_hours_wrapper():
             """Wrapper that checks market hours before executing."""
-            if await is_us_market_open():
+            if is_us_market_open():  # Synchronous call - no await
                 await func()
             else:
                 logger.debug(f"Skipping {job_id} - market closed")
@@ -221,6 +221,51 @@ class BotScheduler:
             'schedule': f'{hour:02d}:{minute:02d} ET Mon-Fri'
         }
         logger.info(f"Registered post-market job: {job_id} at {hour:02d}:{minute:02d} ET")
+    
+    def add_cron_job(
+        self,
+        job_id: str,
+        func: Callable,
+        hour: int = 0,
+        minute: int = 0,
+        day_of_week: str = '*',
+        **kwargs
+    ) -> None:
+        """
+        Add a generic cron job (runs daily at specified time UTC).
+        
+        Args:
+            job_id: Unique identifier for the job
+            func: Async function to execute
+            hour: Hour to run (UTC)
+            minute: Minute to run
+            day_of_week: Days to run ('*' for all days, 'mon-fri' for weekdays)
+            **kwargs: Additional arguments for the job
+        """
+        if not self.scheduler:
+            self.initialize()
+        
+        trigger = CronTrigger(
+            hour=hour,
+            minute=minute,
+            day_of_week=day_of_week,
+            timezone='UTC'
+        )
+        
+        self.scheduler.add_job(
+            func,
+            trigger=trigger,
+            id=job_id,
+            name=f"Cron: {job_id}",
+            replace_existing=True,
+            **kwargs
+        )
+        
+        self._registered_jobs[job_id] = {
+            'type': 'cron',
+            'schedule': f'{hour:02d}:{minute:02d} UTC ({day_of_week})'
+        }
+        logger.info(f"Registered cron job: {job_id} at {hour:02d}:{minute:02d} UTC")
     
     def add_weekly_job(
         self,
