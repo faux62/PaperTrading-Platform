@@ -75,7 +75,7 @@ const Login = () => {
         </div>
 
         <p className="text-sm text-primary-300">
-          © 2024 PaperTrading Platform. All rights reserved.
+          © 2025 PaperTrading Platform. All rights reserved.
         </p>
       </div>
 

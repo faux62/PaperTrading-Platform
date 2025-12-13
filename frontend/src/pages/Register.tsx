@@ -115,7 +115,7 @@ const Register = () => {
         </div>
 
         <p className="text-sm text-success-300">
-          © 2024 PaperTrading Platform. All rights reserved.
+          © 2025 PaperTrading Platform. All rights reserved.
         </p>
       </div>
 
