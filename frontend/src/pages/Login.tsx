@@ -56,8 +56,8 @@ const Login = () => {
           
           <div className="grid grid-cols-2 gap-4 pt-8">
             <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-              <p className="text-3xl font-bold text-white">$100K</p>
-              <p className="text-sm text-primary-200">Virtual Starting Capital</p>
+              <p className="text-3xl font-bold text-white">Virtual</p>
+              <p className="text-sm text-primary-200">Starting Capital</p>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
               <p className="text-3xl font-bold text-white">Real-time</p>

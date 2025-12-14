@@ -85,7 +85,7 @@ services:
       - POSTGRES_DB=papertrading
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-      - postgres_local_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - papertrading-local
     healthcheck:
@@ -101,7 +101,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_local_data:/data
+      - redis_data:/data
     networks:
       - papertrading-local
     healthcheck:
@@ -117,7 +117,7 @@ networks:
 
 # ==================== Volumes ====================
 volumes:
-  postgres_local_data:
+  postgres_data:
     driver: local
-  redis_local_data:
+  redis_data:
     driver: local
