@@ -207,7 +207,15 @@ const Trading = () => {
       console.log('Calling tradingApi.createOrder...');
       const result = await tradingApi.createOrder(order);
       console.log('tradingApi.createOrder returned:', result);
-      // Refresh data
+      
+      // Check if order was successful (backend returns success: false with HTTP 200)
+      if (!result.success) {
+        const errorMessage = result.errors?.join(', ') || result.message || 'Order failed';
+        console.error('Order rejected:', errorMessage);
+        throw new Error(errorMessage);
+      }
+      
+      // Refresh data only on success
       await loadPositions();
       await loadRecentTrades();
       // Also refresh portfolio to get updated cash balance

@@ -25,8 +25,10 @@ from app.core.security import get_current_user
 from app.core.optimizer import PortfolioOptimizer, OptimizationMethod
 from app.core.optimizer.optimizer import OptimizationRequest, OptimizationResponse
 from app.core.optimizer.proposal import ProposalStatus, ProposalType
+from app.core.optimizer.data_adapter import OptimizerDataAdapter
 from app.db.redis_client import redis_client
 from app.services.email_service import email_service, should_send_notification
+from app.data_providers import orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -251,8 +253,9 @@ async def request_optimization(
         ] if request.views else None
     )
     
-    # Run optimization
-    optimizer = PortfolioOptimizer()
+    # Run optimization with real data provider (wrapped in adapter)
+    data_adapter = OptimizerDataAdapter(orchestrator)
+    optimizer = PortfolioOptimizer(data_provider=data_adapter)
     response = await optimizer.optimize(opt_request)
     
     # Store proposal if successful

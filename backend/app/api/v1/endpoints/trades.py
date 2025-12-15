@@ -21,7 +21,7 @@ from app.db.repositories.trade import TradeRepository
 from app.core.trading.order_manager import OrderManager, OrderRequest
 from app.core.trading.execution import OrderExecutor, MarketCondition
 from app.core.trading.pnl_calculator import PnLCalculator, TimeFrame
-from app.core.currency_service import CurrencyService
+from app.core.currency_service import CurrencyService, get_symbol_currency
 from app.services.email_service import email_service, should_send_notification
 
 router = APIRouter()
@@ -197,11 +197,10 @@ async def create_order(
     order_manager = OrderManager(db)
     executor = OrderExecutor(db)
     repo = TradeRepository(db)
-    currency_service = CurrencyService(db)
     
     try:
         # Determine the symbol's native currency (IBKR-style)
-        native_currency = await currency_service.get_symbol_currency(request.symbol.upper())
+        native_currency = get_symbol_currency(request.symbol.upper())
         
         order_request = OrderRequest(
             portfolio_id=request.portfolio_id,
@@ -225,31 +224,54 @@ async def create_order(
                 errors=result.errors
             )
         
-        # For MARKET orders, execute immediately with simulated price
+        # For MARKET orders, execute immediately with real price
         order_type = request.order_type if isinstance(request.order_type, OrderType) else OrderType(request.order_type)
         if order_type == OrderType.MARKET and result.order_id:
             # Get the created trade
             trade = await repo.get_by_id(result.order_id)
             if trade:
-                # Use user-provided price (limit_price) or default mock price
-                # In production, this would fetch from market data
+                # Get real market price
+                execution_price = None
+                
+                # First try: use user-provided limit_price (for when they've seen the price)
                 if request.limit_price and request.limit_price > 0:
                     execution_price = request.limit_price
                 else:
-                    execution_price = Decimal("150.00")  # Default mock price
+                    # Second try: fetch from orchestrator
+                    try:
+                        from app.data_providers import orchestrator
+                        quote = await orchestrator.get_quote(request.symbol)
+                        execution_price = Decimal(str(quote.price))
+                    except Exception as e:
+                        logger.warning(f"Orchestrator quote failed for {request.symbol}: {e}")
+                        
+                        # Third try: fetch from yfinance
+                        try:
+                            import yfinance as yf
+                            ticker = yf.Ticker(request.symbol)
+                            hist = ticker.history(period="5d")
+                            if not hist.empty:
+                                execution_price = Decimal(str(round(float(hist.iloc[-1]["Close"]), 2)))
+                        except Exception as e2:
+                            logger.error(f"yfinance also failed for {request.symbol}: {e2}")
                 
-                # Execute the order
-                exec_result = await executor.execute_order(
-                    trade,
-                    execution_price,
-                    MarketCondition.NORMAL
-                )
-                
-                if exec_result.success:
-                    result.message = f"Market order executed at ${execution_price}"
+                if execution_price is None:
+                    result.success = False
+                    result.message = f"Cannot execute market order: unable to fetch price for {request.symbol}"
+                    result.errors = ["Price data unavailable"]
                 else:
-                    result.message = f"Order created but execution failed: {exec_result.message}"
-                    result.errors = [exec_result.message]
+                    # Execute the order
+                    exec_result = await executor.execute_order(
+                        trade,
+                        execution_price,
+                        MarketCondition.NORMAL
+                    )
+                    
+                    if exec_result.success:
+                        result.message = f"Market order executed at ${execution_price}"
+                    else:
+                        result.message = f"Order created but execution failed: {exec_result.message}"
+                        result.errors = [exec_result.message]
         
         await db.commit()
         

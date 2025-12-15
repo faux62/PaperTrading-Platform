@@ -3,6 +3,8 @@
  * 
  * Form for submitting buy/sell orders with support for
  * Market, Limit, Stop, and Stop-Limit order types.
+ * Features user-friendly layered symbol selection.
+ * Handles multi-currency conversion for validation.
  */
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
@@ -12,8 +14,11 @@ import {
   AlertCircle,
   CheckCircle,
   Loader2,
-  Info
+  Info,
+  RefreshCw
 } from 'lucide-react';
+import { LayeredSymbolSelector } from './LayeredSymbolSelector';
+import { currencyApi } from '../../services/api';
 
 // Currency symbols
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -77,7 +82,7 @@ const ORDER_TYPES: { value: OrderType; label: string; description: string }[] = 
 export function OrderForm({
   portfolioId,
   symbol: initialSymbol = '',
-  currentPrice,
+  currentPrice: initialPrice,
   availableCash = 0,
   positions = [],
   currency = 'USD',
@@ -85,10 +90,14 @@ export function OrderForm({
   onCancel,
   className
 }: OrderFormProps) {
-  const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
+  const portfolioCurrencySymbol = CURRENCY_SYMBOLS[currency] || currency;
   const [tradeType, setTradeType] = useState<TradeType>('buy');
   const [orderType, setOrderType] = useState<OrderType>('market');
   const [symbol, setSymbol] = useState(initialSymbol);
+  const [selectedPrice, setSelectedPrice] = useState<number | null>(initialPrice || null);
+  const [symbolCurrency, setSymbolCurrency] = useState<string>('USD'); // Currency of the selected stock
+  const [exchangeRate, setExchangeRate] = useState<number>(1); // Rate from symbolCurrency to portfolio currency
+  const [isLoadingRate, setIsLoadingRate] = useState(false);
   const [quantity, setQuantity] = useState<string>('');
   const [marketPrice, setMarketPrice] = useState<string>('');  // For market orders without live data
   const [limitPrice, setLimitPrice] = useState<string>('');
@@ -98,10 +107,56 @@ export function OrderForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // Use selectedPrice or initialPrice
+  const currentPrice = selectedPrice || initialPrice;
+  
+  // Symbol currency symbol for display
+  const symbolCurrencySymbol = CURRENCY_SYMBOLS[symbolCurrency] || symbolCurrency;
+  
+  // Check if currency conversion is needed
+  const needsConversion = symbolCurrency !== currency;
+
   // Calculate available shares for current symbol from positions
   const availableShares = positions.find(
     p => p.symbol.toUpperCase() === symbol.toUpperCase()
   )?.quantity || 0;
+
+  // Fetch exchange rate when symbol currency changes
+  useEffect(() => {
+    const fetchExchangeRate = async () => {
+      if (symbolCurrency === currency) {
+        setExchangeRate(1);
+        return;
+      }
+      
+      setIsLoadingRate(true);
+      try {
+        const result = await currencyApi.convert(1, symbolCurrency, currency);
+        setExchangeRate(result.rate);
+      } catch (err) {
+        console.error('Failed to fetch exchange rate:', err);
+        // Fallback: keep rate as 1 but show warning
+        setExchangeRate(1);
+      } finally {
+        setIsLoadingRate(false);
+      }
+    };
+    
+    if (symbolCurrency && currency) {
+      fetchExchangeRate();
+    }
+  }, [symbolCurrency, currency]);
+
+  // Handle symbol selection from LayeredSymbolSelector
+  const handleSymbolSelect = (selectedSymbol: string, price: number | null, _name: string, stockCurrency: string) => {
+    setSymbol(selectedSymbol);
+    setSelectedPrice(price);
+    setSymbolCurrency(stockCurrency);
+    if (price) {
+      setMarketPrice(price.toString());
+    }
+    setError(null);
+  };
 
   // Update symbol when prop changes
   useEffect(() => {
@@ -110,8 +165,8 @@ export function OrderForm({
     }
   }, [initialSymbol]);
 
-  // Calculate estimated order value
-  const estimatedValue = (() => {
+  // Calculate estimated order value in NATIVE currency (stock's currency)
+  const estimatedValueNative = (() => {
     const qty = parseFloat(quantity) || 0;
     if (orderType === 'limit' || orderType === 'stop_limit') {
       return qty * (parseFloat(limitPrice) || 0);
@@ -120,6 +175,9 @@ export function OrderForm({
     const price = currentPrice || parseFloat(marketPrice) || 0;
     return qty * price;
   })();
+  
+  // Estimated value converted to PORTFOLIO currency for validation
+  const estimatedValueInPortfolioCurrency = estimatedValueNative * exchangeRate;
 
   // Validation
   const validate = (): string | null => {
@@ -137,8 +195,12 @@ export function OrderForm({
       return 'Price per share is required';
     }
     
-    if (tradeType === 'buy' && estimatedValue > availableCash) {
-      return `Insufficient funds. Need ${currencySymbol}${estimatedValue.toFixed(2)}, have ${currencySymbol}${availableCash.toFixed(2)}`;
+    // Validate using CONVERTED value against portfolio cash
+    if (tradeType === 'buy' && estimatedValueInPortfolioCurrency > availableCash) {
+      const neededStr = needsConversion 
+        ? `${symbolCurrencySymbol}${estimatedValueNative.toFixed(2)} (≈${portfolioCurrencySymbol}${estimatedValueInPortfolioCurrency.toFixed(2)})`
+        : `${portfolioCurrencySymbol}${estimatedValueInPortfolioCurrency.toFixed(2)}`;
+      return `Insufficient funds. Need ${neededStr}, have ${portfolioCurrencySymbol}${availableCash.toFixed(2)}`;
     }
     
     if (tradeType === 'sell' && qty > availableShares) {
@@ -160,7 +222,9 @@ export function OrderForm({
     e.preventDefault();
     console.log('OrderForm handleSubmit called', { 
       symbol, quantity, marketPrice, orderType, tradeType,
-      availableCash, portfolioId, estimatedValue 
+      availableCash, portfolioId, 
+      estimatedValueNative, estimatedValueInPortfolioCurrency,
+      symbolCurrency, portfolioCurrency: currency, exchangeRate
     });
     setError(null);
     setSuccess(false);
@@ -262,31 +326,16 @@ export function OrderForm({
         </button>
       </div>
 
-      {/* Symbol Input */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Symbol
+      {/* Layered Symbol Selector - User-friendly navigation */}
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+          Select Stock
         </label>
-        <input
-          type="text"
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-          placeholder="AAPL"
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg 
-                     bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                     focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        <LayeredSymbolSelector
+          onSelect={handleSymbolSelect}
+          initialSymbol={symbol}
         />
       </div>
-
-      {/* Current Price Display */}
-      {currentPrice && (
-        <div className="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-          <span className="text-gray-600 dark:text-gray-400">Current Price</span>
-          <span className="font-semibold text-gray-900 dark:text-white">
-            ${currentPrice.toFixed(2)}
-          </span>
-        </div>
-      )}
 
       {/* Order Type Selector */}
       <div>
@@ -351,11 +400,11 @@ export function OrderForm({
       {orderType === 'market' && !currentPrice && (
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Price per Share ({currency})
+            Price per Share ({symbolCurrency})
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-              {currencySymbol}
+              {symbolCurrencySymbol}
             </span>
             <input
               type="number"
@@ -379,11 +428,11 @@ export function OrderForm({
       {(orderType === 'limit' || orderType === 'stop_limit') && (
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Limit Price ({currency})
+            Limit Price ({symbolCurrency})
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-              {currencySymbol}
+              {symbolCurrencySymbol}
             </span>
             <input
               type="number"
@@ -404,11 +453,11 @@ export function OrderForm({
       {(orderType === 'stop' || orderType === 'stop_limit') && (
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Stop Price ({currency})
+            Stop Price ({symbolCurrency})
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-              {currencySymbol}
+              {symbolCurrencySymbol}
             </span>
             <input
               type="number"
@@ -427,20 +476,49 @@ export function OrderForm({
 
       {/* Order Summary */}
       <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-2">
+        {/* Exchange Rate Info (when different currencies) */}
+        {needsConversion && symbol && (
+          <div className="flex justify-between items-center text-xs pb-2 border-b border-gray-200 dark:border-gray-700">
+            <span className="text-gray-500 dark:text-gray-400">
+              Exchange Rate
+            </span>
+            <span className="text-gray-600 dark:text-gray-300 flex items-center gap-1">
+              {isLoadingRate ? (
+                <RefreshCw className="h-3 w-3 animate-spin" />
+              ) : (
+                <>1 {symbolCurrency} = {exchangeRate.toFixed(4)} {currency}</>
+              )}
+            </span>
+          </div>
+        )}
+        
         <div className="flex justify-between text-sm">
           <span className="text-gray-600 dark:text-gray-400">Estimated Value</span>
-          <span className="font-semibold text-gray-900 dark:text-white">
-            {currencySymbol}{estimatedValue.toFixed(2)}
-          </span>
+          <div className="text-right">
+            {needsConversion && estimatedValueNative > 0 ? (
+              <>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {symbolCurrencySymbol}{estimatedValueNative.toFixed(2)}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                  ≈ {portfolioCurrencySymbol}{estimatedValueInPortfolioCurrency.toFixed(2)} {currency}
+                </span>
+              </>
+            ) : (
+              <span className="font-semibold text-gray-900 dark:text-white">
+                {portfolioCurrencySymbol}{estimatedValueInPortfolioCurrency.toFixed(2)}
+              </span>
+            )}
+          </div>
         </div>
         {tradeType === 'buy' && (
           <div className="flex justify-between text-sm">
             <span className="text-gray-600 dark:text-gray-400">Available Cash</span>
             <span className={clsx(
               'font-medium',
-              estimatedValue > availableCash ? 'text-red-600' : 'text-green-600'
+              estimatedValueInPortfolioCurrency > availableCash ? 'text-red-600' : 'text-green-600'
             )}>
-              {currencySymbol}{availableCash.toFixed(2)}
+              {portfolioCurrencySymbol}{availableCash.toFixed(2)}
             </span>
           </div>
         )}

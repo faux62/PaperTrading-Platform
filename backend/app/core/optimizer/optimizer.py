@@ -260,61 +260,37 @@ class PortfolioOptimizer:
         symbols: List[str],
         lookback_days: int = 252
     ) -> pd.DataFrame:
-        """Fetch historical returns for symbols"""
+        """Fetch historical returns for symbols - REAL DATA ONLY"""
         cache_key = f"{','.join(sorted(symbols))}_{lookback_days}"
         
         if cache_key in self._returns_cache:
             return self._returns_cache[cache_key]
         
         if self.data_provider is None:
-            # Generate mock data for testing
-            returns = self._generate_mock_returns(symbols, lookback_days)
-        else:
-            try:
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=lookback_days)
-                
-                prices = await self.data_provider.get_historical_prices_batch(
-                    symbols, start_date, end_date
-                )
-                
-                returns = prices.pct_change().dropna()
-            except Exception as e:
-                logger.warning(f"Failed to fetch returns: {e}, using mock data")
-                returns = self._generate_mock_returns(symbols, lookback_days)
+            raise ValueError("No data provider configured - cannot fetch returns")
         
-        self._returns_cache[cache_key] = returns
-        return returns
-    
-    def _generate_mock_returns(
-        self,
-        symbols: List[str],
-        days: int
-    ) -> pd.DataFrame:
-        """Generate mock returns for testing"""
-        np.random.seed(42)
-        
-        # Generate correlated returns
-        n_assets = len(symbols)
-        
-        # Random correlation matrix
-        A = np.random.randn(n_assets, n_assets)
-        corr = A @ A.T
-        corr = corr / np.sqrt(np.outer(np.diag(corr), np.diag(corr)))
-        
-        # Daily volatility (annualized 20-40%)
-        vols = np.random.uniform(0.01, 0.025, n_assets)
-        
-        # Covariance matrix
-        cov = np.outer(vols, vols) * corr
-        
-        # Generate correlated returns
-        mean_returns = np.random.uniform(-0.0002, 0.0008, n_assets)
-        returns = np.random.multivariate_normal(mean_returns, cov, days)
-        
-        dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
-        
-        return pd.DataFrame(returns, index=dates, columns=symbols)
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days)
+            
+            prices = await self.data_provider.get_historical_prices_batch(
+                symbols, start_date, end_date
+            )
+            
+            if prices.empty:
+                raise ValueError(f"No price data returned for symbols: {symbols}")
+            
+            returns = prices.pct_change().dropna()
+            
+            if returns.empty:
+                raise ValueError("Insufficient data to calculate returns")
+            
+            self._returns_cache[cache_key] = returns
+            return returns
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch returns: {e}")
+            raise ValueError(f"Failed to fetch historical data: {e}")
     
     async def _run_optimization(
         self,

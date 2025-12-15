@@ -1,11 +1,10 @@
 """
 PaperTrading Platform - Market Data Endpoints
-Real data providers with mock fallback
+Real data providers only - NO MOCK DATA
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import datetime, date, timedelta
-from typing import Optional
-import random
+from typing import Optional, List
 from loguru import logger
 
 from app.dependencies import get_current_active_user
@@ -14,64 +13,6 @@ from app.data_providers import orchestrator, failover_manager, rate_limiter
 from app.data_providers.adapters.base import MarketType, TimeFrame, ProviderError
 
 router = APIRouter()
-
-# Mock stock database (fallback when providers unavailable)
-MOCK_STOCKS = {
-    "AAPL": {"name": "Apple Inc.", "exchange": "NASDAQ", "sector": "Technology", "base_price": 178.50},
-    "GOOGL": {"name": "Alphabet Inc.", "exchange": "NASDAQ", "sector": "Technology", "base_price": 141.80},
-    "MSFT": {"name": "Microsoft Corporation", "exchange": "NASDAQ", "sector": "Technology", "base_price": 378.90},
-    "AMZN": {"name": "Amazon.com Inc.", "exchange": "NASDAQ", "sector": "Consumer Cyclical", "base_price": 178.25},
-    "TSLA": {"name": "Tesla Inc.", "exchange": "NASDAQ", "sector": "Automotive", "base_price": 248.50},
-    "META": {"name": "Meta Platforms Inc.", "exchange": "NASDAQ", "sector": "Technology", "base_price": 505.75},
-    "NVDA": {"name": "NVIDIA Corporation", "exchange": "NASDAQ", "sector": "Technology", "base_price": 475.20},
-    "JPM": {"name": "JPMorgan Chase & Co.", "exchange": "NYSE", "sector": "Financial", "base_price": 195.30},
-    "V": {"name": "Visa Inc.", "exchange": "NYSE", "sector": "Financial", "base_price": 275.40},
-    "JNJ": {"name": "Johnson & Johnson", "exchange": "NYSE", "sector": "Healthcare", "base_price": 156.80},
-    "WMT": {"name": "Walmart Inc.", "exchange": "NYSE", "sector": "Consumer Defensive", "base_price": 165.20},
-    "PG": {"name": "Procter & Gamble Co.", "exchange": "NYSE", "sector": "Consumer Defensive", "base_price": 158.90},
-    "MA": {"name": "Mastercard Inc.", "exchange": "NYSE", "sector": "Financial", "base_price": 445.60},
-    "HD": {"name": "Home Depot Inc.", "exchange": "NYSE", "sector": "Consumer Cyclical", "base_price": 345.70},
-    "DIS": {"name": "Walt Disney Co.", "exchange": "NYSE", "sector": "Communication", "base_price": 112.30},
-    "NFLX": {"name": "Netflix Inc.", "exchange": "NASDAQ", "sector": "Communication", "base_price": 478.90},
-    "PYPL": {"name": "PayPal Holdings Inc.", "exchange": "NASDAQ", "sector": "Financial", "base_price": 62.45},
-    "INTC": {"name": "Intel Corporation", "exchange": "NASDAQ", "sector": "Technology", "base_price": 45.20},
-    "AMD": {"name": "Advanced Micro Devices", "exchange": "NASDAQ", "sector": "Technology", "base_price": 138.60},
-    "CRM": {"name": "Salesforce Inc.", "exchange": "NYSE", "sector": "Technology", "base_price": 265.30},
-    "SPY": {"name": "SPDR S&P 500 ETF", "exchange": "NYSE", "sector": "ETF", "base_price": 595.00},
-    "QQQ": {"name": "Invesco QQQ Trust", "exchange": "NASDAQ", "sector": "ETF", "base_price": 520.00},
-    "IWM": {"name": "iShares Russell 2000 ETF", "exchange": "NYSE", "sector": "ETF", "base_price": 235.00},
-}
-
-
-def _get_mock_price(symbol: str) -> dict:
-    """Generate mock price with small random variation (fallback)."""
-    stock = MOCK_STOCKS.get(symbol.upper())
-    if not stock:
-        return None
-    
-    base = stock["base_price"]
-    variation = random.uniform(-0.02, 0.02)
-    price = round(base * (1 + variation), 2)
-    change = round(price - base, 2)
-    change_pct = round((change / base) * 100, 2)
-    
-    return {
-        "symbol": symbol.upper(),
-        "name": stock["name"],
-        "exchange": stock["exchange"],
-        "price": price,
-        "change": change,
-        "change_percent": change_pct,
-        "volume": random.randint(1000000, 50000000),
-        "bid": round(price - 0.01, 2),
-        "ask": round(price + 0.01, 2),
-        "high": round(price * 1.01, 2),
-        "low": round(price * 0.99, 2),
-        "open": round(base, 2),
-        "previous_close": round(base, 2),
-        "timestamp": datetime.utcnow().isoformat(),
-        "source": "mock"
-    }
 
 
 def _has_providers() -> bool:
@@ -201,8 +142,8 @@ async def get_quote(
             
             return {
                 "symbol": quote.symbol,
-                "name": MOCK_STOCKS.get(symbol, {}).get("name", symbol),
-                "exchange": quote.exchange or MOCK_STOCKS.get(symbol, {}).get("exchange", ""),
+                "name": getattr(quote, 'name', None) or symbol,
+                "exchange": quote.exchange or "",
                 "price": float(quote.price),
                 "change": float(quote.change) if quote.change else 0,
                 "change_percent": float(quote.change_percent) if quote.change_percent else 0,
@@ -217,15 +158,48 @@ async def get_quote(
                 "source": quote.provider,
             }
         except ProviderError as e:
-            logger.warning(f"Provider error for {symbol}, using mock: {e}")
+            logger.warning(f"Provider error for {symbol}: {e}")
         except Exception as e:
             logger.error(f"Error fetching quote for {symbol}: {e}")
     
-    # Fallback to mock data
-    quote = _get_mock_price(symbol)
-    if not quote:
-        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
-    return quote
+    # Try yfinance as fallback (real data source)
+    try:
+        import yfinance as yf
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="5d")
+        
+        if hist.empty:
+            raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
+        
+        latest = hist.iloc[-1]
+        price = float(latest["Close"])
+        prev_close = float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else price
+        change = price - prev_close
+        change_pct = (change / prev_close * 100) if prev_close else 0
+        
+        # Get ticker info for name
+        info = ticker.info
+        
+        return {
+            "symbol": symbol,
+            "name": info.get("shortName") or info.get("longName") or symbol,
+            "exchange": info.get("exchange", ""),
+            "price": round(price, 2),
+            "change": round(change, 2),
+            "change_percent": round(change_pct, 2),
+            "volume": int(latest.get("Volume", 0)),
+            "bid": round(price - 0.01, 2),
+            "ask": round(price + 0.01, 2),
+            "high": round(float(latest.get("High", price)), 2),
+            "low": round(float(latest.get("Low", price)), 2),
+            "open": round(float(latest.get("Open", price)), 2),
+            "previous_close": round(prev_close, 2),
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "yfinance",
+        }
+    except Exception as e:
+        logger.error(f"yfinance also failed for {symbol}: {e}")
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found or unavailable")
 
 
 @router.get("/quotes")
@@ -251,8 +225,8 @@ async def get_quotes(
             for symbol, quote in result.items():
                 quotes.append({
                     "symbol": quote.symbol,
-                    "name": MOCK_STOCKS.get(symbol, {}).get("name", symbol),
-                    "exchange": MOCK_STOCKS.get(symbol, {}).get("exchange", ""),
+                    "name": getattr(quote, 'name', None) or symbol,
+                    "exchange": quote.exchange or "",
                     "price": float(quote.price),
                     "change": float(quote.change) if quote.change else 0,
                     "change_percent": float(quote.change_percent) if quote.change_percent else 0,
@@ -272,13 +246,35 @@ async def get_quotes(
         except Exception as e:
             logger.error(f"Error fetching quotes: {e}")
     
-    # Fallback to mock
+    # yfinance fallback for missing symbols
+    import yfinance as yf
     for sym in symbol_list:
-        quote = _get_mock_price(sym)
-        if quote:
-            quotes.append(quote)
-        else:
-            errors.append({"symbol": sym, "error": "Not found"})
+        try:
+            ticker = yf.Ticker(sym)
+            hist = ticker.history(period="5d")
+            if hist.empty:
+                errors.append({"symbol": sym, "error": "Not found"})
+                continue
+            
+            latest = hist.iloc[-1]
+            price = float(latest["Close"])
+            prev_close = float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else price
+            change = price - prev_close
+            change_pct = (change / prev_close * 100) if prev_close else 0
+            
+            quotes.append({
+                "symbol": sym,
+                "name": ticker.info.get("shortName", sym),
+                "exchange": ticker.info.get("exchange", ""),
+                "price": round(price, 2),
+                "change": round(change, 2),
+                "change_percent": round(change_pct, 2),
+                "volume": int(latest.get("Volume", 0)),
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "yfinance",
+            })
+        except Exception as e:
+            errors.append({"symbol": sym, "error": str(e)})
     
     return {"quotes": quotes, "count": len(quotes), "errors": errors}
 
@@ -349,25 +345,130 @@ async def get_history(
 
 @router.get("/search")
 async def search_symbols(
-    query: str = Query(..., min_length=1, description="Search query"),
+    query: str = Query(..., min_length=1, max_length=50, description="Search query (symbol or company name)"),
+    limit: int = Query(20, ge=1, le=50, description="Max results"),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Search for symbols."""
-    query = query.upper()
+    """
+    Search for symbols using real market data.
+    Searches by ticker symbol and company name.
+    Returns symbol, name, exchange, sector, type, and current price.
+    """
+    import yfinance as yf
+    
+    query = query.strip().upper()
     results = []
     
-    # Search mock database (in future, can use provider search APIs)
-    for symbol, info in MOCK_STOCKS.items():
-        if query in symbol or query.lower() in info["name"].lower():
-            results.append({
-                "symbol": symbol,
-                "name": info["name"],
-                "exchange": info["exchange"],
-                "sector": info["sector"],
-                "type": "Stock"
-            })
+    # First, try direct symbol lookup if query looks like a ticker
+    if len(query) <= 6 and query.isalpha():
+        try:
+            ticker = yf.Ticker(query)
+            info = ticker.info
+            
+            # Check if valid ticker
+            if info.get("regularMarketPrice") or info.get("previousClose"):
+                price = info.get("regularMarketPrice") or info.get("previousClose") or 0
+                results.append({
+                    "symbol": query,
+                    "name": info.get("shortName") or info.get("longName") or query,
+                    "exchange": info.get("exchange", ""),
+                    "sector": info.get("sector", ""),
+                    "type": info.get("quoteType", "EQUITY"),
+                    "price": round(float(price), 2) if price else None,
+                    "currency": info.get("currency", "USD"),
+                })
+        except Exception as e:
+            logger.debug(f"Direct lookup failed for {query}: {e}")
     
-    return {"results": results, "count": len(results), "query": query}
+    # Use yfinance search for broader results
+    try:
+        # Try with .search (available in newer yfinance)
+        search_results = yf.Tickers(query)
+        
+        # Also try common variations
+        variations = [query]
+        if len(query) >= 2:
+            # Try with common suffixes for international stocks
+            for suffix in ["", ".L", ".DE", ".PA", ".MI", ".T", ".HK"]:
+                if f"{query}{suffix}" not in variations:
+                    variations.append(f"{query}{suffix}")
+        
+        for sym in variations[:10]:  # Limit variations to check
+            if len(results) >= limit:
+                break
+            if any(r["symbol"] == sym for r in results):
+                continue
+            
+            try:
+                ticker = yf.Ticker(sym)
+                info = ticker.info
+                
+                # Skip if no valid data
+                if not (info.get("regularMarketPrice") or info.get("previousClose")):
+                    continue
+                
+                price = info.get("regularMarketPrice") or info.get("previousClose") or 0
+                name = info.get("shortName") or info.get("longName") or sym
+                
+                # Filter: include if symbol matches or name contains query
+                if query in sym.upper() or query.lower() in name.lower():
+                    results.append({
+                        "symbol": sym.upper(),
+                        "name": name,
+                        "exchange": info.get("exchange", ""),
+                        "sector": info.get("sector", ""),
+                        "type": info.get("quoteType", "EQUITY"),
+                        "price": round(float(price), 2) if price else None,
+                        "currency": info.get("currency", "USD"),
+                    })
+            except Exception:
+                continue
+                
+    except Exception as e:
+        logger.warning(f"Search error: {e}")
+    
+    # If no results yet, try searching by name patterns in common stocks
+    if not results:
+        # Common large-cap symbols to search through
+        common_symbols = [
+            "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA",
+            "JPM", "V", "JNJ", "WMT", "MA", "PG", "HD", "DIS", "NFLX", "PYPL",
+            "INTC", "AMD", "CRM", "ORCL", "IBM", "CSCO", "ADBE", "QCOM", "TXN",
+            "BA", "GE", "CAT", "MMM", "HON", "UPS", "FDX", "RTX", "LMT",
+            "KO", "PEP", "MCD", "SBUX", "NKE", "COST", "TGT", "LOW",
+            "BAC", "WFC", "C", "GS", "MS", "AXP", "BLK", "SCHW",
+            "UNH", "PFE", "MRK", "ABBV", "LLY", "BMY", "TMO", "ABT",
+            "XOM", "CVX", "COP", "SLB", "EOG", "OXY",
+            "SPY", "QQQ", "IWM", "DIA", "VOO", "VTI", "GLD", "SLV"
+        ]
+        
+        for sym in common_symbols:
+            if len(results) >= limit:
+                break
+            try:
+                ticker = yf.Ticker(sym)
+                info = ticker.info
+                name = info.get("shortName") or info.get("longName") or sym
+                
+                if query in sym or query.lower() in name.lower():
+                    price = info.get("regularMarketPrice") or info.get("previousClose") or 0
+                    results.append({
+                        "symbol": sym,
+                        "name": name,
+                        "exchange": info.get("exchange", ""),
+                        "sector": info.get("sector", ""),
+                        "type": info.get("quoteType", "EQUITY"),
+                        "price": round(float(price), 2) if price else None,
+                        "currency": info.get("currency", "USD"),
+                    })
+            except Exception:
+                continue
+    
+    return {
+        "results": results[:limit],
+        "count": len(results[:limit]),
+        "query": query
+    }
 
 
 @router.get("/market-hours")

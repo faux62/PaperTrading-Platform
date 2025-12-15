@@ -19,7 +19,7 @@ from app.db.models.position import Position
 from app.db.models.cash_balance import CashBalance
 from app.core.portfolio.service import PortfolioService
 from app.core.portfolio.risk_profiles import get_risk_profile
-from app.core.currency_service import CurrencyService
+from app.core.currency_service import CurrencyService, get_symbol_currency
 
 logger = logging.getLogger(__name__)
 
@@ -185,8 +185,7 @@ class OrderManager:
                 estimated_value = request.quantity * estimated_price
                 
                 # Get the symbol's native currency (IBKR-style)
-                currency_service = CurrencyService(self.db)
-                symbol_currency = await currency_service.get_symbol_currency(request.symbol)
+                symbol_currency = get_symbol_currency(request.symbol)
                 
                 # Get cash balance in that currency
                 result = await self.db.execute(

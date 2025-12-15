@@ -292,8 +292,8 @@ export const marketApi = {
     return response.data;
   },
 
-  search: async (query: string) => {
-    const response = await api.get('/market/search', { params: { query } });
+  search: async (query: string, limit: number = 20) => {
+    const response = await api.get('/market/search', { params: { query, limit } });
     return response.data;
   },
 
@@ -322,6 +322,12 @@ export const marketApi = {
     const response = await api.get('/market/movers/trending', { params: { limit } });
     return response.data;
   },
+};
+
+// Alias for backwards compatibility and clearer naming
+export const marketDataApi = {
+  ...marketApi,
+  searchSymbols: marketApi.search,
 };
 
 // ============================================

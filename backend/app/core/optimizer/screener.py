@@ -168,17 +168,16 @@ class AssetScreener:
         symbol: str,
         lookback_days: int
     ) -> Optional[Dict]:
-        """Fetch data for a single asset"""
+        """Fetch data for a single asset - REAL DATA ONLY"""
         # Check cache
         cache_key = f"{symbol}_{lookback_days}"
         if cache_key in self._cache:
             if self._cache_expiry.get(cache_key, datetime.min) > datetime.now():
                 return self._cache[cache_key]
         
-        # Fetch from data provider
+        # Require data provider
         if self.data_provider is None:
-            # Return mock data for testing
-            return self._generate_mock_data(symbol)
+            raise ValueError("No data provider configured - cannot fetch asset data")
         
         try:
             # Fetch price history
@@ -188,6 +187,9 @@ class AssetScreener:
             history = await self.data_provider.get_historical_prices(
                 symbol, start_date, end_date
             )
+            
+            if history.empty:
+                return None
             
             # Fetch fundamental data
             fundamentals = await self.data_provider.get_fundamentals(symbol)
@@ -201,38 +203,9 @@ class AssetScreener:
             
             return data
             
-        except Exception:
+        except Exception as e:
+            # Log and return None (skip this symbol)
             return None
-    
-    def _generate_mock_data(self, symbol: str) -> Dict:
-        """Generate mock data for testing"""
-        np.random.seed(hash(symbol) % 2**32)
-        
-        returns = np.random.normal(0.0005, 0.02, 252)
-        prices = 100 * np.cumprod(1 + returns)
-        
-        return {
-            "symbol": symbol,
-            "name": f"{symbol} Inc.",
-            "sector": np.random.choice([
-                "Technology", "Healthcare", "Financials", 
-                "Consumer Discretionary", "Industrials"
-            ]),
-            "industry": "Generic Industry",
-            "price": prices[-1],
-            "prices": prices,
-            "returns": returns,
-            "volume": np.random.uniform(1e6, 1e8),
-            "market_cap": np.random.uniform(1e9, 500e9),
-            "pe_ratio": np.random.uniform(10, 40),
-            "pb_ratio": np.random.uniform(1, 10),
-            "dividend_yield": np.random.uniform(0, 0.05),
-            "roe": np.random.uniform(0.05, 0.30),
-            "debt_to_equity": np.random.uniform(0, 2),
-            "revenue_growth": np.random.uniform(-0.1, 0.3),
-            "earnings_growth": np.random.uniform(-0.2, 0.4),
-            "beta": np.random.uniform(0.5, 2.0)
-        }
     
     def _process_raw_data(
         self,
