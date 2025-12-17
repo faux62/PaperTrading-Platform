@@ -20,3 +20,6 @@ export type {
   BotNotification,
   NotificationPreferences,
 } from './useBotWebSocket';
+
+export { useFXRates, usePositionsWithFX } from './useFXRates';
+export type { PositionWithFX } from './useFXRates';

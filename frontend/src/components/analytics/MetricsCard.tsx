@@ -13,6 +13,7 @@ interface MetricsCardProps {
   change?: number;
   changeLabel?: string;
   format?: 'number' | 'currency' | 'percent';
+  currency?: string;  // Currency for 'currency' format
   icon?: React.ReactNode;
   trend?: 'up' | 'down' | 'neutral';
   description?: string;
@@ -26,6 +27,7 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
   change,
   changeLabel,
   format = 'number',
+  currency = 'USD',
   icon,
   trend,
   description,
@@ -40,7 +42,7 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
       case 'currency':
         return new Intl.NumberFormat('en-US', {
           style: 'currency',
-          currency: 'USD',
+          currency: currency,
           minimumFractionDigits: 0,
           maximumFractionDigits: 0,
         }).format(value);

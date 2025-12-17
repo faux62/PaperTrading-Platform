@@ -2,6 +2,10 @@
 PaperTrading Platform - Order Manager Service
 
 Handles order creation, validation, queueing, and lifecycle management.
+
+SINGLE CURRENCY MODEL:
+- Validation checks portfolio.cash_balance (single currency)
+- For cross-currency trades, converts estimated cost to portfolio currency
 """
 from datetime import datetime
 from decimal import Decimal
@@ -16,10 +20,10 @@ from sqlalchemy import select, update
 from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.portfolio import Portfolio
 from app.db.models.position import Position
-from app.db.models.cash_balance import CashBalance
 from app.core.portfolio.service import PortfolioService
 from app.core.portfolio.risk_profiles import get_risk_profile
-from app.core.currency_service import CurrencyService, get_symbol_currency
+from app.core.currency_service import get_symbol_currency
+from app.utils.currency import convert
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +171,10 @@ class OrderManager:
         """
         Validate order against portfolio constraints.
         
+        SINGLE CURRENCY MODEL:
+        - Checks portfolio.cash_balance (in portfolio's base currency)
+        - For cross-currency trades, converts estimated cost to portfolio currency
+        
         Returns list of validation errors (empty if valid).
         """
         errors = []
@@ -177,30 +185,35 @@ class OrderManager:
             errors.append(f"Portfolio {request.portfolio_id} not found")
             return errors
         
-        # For buy orders, check available funds in the symbol's native currency
+        # For buy orders, check available funds (converted to portfolio currency)
         if request.trade_type == TradeType.BUY:
             # Estimate order value (use limit price if available, otherwise we need current price)
             estimated_price = request.limit_price or await self._get_estimated_price(request.symbol)
             if estimated_price:
-                estimated_value = request.quantity * estimated_price
+                estimated_value_native = request.quantity * estimated_price
                 
-                # Get the symbol's native currency (IBKR-style)
+                # Get the symbol's native currency
                 symbol_currency = get_symbol_currency(request.symbol)
+                portfolio_currency = portfolio.currency or "EUR"
                 
-                # Get cash balance in that currency
-                result = await self.db.execute(
-                    select(CashBalance).where(
-                        CashBalance.portfolio_id == request.portfolio_id,
-                        CashBalance.currency == symbol_currency
+                # Convert estimated cost to portfolio currency
+                if symbol_currency != portfolio_currency:
+                    estimated_value_portfolio, exchange_rate = await convert(
+                        estimated_value_native,
+                        symbol_currency,
+                        portfolio_currency
                     )
-                )
-                cash_balance = result.scalar_one_or_none()
-                available_balance = cash_balance.balance if cash_balance else Decimal("0")
+                else:
+                    estimated_value_portfolio = estimated_value_native
                 
-                if estimated_value > available_balance:
+                # Check against portfolio's single cash balance
+                available_balance = portfolio.cash_balance or Decimal("0")
+                
+                if estimated_value_portfolio > available_balance:
                     errors.append(
-                        f"Insufficient {symbol_currency} funds: need {estimated_value:.2f} {symbol_currency}, "
-                        f"available {available_balance:.2f} {symbol_currency}"
+                        f"Insufficient funds: need ~{estimated_value_portfolio:.2f} {portfolio_currency} "
+                        f"({estimated_value_native:.2f} {symbol_currency}), "
+                        f"available {available_balance:.2f} {portfolio_currency}"
                     )
         
         # For sell orders, check available shares

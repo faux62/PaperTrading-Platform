@@ -2,18 +2,26 @@
 PaperTrading Platform - Position Endpoints
 
 API endpoints for managing stock positions within portfolios.
+
+ARCHITECTURE NOTE:
+- Positions are stored in DB with TRADE-DRIVEN data only
+- Market values (market_value, unrealized_pnl) are COMPUTED AT RUNTIME
+- Uses PositionCalculator for real-time calculations with fresh FX rates
 """
 from decimal import Decimal
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.database import get_db
 from app.core.security import get_current_user
 from app.db.models.user import User
+from app.db.models.portfolio import Portfolio
 from app.db.repositories.position import PositionRepository
 from app.core.portfolio.service import PortfolioService
+from app.services.position_calculator import PositionCalculator, create_calculator
 
 
 router = APIRouter()
@@ -33,6 +41,9 @@ class PositionResponse(BaseModel):
     market_value: float
     unrealized_pnl: float
     unrealized_pnl_percent: float
+    native_currency: Optional[str] = "USD"  # Currency the symbol is quoted in
+    avg_cost_portfolio: Optional[float] = None  # Average cost in portfolio currency
+    entry_exchange_rate: Optional[float] = None  # FX rate at entry
     opened_at: Optional[str]
     updated_at: Optional[str]
     
@@ -74,7 +85,7 @@ async def verify_portfolio_ownership(
 
 
 def position_to_dict(position) -> dict:
-    """Convert position model to dict."""
+    """Convert position model to dict with DB values (legacy support)."""
     return {
         "id": position.id,
         "portfolio_id": position.portfolio_id,
@@ -82,13 +93,25 @@ def position_to_dict(position) -> dict:
         "exchange": position.exchange,
         "quantity": float(position.quantity),
         "avg_cost": float(position.avg_cost),
-        "current_price": float(position.current_price),
-        "market_value": float(position.market_value),
-        "unrealized_pnl": float(position.unrealized_pnl),
-        "unrealized_pnl_percent": float(position.unrealized_pnl_percent),
+        "avg_cost_portfolio": float(position.avg_cost_portfolio) if position.avg_cost_portfolio else None,
+        "entry_exchange_rate": float(position.entry_exchange_rate) if position.entry_exchange_rate else None,
+        "native_currency": position.native_currency or "USD",
+        "current_price": float(position.current_price) if position.current_price else 0,
+        "market_value": float(position.market_value) if position.market_value else 0,
+        "unrealized_pnl": float(position.unrealized_pnl) if position.unrealized_pnl else 0,
+        "unrealized_pnl_percent": float(position.unrealized_pnl_percent) if position.unrealized_pnl_percent else 0,
         "opened_at": position.opened_at.isoformat() if position.opened_at else None,
         "updated_at": position.updated_at.isoformat() if position.updated_at else None,
     }
+
+
+async def get_portfolio_currency(portfolio_id: int, db: AsyncSession) -> str:
+    """Get the base currency of a portfolio."""
+    result = await db.execute(
+        select(Portfolio.currency).where(Portfolio.id == portfolio_id)
+    )
+    currency = result.scalar_one_or_none()
+    return currency or "EUR"
 
 
 # ==================== Endpoints ====================
@@ -100,25 +123,44 @@ async def get_portfolio_positions(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get all positions for a portfolio.
+    Get all positions for a portfolio with REAL-TIME computed values.
     
-    Returns list of positions with current values and P&L.
+    Returns list of positions with:
+    - Trade-driven data from DB (quantity, avg_cost, avg_cost_portfolio)
+    - Market-driven data computed at runtime (market_value, unrealized_pnl)
+    - Fresh FX rates applied for currency conversion
     """
     await verify_portfolio_ownership(portfolio_id, current_user.id, db)
     
+    # Get portfolio currency for calculations
+    portfolio_currency = await get_portfolio_currency(portfolio_id, db)
+    
+    # Get positions from DB
     repo = PositionRepository(db)
     positions = await repo.get_all_by_portfolio(portfolio_id)
     
-    # Calculate totals
-    total_market_value = sum(float(p.market_value) for p in positions)
-    total_unrealized_pnl = sum(float(p.unrealized_pnl) for p in positions)
+    if not positions:
+        return {
+            "portfolio_id": portfolio_id,
+            "portfolio_currency": portfolio_currency,
+            "positions": [],
+            "count": 0,
+            "total_market_value": 0,
+            "total_unrealized_pnl": 0,
+        }
+    
+    # Compute values at runtime using fresh prices and FX rates
+    calculator = create_calculator(portfolio_currency)
+    summary = await calculator.compute_portfolio_summary(positions)
     
     return {
         "portfolio_id": portfolio_id,
-        "positions": [position_to_dict(p) for p in positions],
-        "count": len(positions),
-        "total_market_value": total_market_value,
-        "total_unrealized_pnl": total_unrealized_pnl,
+        "portfolio_currency": portfolio_currency,
+        "positions": summary["positions"],
+        "count": summary["position_count"],
+        "total_market_value": summary["total_market_value"],
+        "total_unrealized_pnl": summary["total_unrealized_pnl"],
+        "total_unrealized_pnl_pct": summary["total_unrealized_pnl_pct"],
     }
 
 

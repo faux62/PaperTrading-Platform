@@ -2,7 +2,17 @@
 PaperTrading Platform - Currency Endpoints
 
 API endpoints for currency conversion and exchange rates.
-IBKR-style multi-currency portfolio management.
+
+SINGLE CURRENCY MODEL:
+- Portfolios use a SINGLE base currency (portfolio.currency)
+- Trading converts costs on-demand to portfolio currency
+- Exchange rates and the convert() function are the key utilities
+
+DEPRECATED ENDPOINTS (will be removed):
+- /portfolio/{id}/balances - Multi-currency cash balances
+- /portfolio/{id}/fx-convert - Manual FX conversions
+- /portfolio/{id}/deposit - Currency deposits
+- /portfolio/{id}/withdraw - Currency withdrawals
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from decimal import Decimal
@@ -19,6 +29,7 @@ from app.utils.currency import (
     convert_currency,
     get_supported_currencies,
     get_conversion_rate,
+    convert,  # NEW: Unified conversion function
 )
 
 
@@ -143,7 +154,55 @@ async def convert(
 
 
 # ============================================
-# IBKR-style Multi-Currency Portfolio Endpoints
+# NEW: Single Currency Model Endpoint
+# ============================================
+
+class SingleCurrencyConvertRequest(BaseModel):
+    """Request for unified currency conversion (Decimal precision)."""
+    amount: float
+    from_currency: str = Field(..., min_length=3, max_length=3)
+    to_currency: str = Field(..., min_length=3, max_length=3)
+
+
+class SingleCurrencyConvertResponse(BaseModel):
+    """Response with converted amount and exchange rate used."""
+    original_amount: float
+    converted_amount: float
+    from_currency: str
+    to_currency: str
+    exchange_rate: float
+
+
+@router.post("/convert/precise", response_model=SingleCurrencyConvertResponse)
+async def convert_precise(
+    request: SingleCurrencyConvertRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Convert currency using the unified convert() function.
+    
+    This is the recommended endpoint for the Single Currency Model.
+    Returns both the converted amount and the exchange rate used.
+    """
+    converted_amount, exchange_rate = await convert(
+        Decimal(str(request.amount)),
+        request.from_currency.upper(),
+        request.to_currency.upper()
+    )
+    
+    return SingleCurrencyConvertResponse(
+        original_amount=request.amount,
+        converted_amount=float(converted_amount),
+        from_currency=request.from_currency.upper(),
+        to_currency=request.to_currency.upper(),
+        exchange_rate=float(exchange_rate),
+    )
+
+
+# ============================================
+# DEPRECATED: IBKR-style Multi-Currency Endpoints
+# These endpoints will be removed in a future version.
+# Use portfolio.cash_balance instead of cash_balances table.
 # ============================================
 
 CURRENCY_SYMBOLS = {
@@ -153,7 +212,7 @@ CURRENCY_SYMBOLS = {
 
 
 async def get_or_create_cash_balance(db: AsyncSession, portfolio_id: int, currency: str) -> CashBalance:
-    """Get or create a cash balance for a specific currency."""
+    """DEPRECATED: Get or create a cash balance for a specific currency."""
     result = await db.execute(
         select(CashBalance).where(
             CashBalance.portfolio_id == portfolio_id,
@@ -174,13 +233,17 @@ async def get_or_create_cash_balance(db: AsyncSession, portfolio_id: int, curren
     return balance
 
 
-@router.get("/portfolio/{portfolio_id}/balances", response_model=PortfolioCashResponse)
+@router.get("/portfolio/{portfolio_id}/balances", response_model=PortfolioCashResponse, deprecated=True)
 async def get_portfolio_cash_balances(
     portfolio_id: int,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get all cash balances for a portfolio (IBKR-style multi-currency)."""
+    """
+    DEPRECATED: Get all cash balances for a portfolio (IBKR-style multi-currency).
+    
+    Use portfolio.cash_balance instead for the Single Currency Model.
+    """
     result = await db.execute(
         select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == current_user.id)
     )

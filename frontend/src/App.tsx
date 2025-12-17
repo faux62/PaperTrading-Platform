@@ -7,6 +7,7 @@ import { useAuthStore } from './store/authStore';
 import { useUIStore } from './store/uiStore';
 import { Spinner } from './components/common';
 import { BotNotificationToast } from './components/bot';
+import { connectFXWebSocket, disconnectFXWebSocket } from './services/fxWebSocket';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -18,6 +19,7 @@ import Analytics from './pages/Analytics';
 import MLInsights from './pages/MLInsights';
 import ModelDashboard from './pages/ModelDashboard';
 import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 import Login from './pages/Login';
 import Register from './pages/Register';
 
@@ -75,6 +77,19 @@ function App() {
     document.body.classList.remove('light', 'dark');
     document.body.classList.add(theme);
   }, [theme]);
+
+  // Connect to FX WebSocket when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      connectFXWebSocket();
+    } else {
+      disconnectFXWebSocket();
+    }
+    
+    return () => {
+      disconnectFXWebSocket();
+    };
+  }, [isAuthenticated]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -176,6 +191,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <Admin />
             </ProtectedRoute>
           }
         />

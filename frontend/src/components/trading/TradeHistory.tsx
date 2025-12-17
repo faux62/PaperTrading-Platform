@@ -33,14 +33,22 @@ interface Trade {
   total_value: number | null;
   commission: number | null;
   realized_pnl: number | null;
+  native_currency?: string;  // Currency the symbol is quoted in
+  exchange_rate?: number;    // FX rate at execution
   created_at: string;
   executed_at: string | null;
   notes: string | null;
 }
 
+// Currency symbols for display
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
+};
+
 interface TradeHistoryProps {
   portfolioId: number | string;
   onTradeClick?: (trade: Trade) => void;
+  baseCurrency?: string;  // Portfolio base currency
 }
 
 const STATUS_CONFIG = {
@@ -51,7 +59,7 @@ const STATUS_CONFIG = {
   rejected: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10' },
 };
 
-export function TradeHistory({ portfolioId, onTradeClick }: TradeHistoryProps) {
+export function TradeHistory({ portfolioId, onTradeClick, baseCurrency = 'USD' }: TradeHistoryProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
@@ -132,12 +140,19 @@ export function TradeHistory({ portfolioId, onTradeClick }: TradeHistoryProps) {
     }
   };
 
+  // Format currency in portfolio BASE currency (for totals, P&L)
   const formatCurrency = (value: number | null) => {
     if (value === null) return '-';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(value);
+    const symbol = CURRENCY_SYMBOLS[baseCurrency] || baseCurrency + ' ';
+    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  // Format price in NATIVE currency (executed price)
+  const formatNativePrice = (value: number | null, nativeCurrency?: string) => {
+    if (value === null) return '-';
+    const currency = nativeCurrency || 'USD';
+    const symbol = CURRENCY_SYMBOLS[currency] || currency + ' ';
+    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const formatDate = (dateString: string) => {
@@ -264,10 +279,15 @@ export function TradeHistory({ portfolioId, onTradeClick }: TradeHistoryProps) {
                           <span className={`px-2 py-0.5 rounded text-xs ${statusBg} ${statusColor}`}>
                             {trade.status.toUpperCase()}
                           </span>
+                          {trade.native_currency && trade.native_currency !== baseCurrency && (
+                            <span className="text-xs text-surface-500">
+                              ({trade.native_currency})
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-surface-400">
                           {trade.trade_type.toUpperCase()} {trade.quantity} shares
-                          {trade.executed_price && ` @ ${formatCurrency(trade.executed_price)}`}
+                          {trade.executed_price && ` @ ${formatNativePrice(trade.executed_price, trade.native_currency)}`}
                         </p>
                       </div>
                     </div>

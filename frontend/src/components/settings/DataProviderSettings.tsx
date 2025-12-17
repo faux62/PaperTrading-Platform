@@ -14,6 +14,8 @@ interface ProviderConfig {
   enabled: boolean;
   status: 'connected' | 'disconnected' | 'error';
   maskedKey?: string;
+  source?: 'personal' | 'system' | 'environment' | null;  // Where the key comes from
+  isPersonal?: boolean;  // True if user has their own key
 }
 
 interface DataProviderSettingsProps {
@@ -159,11 +161,19 @@ export const DataProviderSettings: React.FC<DataProviderSettingsProps> = () => {
         const settings = await settingsApi.getSettings();
         if (settings.api_keys) {
           const updatedProviders = providers.map(p => {
-            const savedKey = settings.api_keys.find((k: { provider: string; configured: boolean; masked_key?: string }) => k.provider === p.key);
+            const savedKey = settings.api_keys.find((k: { 
+              provider: string; 
+              configured: boolean; 
+              masked_key?: string;
+              source?: string;
+              is_personal?: boolean;
+            }) => k.provider === p.key);
             return {
               ...p,
               status: savedKey?.configured ? 'connected' as const : 'disconnected' as const,
               maskedKey: savedKey?.masked_key,
+              source: savedKey?.source as ProviderConfig['source'],
+              isPersonal: savedKey?.is_personal || false,
             };
           });
           setProviders(updatedProviders);
@@ -188,11 +198,19 @@ export const DataProviderSettings: React.FC<DataProviderSettingsProps> = () => {
       const settings = await settingsApi.getSettings();
       if (settings.api_keys) {
         const updatedProviders = providers.map(p => {
-          const savedKey = settings.api_keys.find((k: { provider: string; configured: boolean; masked_key?: string }) => k.provider === p.key);
+          const savedKey = settings.api_keys.find((k: { 
+            provider: string; 
+            configured: boolean; 
+            masked_key?: string;
+            source?: string;
+            is_personal?: boolean;
+          }) => k.provider === p.key);
           return {
             ...p,
             status: savedKey?.configured ? 'connected' as const : 'disconnected' as const,
             maskedKey: savedKey?.masked_key,
+            source: savedKey?.source as ProviderConfig['source'],
+            isPersonal: savedKey?.is_personal || false,
           };
         });
         setProviders(updatedProviders);
@@ -278,14 +296,20 @@ export const DataProviderSettings: React.FC<DataProviderSettingsProps> = () => {
     }
   };
 
-  const getStatusText = (status: ProviderConfig['status']) => {
-    switch (status) {
-      case 'connected':
-        return 'Connected';
-      case 'error':
-        return 'Error';
+  const getStatusText = (status: ProviderConfig['status'], source?: ProviderConfig['source']) => {
+    if (status !== 'connected') {
+      return status === 'error' ? 'Error' : 'Not configured';
+    }
+    // Show source when connected
+    switch (source) {
+      case 'personal':
+        return 'Personal key';
+      case 'system':
+        return 'System key';
+      case 'environment':
+        return 'Environment';
       default:
-        return 'Not configured';
+        return 'Connected';
     }
   };
 
@@ -333,17 +357,24 @@ export const DataProviderSettings: React.FC<DataProviderSettingsProps> = () => {
                         Current key: {provider.maskedKey}
                       </p>
                     )}
+                    {provider.status === 'connected' && provider.source && provider.source !== 'personal' && (
+                      <p className="text-xs text-primary-400 mt-1">
+                        💡 You can override with your own key for separate rate limits
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusIcon(provider.status)}
                     <span className={`text-sm ${
                       provider.status === 'connected'
-                        ? 'text-success-500'
+                        ? provider.source === 'personal' 
+                          ? 'text-success-500' 
+                          : 'text-primary-400'
                         : provider.status === 'error'
                         ? 'text-danger-500'
                         : 'text-surface-400'
                     }`}>
-                      {getStatusText(provider.status)}
+                      {getStatusText(provider.status, provider.source)}
                     </span>
                   </div>
                 </div>

@@ -3,7 +3,13 @@ PaperTrading Platform - Simulated Execution Engine
 
 Simulates realistic order execution with price slippage, partial fills,
 bid/ask spread, commissions, and market conditions simulation.
-IBKR-style multi-currency support.
+
+SINGLE CURRENCY MODEL:
+- All portfolios use a single base currency (e.g., EUR)
+- When trading assets in different currencies (e.g., USD stocks),
+  the cost is converted to portfolio currency at current FX rate
+- The exchange rate is stored in the trade for audit trail
+- Positions store both native and portfolio currency values
 """
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -19,7 +25,7 @@ from sqlalchemy import select, update, and_
 from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.portfolio import Portfolio
 from app.db.models.position import Position
-from app.db.models.cash_balance import CashBalance
+from app.utils.currency import convert, get_exchange_rate
 
 logger = logging.getLogger(__name__)
 
@@ -659,37 +665,15 @@ class ExecutionEngine:
         
         return total, breakdown
     
-    async def _get_or_create_cash_balance(
-        self, 
-        portfolio_id: int, 
-        currency: str
-    ) -> CashBalance:
-        """Get or create a cash balance for a specific currency (IBKR-style)."""
-        result = await self.db.execute(
-            select(CashBalance).where(
-                and_(
-                    CashBalance.portfolio_id == portfolio_id,
-                    CashBalance.currency == currency
-                )
-            )
-        )
-        balance = result.scalar_one_or_none()
-        
-        if not balance:
-            balance = CashBalance(
-                portfolio_id=portfolio_id,
-                currency=currency,
-                balance=Decimal("0.00")
-            )
-            self.db.add(balance)
-            await self.db.flush()
-        
-        return balance
-    
     async def _update_portfolio_and_positions(self, trade: Trade) -> None:
         """
         Update portfolio cash and positions after execution.
-        IBKR-style: Uses multi-currency cash balances.
+        
+        SINGLE CURRENCY MODEL:
+        - All cash operations use portfolio.cash_balance in portfolio's base currency
+        - If trade is in different currency, convert to portfolio currency
+        - Store exchange rate in trade for audit trail
+        - Position stores both native and portfolio currency values
         """
         # Get portfolio
         result = await self.db.execute(
@@ -701,45 +685,68 @@ class ExecutionEngine:
             raise ValueError(f"Portfolio {trade.portfolio_id} not found")
         
         # Determine the currency of the trade
-        # Use trade's native_currency, or default to portfolio currency
-        trade_currency = trade.native_currency or portfolio.currency or "USD"
+        trade_currency = trade.native_currency or "USD"
+        portfolio_currency = portfolio.currency or "EUR"
         
-        total_cost = trade.total_value + trade.commission
+        # Calculate total cost in trade's native currency
+        total_cost_native = trade.total_value + trade.commission
         
-        # Get the cash balance for this currency
-        cash_balance = await self._get_or_create_cash_balance(
-            trade.portfolio_id, 
-            trade_currency
-        )
+        # Convert to portfolio currency if different
+        if trade_currency != portfolio_currency:
+            # Convert from native (e.g., USD) to portfolio (e.g., EUR)
+            total_cost_portfolio, exchange_rate = await convert(
+                total_cost_native, 
+                trade_currency, 
+                portfolio_currency
+            )
+            # Store exchange rate in trade for audit
+            trade.exchange_rate = exchange_rate
+            logger.info(
+                f"Currency conversion: {total_cost_native:.2f} {trade_currency} -> "
+                f"{total_cost_portfolio:.2f} {portfolio_currency} (rate: {exchange_rate})"
+            )
+        else:
+            total_cost_portfolio = total_cost_native
+            trade.exchange_rate = Decimal("1.0")
         
         if trade.trade_type == TradeType.BUY:
-            # Deduct from currency-specific cash balance
-            cash_balance.balance -= total_cost
-            
-            # Also update legacy cash_balance for backwards compatibility
-            # (only if same currency as portfolio base)
-            if trade_currency == portfolio.currency:
-                portfolio.cash_balance -= total_cost
+            # Deduct from portfolio's single cash balance (in portfolio currency)
+            portfolio.cash_balance -= total_cost_portfolio
             
             # Add or update position
-            await self._add_to_position(trade, trade_currency)
+            await self._add_to_position(trade, trade_currency, portfolio_currency)
             
         else:  # SELL
-            # Add to currency-specific cash balance
-            cash_balance.balance += (trade.total_value - trade.commission)
+            # Add proceeds to portfolio cash balance
+            proceeds_native = trade.total_value - trade.commission
+            if trade_currency != portfolio_currency:
+                proceeds_portfolio, _ = await convert(
+                    proceeds_native, 
+                    trade_currency, 
+                    portfolio_currency
+                )
+            else:
+                proceeds_portfolio = proceeds_native
             
-            # Update legacy field
-            if trade_currency == portfolio.currency:
-                portfolio.cash_balance += (trade.total_value - trade.commission)
+            portfolio.cash_balance += proceeds_portfolio
             
             # Reduce position
             await self._reduce_position(trade)
         
-        cash_balance.updated_at = datetime.utcnow()
+        portfolio.updated_at = datetime.utcnow()
         await self.db.flush()
     
-    async def _add_to_position(self, trade: Trade, currency: str) -> None:
-        """Add bought shares to position."""
+    async def _add_to_position(self, trade: Trade, native_currency: str, portfolio_currency: str) -> None:
+        """
+        Add bought shares to position.
+        
+        SINGLE CURRENCY MODEL:
+        - avg_cost: Average cost in NATIVE currency (USD for AAPL)
+        - avg_cost_portfolio: Average cost converted to PORTFOLIO currency
+        - entry_exchange_rate: Weighted average exchange rate at entry
+        - market_value: Current value in PORTFOLIO currency
+        - unrealized_pnl: P&L in PORTFOLIO currency
+        """
         # Check for existing position
         result = await self.db.execute(
             select(Position).where(
@@ -749,14 +756,65 @@ class ExecutionEngine:
         )
         position = result.scalar_one_or_none()
         
+        # Get exchange rate for this trade
+        exchange_rate = trade.exchange_rate or Decimal("1.0")
+        
+        # Calculate price in portfolio currency
+        if native_currency != portfolio_currency:
+            executed_price_portfolio, _ = await convert(
+                trade.executed_price,
+                native_currency,
+                portfolio_currency
+            )
+            # Convert total_value to portfolio currency for market_value
+            market_value_portfolio, _ = await convert(
+                trade.total_value,
+                native_currency,
+                portfolio_currency
+            )
+        else:
+            executed_price_portfolio = trade.executed_price
+            market_value_portfolio = trade.total_value
+        
         if position:
-            # Update existing position (average cost basis)
-            old_value = position.quantity * position.avg_cost
-            new_value = trade.executed_quantity * trade.executed_price
+            # Update existing position (weighted average cost basis)
+            old_value_native = position.quantity * position.avg_cost
+            new_value_native = trade.executed_quantity * trade.executed_price
             total_quantity = position.quantity + trade.executed_quantity
             
+            # Calculate old value in portfolio currency
+            old_value_portfolio = position.quantity * (position.avg_cost_portfolio or position.avg_cost)
+            new_value_portfolio = trade.executed_quantity * executed_price_portfolio
+            
+            # Weighted average in native currency
+            position.avg_cost = (old_value_native + new_value_native) / total_quantity
+            
+            # Weighted average in portfolio currency
+            new_avg_cost_portfolio = (old_value_portfolio + new_value_portfolio) / total_quantity
+            position.avg_cost_portfolio = new_avg_cost_portfolio
+            
+            # Weighted average exchange rate
+            old_rate = position.entry_exchange_rate or Decimal("1.0")
+            position.entry_exchange_rate = (
+                (position.quantity * old_rate + trade.executed_quantity * exchange_rate) / total_quantity
+            )
+            
             position.quantity = total_quantity
-            position.avg_cost = (old_value + new_value) / total_quantity
+            position.current_price = trade.executed_price  # Native currency
+            
+            # Calculate market_value in PORTFOLIO currency
+            position.market_value = (total_quantity * trade.executed_price * exchange_rate).quantize(Decimal("0.01"))
+            
+            # Calculate unrealized P&L in PORTFOLIO currency
+            cost_basis_portfolio = total_quantity * new_avg_cost_portfolio
+            position.unrealized_pnl = (position.market_value - cost_basis_portfolio).quantize(Decimal("0.01"))
+            
+            # P&L percentage based on native prices
+            if position.avg_cost > 0:
+                position.unrealized_pnl_percent = float(
+                    (position.current_price - position.avg_cost) / position.avg_cost * 100
+                )
+            
             position.updated_at = datetime.utcnow()
         else:
             # Create new position
@@ -765,10 +823,14 @@ class ExecutionEngine:
                 symbol=trade.symbol,
                 exchange=trade.exchange,
                 quantity=trade.executed_quantity,
-                avg_cost=trade.executed_price,
-                current_price=trade.executed_price,
-                market_value=trade.total_value,
-                native_currency=currency,  # Track position's native currency (IBKR-style)
+                avg_cost=trade.executed_price,  # Native currency
+                avg_cost_portfolio=executed_price_portfolio,  # Portfolio currency
+                entry_exchange_rate=exchange_rate,
+                current_price=trade.executed_price,  # Native currency
+                market_value=market_value_portfolio,  # Portfolio currency
+                unrealized_pnl=Decimal("0"),  # No P&L at entry
+                unrealized_pnl_percent=Decimal("0"),
+                native_currency=native_currency,
                 opened_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )

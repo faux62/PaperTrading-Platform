@@ -20,6 +20,12 @@ from .bot_stream import (
     broadcast_bot_status,
     broadcast_pre_market_briefing,
 )
+from .fx_stream import (
+    router as fx_stream_router,
+    fx_manager,
+    broadcast_fx_update,
+    start_fx_pubsub_listener,
+)
 
 __all__ = [
     # Market stream
@@ -42,4 +48,9 @@ __all__ = [
     "broadcast_report_ready",
     "broadcast_bot_status",
     "broadcast_pre_market_briefing",
+    # FX stream
+    "fx_stream_router",
+    "fx_manager",
+    "broadcast_fx_update",
+    "start_fx_pubsub_listener",
 ]

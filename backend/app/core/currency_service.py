@@ -1,6 +1,14 @@
 """
 PaperTrading Platform - Currency Service
-IBKR-style multi-currency management
+
+SINGLE CURRENCY MODEL:
+- Portfolios have ONE base currency (portfolio.currency)
+- For currency conversions, use: from app.utils.currency import convert
+- This module provides helper functions like get_symbol_currency()
+
+DEPRECATED (to be removed):
+- CurrencyService class (was IBKR-style multi-currency)
+- Methods that interact with cash_balances table
 """
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
@@ -8,19 +16,17 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from loguru import logger
+import warnings
 
 from app.db.models import Portfolio, CashBalance, FxTransaction, Position
 
 
 class CurrencyService:
     """
-    IBKR-style multi-currency portfolio management.
+    DEPRECATED: Use app.utils.currency.convert() for conversions.
     
-    Features:
-    - Multi-currency cash balances per portfolio
-    - Automatic FX rate lookup
-    - Currency conversion with transaction logging
-    - Portfolio value aggregation across currencies
+    This class is kept for backward compatibility but will be removed.
+    The Single Currency Model uses only portfolio.cash_balance.
     """
     
     # Supported currencies

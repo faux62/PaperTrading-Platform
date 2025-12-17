@@ -8,42 +8,33 @@ from loguru import logger
 
 from app.config import settings
 from app.api.v1.router import api_router
-from app.api.v1.websockets import market_stream_router
+from app.api.v1.websockets import (
+    market_stream_router,
+    portfolio_stream_router,
+    bot_stream_router,
+    fx_stream_router,
+)
 from app.db.database import engine, init_db
 from app.db.redis_client import redis_client
 from app.data_providers.provider_init import initialize_providers, shutdown_providers
 
 
 async def load_api_keys_from_settings() -> dict[str, str]:
-    """Load API keys from user settings in database."""
+    """Load API keys using the hierarchical fallback system."""
     from app.db.database import async_session_maker
-    from app.db.repositories.user import UserRepository
+    from app.services.api_key_service import get_api_keys_for_providers
     
     api_keys = {}
     
     try:
         async with async_session_maker() as db:
-            user_repo = UserRepository(db)
-            # Load default/system settings from first user or admin
-            users = await user_repo.get_all(skip=0, limit=1)
-            
-            if users:
-                user = users[0]
-                if user.settings and "data_providers" in user.settings:
-                    providers = user.settings.get("data_providers", {})
-                    for provider_config in providers.values():
-                        if isinstance(provider_config, dict):
-                            name = provider_config.get("provider_id", "").lower()
-                            api_key = provider_config.get("api_key", "")
-                            if name and api_key:
-                                api_keys[name] = api_key
-                                # Handle Alpaca secret
-                                if name == "alpaca" and "api_secret" in provider_config:
-                                    api_keys["alpaca_secret"] = provider_config["api_secret"]
+            # Use the new API key service with fallback
+            api_keys = await get_api_keys_for_providers(db)
+            logger.info(f"📊 Loaded {len(api_keys)} API keys via hierarchical fallback")
     except Exception as e:
         logger.warning(f"Could not load API keys from database: {e}")
     
-    # Also load from environment variables as fallback
+    # Also load from environment variables as additional fallback
     import os
     env_mappings = {
         "FINNHUB_API_KEY": "finnhub",
@@ -182,8 +173,11 @@ def create_application() -> FastAPI:
     # Include API router
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
     
-    # Include WebSocket router
-    app.include_router(market_stream_router, prefix=settings.API_V1_PREFIX)
+    # Include WebSocket routers
+    app.include_router(market_stream_router, prefix=f"{settings.API_V1_PREFIX}/ws", tags=["WebSocket"])
+    app.include_router(portfolio_stream_router, prefix=f"{settings.API_V1_PREFIX}/ws", tags=["WebSocket"])
+    app.include_router(bot_stream_router, prefix=f"{settings.API_V1_PREFIX}/ws", tags=["WebSocket"])
+    app.include_router(fx_stream_router, prefix=f"{settings.API_V1_PREFIX}/ws", tags=["WebSocket"])
     
     # Health check endpoint
     @app.get("/health", tags=["Health"])

@@ -18,6 +18,50 @@ const api: AxiosInstance = axios.create({
   },
 });
 
+// Token refresh state to prevent concurrent refresh attempts
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Refresh the access token using the refresh token.
+ * This is exported for use by WebSocket services when they receive a 403.
+ * Prevents concurrent refresh attempts by reusing the same promise.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  // If already refreshing, wait for the existing promise
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise;
+  }
+
+  const refreshToken = tokenStorage.getRefreshToken();
+  if (!refreshToken) {
+    return null;
+  }
+
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+        refresh_token: refreshToken,
+      });
+
+      const { access_token, refresh_token } = response.data;
+      tokenStorage.setTokens(access_token, refresh_token);
+      console.log('[TokenRefresh] Access token refreshed successfully');
+      return access_token;
+    } catch (error) {
+      console.error('[TokenRefresh] Failed to refresh token:', error);
+      tokenStorage.clearTokens();
+      return null;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 // Request interceptor - Add auth token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
@@ -555,6 +599,51 @@ export const mlApi = {
   // Get ML health check
   healthCheck: async () => {
     const response = await api.get('/ml/health');
+    return response.data;
+  },
+};
+
+// ============================================
+// Admin API (superuser only)
+// ============================================
+export const adminApi = {
+  // Get admin dashboard stats
+  getStats: async () => {
+    const response = await api.get('/admin/stats');
+    return response.data;
+  },
+
+  // List all users with pagination and filters
+  listUsers: async (params: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    is_active?: boolean;
+  } = {}) => {
+    const response = await api.get('/admin/users', { params });
+    return response.data;
+  },
+
+  // Enable or disable a user
+  updateUserStatus: async (userId: number, isActive: boolean, reason?: string) => {
+    const response = await api.patch(`/admin/users/${userId}/status`, {
+      is_active: isActive,
+      reason,
+    });
+    return response.data;
+  },
+
+  // Delete a user
+  deleteUser: async (userId: number) => {
+    const response = await api.delete(`/admin/users/${userId}`);
+    return response.data;
+  },
+
+  // Toggle superuser status
+  toggleSuperuser: async (userId: number, isSuperuser: boolean) => {
+    const response = await api.patch(`/admin/users/${userId}/superuser`, null, {
+      params: { is_superuser: isSuperuser },
+    });
     return response.data;
   },
 };

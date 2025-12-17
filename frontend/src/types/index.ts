@@ -72,6 +72,9 @@ export interface Position {
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   unrealized_pnl_percent: number;
+  native_currency?: string;  // Currency the symbol is quoted in (e.g., USD for AAPL)
+  avg_cost_portfolio?: number;  // Average cost in portfolio currency
+  entry_exchange_rate?: number;  // FX rate at entry
   created_at: string;
   updated_at: string;
 }
@@ -116,6 +119,8 @@ export interface Trade {
   total_value: number;
   commission: number;
   realized_pnl?: number;
+  native_currency?: string;  // Currency the symbol is quoted in
+  exchange_rate?: number;  // FX rate used at execution
   executed_at?: string;
   created_at: string;
   notes?: string;

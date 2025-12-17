@@ -21,6 +21,7 @@ from app.scheduler.market_hours import (
 )
 from app.data_providers import orchestrator
 from app.db.redis_client import redis_client
+from app.utils.currency import get_exchange_rate
 
 
 class GlobalPriceUpdater:
@@ -154,6 +155,7 @@ class GlobalPriceUpdater:
     async def update_position_price(
         self,
         position: Position,
+        portfolio_currency: str = "USD",
         force_realtime: bool = False
     ) -> bool:
         """
@@ -161,6 +163,7 @@ class GlobalPriceUpdater:
         
         Args:
             position: The position to update
+            portfolio_currency: The portfolio's base currency for value conversion
             force_realtime: If True, always try real-time first
             
         Returns:
@@ -169,6 +172,7 @@ class GlobalPriceUpdater:
         symbol = position.symbol
         exchange = self._get_exchange_for_symbol(symbol)
         is_open, session = self._get_market_status(exchange)
+        native_currency = position.native_currency or "USD"
         
         price = None
         price_source = None
@@ -192,17 +196,32 @@ class GlobalPriceUpdater:
                 return False
         
         if price:
-            # Update position
+            # Update position price in native currency
             position.current_price = Decimal(str(price))
-            position.market_value = position.quantity * position.current_price
-            position.unrealized_pnl = position.market_value - (position.quantity * position.avg_cost)
+            
+            # Get exchange rate for currency conversion (native -> portfolio)
+            if native_currency != portfolio_currency:
+                exchange_rate = await get_exchange_rate(native_currency, portfolio_currency)
+            else:
+                exchange_rate = Decimal("1.0")
+            
+            # Calculate market_value in PORTFOLIO currency
+            native_market_value = position.quantity * position.current_price
+            position.market_value = (native_market_value * exchange_rate).quantize(Decimal("0.01"))
+            
+            # Calculate unrealized P&L in PORTFOLIO currency
+            # cost_basis uses avg_cost_portfolio (already in portfolio currency)
+            cost_basis = position.quantity * (position.avg_cost_portfolio or position.avg_cost)
+            position.unrealized_pnl = (position.market_value - cost_basis).quantize(Decimal("0.01"))
+            
+            # P&L percentage based on native currency prices (for accurate %)  
             if position.avg_cost > 0:
                 position.unrealized_pnl_percent = float(
                     (position.current_price - position.avg_cost) / position.avg_cost * 100
                 )
             position.updated_at = datetime.utcnow()
             
-            logger.debug(f"Updated {symbol} price to {price} ({price_source})")
+            logger.debug(f"Updated {symbol} price to {price} ({price_source}), market_value={position.market_value} {portfolio_currency}")
             return True
         
         return False
@@ -227,6 +246,9 @@ class GlobalPriceUpdater:
         if not positions:
             return {"updated": 0, "skipped": 0, "failed": 0}
         
+        # Get portfolio's base currency for value conversion
+        portfolio_currency = portfolio.currency or "USD"
+        
         stats = {"updated": 0, "skipped": 0, "failed": 0, "by_exchange": {}}
         
         for position in positions:
@@ -236,7 +258,7 @@ class GlobalPriceUpdater:
                 stats["by_exchange"][exchange] = {"updated": 0, "skipped": 0}
             
             try:
-                updated = await self.update_position_price(position)
+                updated = await self.update_position_price(position, portfolio_currency)
                 if updated:
                     stats["updated"] += 1
                     stats["by_exchange"][exchange]["updated"] += 1

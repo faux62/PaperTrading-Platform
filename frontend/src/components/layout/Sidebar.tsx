@@ -10,6 +10,7 @@ import {
   BarChart3,
   Brain,
   Settings,
+  Shield,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +22,7 @@ interface NavItem {
   name: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -31,12 +33,19 @@ const navItems: NavItem[] = [
   { name: 'Analytics', path: '/analytics', icon: BarChart3 },
   { name: 'ML Insights', path: '/ml-insights', icon: Brain },
   { name: 'Settings', path: '/settings', icon: Settings },
+  { name: 'Admin', path: '/admin', icon: Shield, adminOnly: true },
 ];
 
 const Sidebar = () => {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
-  const { logout } = useAuthStore();
+  const { logout, user } = useAuthStore();
   const location = useLocation();
+
+  // Filter nav items based on user role
+  const visibleNavItems = navItems.filter(item => {
+    if (item.adminOnly && !user?.is_superuser) return false;
+    return true;
+  });
 
   return (
     <aside
@@ -68,7 +77,7 @@ const Sidebar = () => {
       {/* Navigation */}
       <nav className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-1 px-2">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
             

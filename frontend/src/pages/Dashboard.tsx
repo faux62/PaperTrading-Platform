@@ -38,6 +38,8 @@ interface Position {
   market_value?: number;
   unrealized_pnl?: number;
   unrealized_pnl_percent?: number;
+  native_currency?: string;  // Currency the symbol is quoted in (e.g., USD)
+  avg_cost_portfolio?: number;  // Average cost in portfolio currency
 }
 
 interface Trade {
@@ -47,6 +49,8 @@ interface Trade {
   quantity: number;
   price: number;
   created_at: string;
+  native_currency?: string;  // Currency the symbol is quoted in
+  exchange_rate?: number;
 }
 
 interface MarketIndex {
@@ -95,7 +99,8 @@ const StatCard = ({
   iconBg: string;
   loading?: boolean;
 }) => {
-  const isPositive = (change ?? 0) >= 0;
+  // Determine if positive: use changePercent if available, otherwise change
+  const isPositive = changePercent !== undefined ? changePercent >= 0 : (change ?? 0) >= 0;
   
   return (
     <Card>
@@ -108,7 +113,12 @@ const StatCard = ({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-surface-400">{title}</p>
-              <p className="text-2xl font-bold text-white mt-1">{value}</p>
+              <p className={clsx(
+                'text-2xl font-bold mt-1',
+                changePercent !== undefined 
+                  ? (isPositive ? 'text-success-400' : 'text-danger-400')
+                  : 'text-white'
+              )}>{value}</p>
               {changePercent !== undefined && (
                 <div className="flex items-center gap-1 mt-2">
                   {isPositive ? (
@@ -281,8 +291,13 @@ const Dashboard = () => {
         setRecentTrades(allTrades.slice(0, 5));
 
         // Calculate stats
+        // IMPORTANT: Use avg_cost_portfolio (in portfolio currency) NOT avg_cost (native currency)
         const totalMarketValue = allPositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
-        const totalCostBasis = allPositions.reduce((sum, p) => sum + (p.average_cost * p.quantity), 0);
+        const totalCostBasis = allPositions.reduce((sum, p) => {
+          // Use avg_cost_portfolio if available (converted to portfolio currency), otherwise fallback
+          const costPerShare = p.avg_cost_portfolio || p.average_cost || 0;
+          return sum + (costPerShare * p.quantity);
+        }, 0);
         const totalUnrealizedPL = totalMarketValue - totalCostBasis;
         const totalValue = totalCash + totalMarketValue;
 
@@ -293,7 +308,7 @@ const Dashboard = () => {
           unrealizedPL: totalUnrealizedPL,
           unrealizedPLPercent: totalCostBasis > 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0,
           cashAvailable: totalCash,
-          buyingPower: totalCash * 2,
+          buyingPower: totalCash,  // No margin - buying power equals cash
         });
       }
 
@@ -313,13 +328,26 @@ const Dashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number, currency: string = 'EUR') => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency: currency,
       minimumFractionDigits: 2,
     }).format(value);
   };
+
+  // Format with native currency symbol for individual assets
+  const formatNativeCurrency = (value: number, nativeCurrency?: string) => {
+    const currency = nativeCurrency || 'USD';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 2,
+    }).format(value);
+  };
+
+  // Get portfolio currency (from first portfolio or default to EUR)
+  const portfolioCurrency = portfolios[0]?.currency || 'EUR';
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -358,7 +386,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <StatCard
           title="Portfolio Value"
-          value={hasPortfolio ? formatCurrency(stats.totalValue) : '$0.00'}
+          value={hasPortfolio ? formatCurrency(stats.totalValue, portfolioCurrency) : '€0.00'}
           changePercent={hasPortfolio && stats.dailyChangePercent !== 0 ? stats.dailyChangePercent : undefined}
           icon={DollarSign}
           iconBg="bg-primary-500/20"
@@ -366,22 +394,22 @@ const Dashboard = () => {
         />
         <StatCard
           title="Unrealized P&L"
-          value={hasPositions ? `${stats.unrealizedPL >= 0 ? '+' : ''}${formatCurrency(stats.unrealizedPL)}` : '$0.00'}
+          value={hasPositions ? formatCurrency(stats.unrealizedPL, portfolioCurrency) : '€0.00'}
           changePercent={hasPositions ? stats.unrealizedPLPercent : undefined}
-          icon={TrendingUp}
-          iconBg="bg-success-500/20"
+          icon={stats.unrealizedPL >= 0 ? TrendingUp : TrendingDown}
+          iconBg={stats.unrealizedPL >= 0 ? "bg-success-500/20" : "bg-danger-500/20"}
           loading={loading}
         />
         <StatCard
           title="Cash Available"
-          value={hasPortfolio ? formatCurrency(stats.cashAvailable) : '$0.00'}
+          value={hasPortfolio ? formatCurrency(stats.cashAvailable, portfolioCurrency) : '€0.00'}
           icon={PieChart}
           iconBg="bg-secondary-500/20"
           loading={loading}
         />
         <StatCard
           title="Buying Power"
-          value={hasPortfolio ? formatCurrency(stats.buyingPower) : '$0.00'}
+          value={hasPortfolio ? formatCurrency(stats.buyingPower, portfolioCurrency) : '€0.00'}
           icon={Activity}
           iconBg="bg-warning-500/20"
           loading={loading}
@@ -436,14 +464,19 @@ const Dashboard = () => {
                         <td className="p-4">
                           <p className="font-medium text-white">{position.symbol}</p>
                           <p className="text-sm text-surface-400">
-                            Avg: {formatCurrency(position.average_cost)}
+                            Avg: {formatCurrency(position.avg_cost_portfolio || position.average_cost, portfolioCurrency)}
+                            {position.native_currency && position.native_currency !== portfolioCurrency && (
+                              <span className="text-surface-500 ml-1">
+                                ({formatNativeCurrency(position.average_cost, position.native_currency)})
+                              </span>
+                            )}
                           </p>
                         </td>
                         <td className="p-4 text-right text-surface-300">
                           {position.quantity}
                         </td>
                         <td className="p-4 text-right font-medium text-white">
-                          {formatCurrency(position.market_value || position.average_cost * position.quantity)}
+                          {formatCurrency(position.market_value || position.average_cost * position.quantity, portfolioCurrency)}
                         </td>
                         <td className="p-4 text-right">
                           <Badge color={(position.unrealized_pnl || 0) >= 0 ? 'success' : 'danger'}>
@@ -572,7 +605,7 @@ const Dashboard = () => {
                       </td>
                       <td className="p-4 text-right text-surface-300">{trade.quantity}</td>
                       <td className="p-4 text-right font-medium text-white">
-                        {formatCurrency(trade.price)}
+                        {formatNativeCurrency(trade.price, trade.native_currency)}
                       </td>
                       <td className="p-4 text-right text-surface-400">
                         {formatTime(trade.created_at)}

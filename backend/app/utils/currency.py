@@ -3,10 +3,17 @@ Currency Conversion Service
 
 Provides real-time currency conversion using free exchange rate APIs.
 Caches rates to minimize API calls.
+
+SINGLE CURRENCY MODEL:
+This module provides the unified convert() function that should be used
+everywhere in the platform for currency conversions. All portfolios use
+a single base currency, and conversions happen on-demand when trading
+assets in different currencies.
 """
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Optional, Tuple
 import httpx
 from loguru import logger
 
@@ -125,6 +132,87 @@ async def get_conversion_rate(from_currency: str, to_currency: str) -> float:
         return 1.0
     return to_rate / from_rate
 
+
+# =============================================================================
+# UNIFIED CONVERT FUNCTION - USE THIS EVERYWHERE
+# =============================================================================
+
+async def convert(
+    amount: Decimal,
+    from_currency: str,
+    to_currency: str,
+) -> Tuple[Decimal, Decimal]:
+    """
+    THE UNIFIED CURRENCY CONVERSION FUNCTION.
+    
+    Use this function everywhere in the platform for currency conversions.
+    It returns both the converted amount and the exchange rate used,
+    which is essential for audit trail and P&L calculations.
+    
+    Args:
+        amount: Amount to convert (Decimal for precision)
+        from_currency: Source currency code (e.g., "USD")
+        to_currency: Target currency code (e.g., "EUR")
+        
+    Returns:
+        Tuple of (converted_amount, exchange_rate_used)
+        - converted_amount: The amount in target currency
+        - exchange_rate_used: The rate applied (from_currency -> to_currency)
+        
+    Example:
+        # Converting $275 USD to EUR
+        eur_amount, rate = await convert(Decimal("275.00"), "USD", "EUR")
+        # Returns: (Decimal("254.12"), Decimal("0.924073"))
+        # Meaning: 275 USD * 0.924073 = 254.12 EUR
+    """
+    if from_currency == to_currency:
+        return amount, Decimal("1.0")
+    
+    if not isinstance(amount, Decimal):
+        amount = Decimal(str(amount))
+    
+    # Get exchange rate
+    rate = await get_exchange_rate(from_currency, to_currency)
+    exchange_rate = Decimal(str(rate))
+    
+    # Convert with proper rounding
+    converted = (amount * exchange_rate).quantize(
+        Decimal("0.01"), 
+        rounding=ROUND_HALF_UP
+    )
+    
+    return converted, exchange_rate
+
+
+async def get_exchange_rate(from_currency: str, to_currency: str) -> Decimal:
+    """
+    Get the exchange rate from one currency to another.
+    
+    Args:
+        from_currency: Source currency code
+        to_currency: Target currency code
+        
+    Returns:
+        Decimal exchange rate (multiply by this to convert)
+    """
+    if from_currency == to_currency:
+        return Decimal("1.0")
+    
+    rates = await fetch_exchange_rates("USD")
+    from_rate = rates.get(from_currency, 1.0)
+    to_rate = rates.get(to_currency, 1.0)
+    
+    # Rate from X to Y = Y_rate / X_rate
+    if from_rate == 0:
+        return Decimal("1.0")
+    
+    rate = Decimal(str(to_rate / from_rate))
+    return rate.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
 
 def get_currency_symbol(currency: str) -> str:
     """Get currency symbol for display."""
