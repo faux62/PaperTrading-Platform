@@ -4,12 +4,13 @@ PaperTrading Platform - Simulated Execution Engine
 Simulates realistic order execution with price slippage, partial fills,
 bid/ask spread, commissions, and market conditions simulation.
 
-SINGLE CURRENCY MODEL:
+APPROACH B - Dynamic FX:
 - All portfolios use a single base currency (e.g., EUR)
 - When trading assets in different currencies (e.g., USD stocks),
-  the cost is converted to portfolio currency at current FX rate
-- The exchange rate is stored in the trade for audit trail
-- Positions store both native and portfolio currency values
+  the cost is converted to portfolio currency using CURRENT FX rate
+- The exchange rate at trade time is stored in TRADES for audit trail
+- Positions store only NATIVE currency avg_cost
+- Portfolio currency values are calculated on-demand
 """
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -740,10 +741,10 @@ class ExecutionEngine:
         """
         Add bought shares to position.
         
-        SINGLE CURRENCY MODEL:
-        - avg_cost: Average cost in NATIVE currency (USD for AAPL)
-        - avg_cost_portfolio: Average cost converted to PORTFOLIO currency
-        - entry_exchange_rate: Weighted average exchange rate at entry
+        APPROACH B - Dynamic FX (Simplified):
+        - avg_cost: Average cost in NATIVE currency only (USD for AAPL)
+        - Portfolio currency values calculated on-demand using current FX rate
+        - Historical FX rate preserved in TRADES.exchange_rate for audit
         """
         # Check for existing position
         result = await self.db.execute(
@@ -754,38 +755,14 @@ class ExecutionEngine:
         )
         position = result.scalar_one_or_none()
         
-        # Get exchange rate for this trade
-        exchange_rate = trade.exchange_rate or Decimal("1.0")
-        
-        # Calculate price in portfolio currency
-        executed_price_portfolio, _ = await convert(
-            trade.executed_price,
-            native_currency,
-            portfolio_currency
-        ) if native_currency != portfolio_currency else (trade.executed_price, Decimal("1.0"))
-        
         if position:
-            # Update existing position (weighted average cost basis)
+            # Update existing position (weighted average cost basis in NATIVE currency)
             old_value_native = position.quantity * position.avg_cost
             new_value_native = trade.executed_quantity * trade.executed_price
             total_quantity = position.quantity + trade.executed_quantity
             
-            # Calculate old value in portfolio currency
-            old_value_portfolio = position.quantity * (position.avg_cost_portfolio or position.avg_cost)
-            new_value_portfolio = trade.executed_quantity * executed_price_portfolio
-            
-            # Weighted average in native currency
+            # Weighted average in native currency ONLY
             position.avg_cost = (old_value_native + new_value_native) / total_quantity
-            
-            # Weighted average in portfolio currency
-            position.avg_cost_portfolio = (old_value_portfolio + new_value_portfolio) / total_quantity
-            
-            # Weighted average exchange rate
-            old_rate = position.entry_exchange_rate or Decimal("1.0")
-            position.entry_exchange_rate = (
-                (position.quantity * old_rate + trade.executed_quantity * exchange_rate) / total_quantity
-            )
-            
             position.quantity = total_quantity
             position.updated_at = datetime.utcnow()
         else:
@@ -795,9 +772,7 @@ class ExecutionEngine:
                 symbol=trade.symbol,
                 exchange=trade.exchange,
                 quantity=trade.executed_quantity,
-                avg_cost=trade.executed_price,  # Native currency
-                avg_cost_portfolio=executed_price_portfolio,  # Portfolio currency
-                entry_exchange_rate=exchange_rate,
+                avg_cost=trade.executed_price,  # Native currency only
                 current_price=trade.executed_price,
                 market_value=trade.total_value,
                 native_currency=native_currency,

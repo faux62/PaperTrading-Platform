@@ -1,7 +1,7 @@
 # PaperTrading Platform - Roadmap FX Refactoring
 
 ## Data: 18 Dicembre 2025
-## Versione: 1.0
+## Versione: 1.1 (Fasi 1-6 completate)
 
 ---
 
@@ -184,163 +184,53 @@ Aggiunto job `fx_rate_update` che:
 
 ---
 
-### FASE 6: Refactoring Funzione `convert()`
+### FASE 6: Refactoring Funzione `convert()` ✅ COMPLETATA
 **Tempo stimato: 2 ore**
+**Data completamento: 18 Dicembre 2025**
 
-#### 6.1 Identificare utilizzi attuali
+#### 6.1 Refactoring utils/currency.py ✅
 
-Cercare in tutto il codebase:
-```bash
-grep -r "from app.data_providers.adapters.frankfurter import" backend/
-grep -r "convert(" backend/app/
-```
+File: `backend/app/utils/currency.py`
 
-#### 6.2 Creare nuova funzione centralizzata
-
-File: `backend/app/core/currency.py`
-
-```python
-from decimal import Decimal
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.services.fx_rate_service import FXRateService
-
-
-async def convert(
-    amount: Decimal,
-    from_currency: str,
-    to_currency: str,
-    db: AsyncSession
-) -> tuple[Decimal, Decimal]:
-    """
-    Convert amount from one currency to another.
-    
-    Returns:
-        Tuple of (converted_amount, exchange_rate)
-    """
-    if from_currency == to_currency:
-        return amount, Decimal("1.0")
-    
-    fx_service = FXRateService(db)
-    rate = await fx_service.get_rate(from_currency, to_currency)
-    return amount * rate, rate
-```
-
-#### 6.3 Aggiornare tutti i file che usano convert
-
-Files da modificare:
-- `backend/app/core/trading/execution.py`
-- `backend/app/bot/services/global_price_updater.py`
-- Altri file identificati nella ricerca
+Modifiche:
+- Rimossa dipendenza da `exchangerate-api.com`
+- Rimossa cache in memoria (ora usa DB)
+- `get_exchange_rate_from_db()` - Fetch diretto da DB
+- `convert()` - Usa tassi da tabella `exchange_rates`
+- `get_exchange_rate()` - Ritorna Decimal con fallback
+- Ridotte valute supportate a EUR, USD, GBP, CHF
+- Aggiunti fallback rates per emergenza
 
 ---
 
-### FASE 7: Refactoring `_add_to_position()`
+### FASE 7: Refactoring `_add_to_position()` ✅ COMPLETATA
 **Tempo stimato: 2 ore**
+**Data completamento: 18 Dicembre 2025**
 
-#### 7.1 File: `backend/app/core/trading/execution.py`
+#### 7.1 File: `backend/app/core/trading/execution.py` ✅
 
-**Codice da RIMUOVERE (circa linee 775-790):**
-
-```python
-# RIMUOVERE TUTTO QUESTO:
-# Calculate price in portfolio currency
-executed_price_portfolio, _ = await convert(...)
-
-# Calculate old value in portfolio currency  
-old_value_portfolio = position.quantity * (position.avg_cost_portfolio or position.avg_cost)
-new_value_portfolio = trade.executed_quantity * executed_price_portfolio
-
-# Weighted average in portfolio currency
-position.avg_cost_portfolio = (old_value_portfolio + new_value_portfolio) / total_quantity
-
-# Weighted average exchange rate
-old_rate = position.entry_exchange_rate or Decimal("1.0")
-position.entry_exchange_rate = (
-    (position.quantity * old_rate + trade.executed_quantity * exchange_rate) / total_quantity
-)
-```
-
-**Codice SEMPLIFICATO:**
-
-```python
-async def _add_to_position(self, trade: Trade, native_currency: str, portfolio_currency: str):
-    """Add bought shares to position - SIMPLIFIED"""
-    
-    result = await self.db.execute(
-        select(Position).where(
-            Position.portfolio_id == trade.portfolio_id,
-            Position.symbol == trade.symbol
-        )
-    )
-    position = result.scalar_one_or_none()
-    
-    if position:
-        # Update existing position (weighted average cost basis)
-        old_value = position.quantity * position.avg_cost
-        new_value = trade.executed_quantity * trade.executed_price
-        total_quantity = position.quantity + trade.executed_quantity
-        
-        # Weighted average in native currency ONLY
-        position.avg_cost = (old_value + new_value) / total_quantity
-        position.quantity = total_quantity
-        position.updated_at = datetime.utcnow()
-    else:
-        # Create new position
-        position = Position(
-            portfolio_id=trade.portfolio_id,
-            symbol=trade.symbol,
-            exchange=trade.exchange,
-            quantity=trade.executed_quantity,
-            avg_cost=trade.executed_price,  # Native currency
-            current_price=trade.executed_price,
-            native_currency=native_currency,
-            opened_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        self.db.add(position)
-```
+Modifiche:
+- Rimosso calcolo `executed_price_portfolio`
+- Rimosso aggiornamento `avg_cost_portfolio`
+- Rimosso aggiornamento `entry_exchange_rate`
+- `avg_cost` ora calcolato solo in valuta NATIVA
+- Aggiornato docstring del metodo e del file
 
 ---
 
-### FASE 8: Refactoring GlobalPriceUpdater
+### FASE 8: Refactoring GlobalPriceUpdater ✅ COMPLETATA
 **Tempo stimato: 2 ore**
+**Data completamento: 18 Dicembre 2025**
 
-#### 8.1 File: `backend/app/bot/services/global_price_updater.py`
+#### 8.1 File: `backend/app/bot/services/global_price_updater.py` ✅
 
-**Modificare `update_position_price()`:**
-
-```python
-async def update_position_price(self, position: Position, portfolio: Portfolio):
-    """Update position price and calculate P&L using current FX rate"""
-    
-    # Get current price in native currency
-    current_price = await self._get_price(position.symbol)
-    if not current_price:
-        return
-    
-    position.current_price = current_price
-    
-    # Get current exchange rate from DB
-    fx_service = FXRateService(self.db)
-    rate = await fx_service.get_rate(position.native_currency, portfolio.currency)
-    
-    # Calculate market value in portfolio currency
-    market_value_native = position.quantity * current_price
-    position.market_value = market_value_native * rate
-    
-    # Calculate unrealized P&L in portfolio currency
-    # P&L = (current_price - avg_cost) × quantity × rate
-    pnl_native = (current_price - position.avg_cost) * position.quantity
-    position.unrealized_pnl = pnl_native * rate
-    
-    # Calculate P&L percent (currency-agnostic)
-    if position.avg_cost > 0:
-        position.unrealized_pnl_percent = (
-            (current_price - position.avg_cost) / position.avg_cost * 100
-        )
-    
-    position.updated_at = datetime.utcnow()
-```
+Modifiche:
+- `update_position_price()`: Aggiunto parametro `portfolio_currency`
+- Calcolo `market_value` usa FX rate corrente da DB
+- Calcolo `unrealized_pnl` in valuta PORTFOLIO
+- `unrealized_pnl_percent` resta currency-agnostic
+- `update_portfolio_prices()`: Passa `portfolio.currency` alla funzione
+- Aggiornato docstring del file
 
 ---
 
@@ -521,22 +411,22 @@ File: `backend/tests/integration/test_trading_with_new_fx.py`
 
 ## 📊 Riepilogo Tempi
 
-| Fase | Descrizione | Tempo Stimato |
-|------|-------------|---------------|
-| 1 | Nuova tabella `exchange_rates` | 1-2 ore |
-| 2 | Modifica tabella `positions` | 1 ora |
-| 3 | Modelli e Repository | 2 ore |
-| 4 | FX Rate Service | 2 ore |
-| 5 | Scheduler Job | 1 ora |
-| 6 | Refactoring `convert()` | 2 ore |
-| 7 | Refactoring `_add_to_position()` | 2 ore |
-| 8 | Refactoring GlobalPriceUpdater | 2 ore |
-| 9 | Refactoring PositionRepository | 1 ora |
-| 10 | Refactoring API Endpoints | 1 ora |
-| 11 | Helper funzione audit | 1 ora |
-| 12 | Test | 3 ore |
-| 13 | Documentazione | 1 ora |
-| **TOTALE** | | **~20 ore** |
+| Fase | Descrizione | Tempo Stimato | Stato |
+|------|-------------|---------------|-------|
+| 1 | Nuova tabella `exchange_rates` | 1-2 ore | ✅ |
+| 2 | Modifica tabella `positions` | 1 ora | ✅ |
+| 3 | Modelli e Repository | 2 ore | ✅ |
+| 4 | FX Rate Service | 2 ore | ✅ |
+| 5 | Scheduler Job | 1 ora | ✅ |
+| 6 | Refactoring `convert()` | 2 ore | ✅ |
+| 7 | Refactoring `_add_to_position()` | 2 ore | ✅ |
+| 8 | Refactoring GlobalPriceUpdater | 2 ore | ✅ |
+| 9 | Refactoring PositionRepository | 1 ora | ⏳ |
+| 10 | Refactoring API Endpoints | 1 ora | ⏳ |
+| 11 | Helper funzione audit | 1 ora | ⏳ |
+| 12 | Test | 3 ore | ⏳ |
+| 13 | Documentazione | 1 ora | ⏳ |
+| **TOTALE** | | **~20 ore** | **8/13 completate** |
 
 ---
 
@@ -554,23 +444,33 @@ File: `backend/tests/integration/test_trading_with_new_fx.py`
 
 ## ✅ Checklist Pre-Implementazione
 
-- [ ] Backup completo database
-- [ ] Verificare che non ci siano ordini PENDING
+- [x] Backup completo database
+- [x] Verificare che non ci siano ordini PENDING
 - [ ] Notificare utenti di finestra manutenzione
 - [ ] Preparare script di rollback
-- [ ] Verificare accesso a Frankfurter API
+- [x] Verificare accesso a Frankfurter API
 - [ ] Review codice con altro sviluppatore
 
 ---
 
 ## 📝 Note di Implementazione
 
-### Ordine consigliato
+### Ordine eseguito (aggiornato 18/12/2025)
 
-1. **Prima** creare la nuova tabella (Fase 1) senza toccare nulla di esistente
-2. **Poi** creare service e job (Fasi 3-5) e verificare che funzionino
-3. **Infine** fare il refactoring del codice esistente (Fasi 6-11)
-4. **Ultimo** rimuovere le colonne deprecate (Fase 2)
+Le fasi 1-6 sono state completate con il seguente ordine:
+
+1. **Fase 1**: Creata tabella `exchange_rates` + migration + seed iniziale
+2. **Fase 3**: Creato modello `ExchangeRate` e `ExchangeRateRepository` (insieme a Fase 1)
+3. **Fase 2**: Rimossi campi `avg_cost_portfolio` e `entry_exchange_rate` da POSITIONS
+4. **Fase 4**: Creato `FxRateUpdaterService` in services/
+5. **Fase 5**: Aggiunto job `fx_rate_update` ogni ora in bot/__init__.py
+6. **Fase 6**: Refactorizzato `utils/currency.py` per usare DB invece di API esterna
+
+### Prossimi passi
+
+7. **Fase 7-8**: Refactoring execution.py e global_price_updater.py
+8. **Fase 9-10**: Cleanup repository e API endpoints
+9. **Fase 11-13**: Helper audit, test, documentazione
 
 ### Rollback
 

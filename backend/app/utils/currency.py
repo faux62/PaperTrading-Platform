@@ -1,85 +1,111 @@
 """
 Currency Conversion Service
 
-Provides real-time currency conversion using free exchange rate APIs.
-Caches rates to minimize API calls.
+Provides currency conversion using cached exchange rates from database.
+Rates are updated hourly by the fx_rate_update scheduled job.
 
 SINGLE CURRENCY MODEL:
 This module provides the unified convert() function that should be used
 everywhere in the platform for currency conversions. All portfolios use
 a single base currency, and conversions happen on-demand when trading
 assets in different currencies.
+
+DATA SOURCE: exchange_rates table (populated from Frankfurter/ECB API)
 """
-import asyncio
-from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Tuple
-import httpx
 from loguru import logger
 
-# Cache for exchange rates
-_rates_cache: dict[str, float] = {}
-_cache_timestamp: Optional[datetime] = None
-_cache_duration = timedelta(hours=1)  # Refresh rates every hour
+# Supported currencies (must match exchange_rates table)
+SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "CHF"]
 
-# Supported currencies
-SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD"]
-
-# Fallback rates (approximate, used if API fails)
+# Fallback rates (approximate, used if DB query fails)
+# These should NEVER be used in production - they're emergency fallback only
 FALLBACK_RATES = {
-    "USD": 1.0,
-    "EUR": 0.92,
-    "GBP": 0.79,
-    "JPY": 149.50,
-    "CHF": 0.88,
-    "CAD": 1.36,
-    "AUD": 1.53,
+    ("EUR", "USD"): Decimal("1.05"),
+    ("EUR", "GBP"): Decimal("0.86"),
+    ("EUR", "CHF"): Decimal("0.94"),
+    ("USD", "EUR"): Decimal("0.95"),
+    ("USD", "GBP"): Decimal("0.82"),
+    ("USD", "CHF"): Decimal("0.89"),
+    ("GBP", "EUR"): Decimal("1.16"),
+    ("GBP", "USD"): Decimal("1.22"),
+    ("GBP", "CHF"): Decimal("1.09"),
+    ("CHF", "EUR"): Decimal("1.06"),
+    ("CHF", "USD"): Decimal("1.12"),
+    ("CHF", "GBP"): Decimal("0.92"),
 }
+
+
+async def get_exchange_rate_from_db(
+    from_currency: str,
+    to_currency: str,
+) -> Optional[Decimal]:
+    """
+    Get exchange rate from database.
+    
+    Args:
+        from_currency: Source currency code
+        to_currency: Target currency code
+        
+    Returns:
+        Decimal rate or None if not found
+    """
+    from app.db.database import get_db
+    from app.db.repositories.exchange_rate import ExchangeRateRepository
+    
+    if from_currency == to_currency:
+        return Decimal("1.0")
+    
+    try:
+        async for db in get_db():
+            repo = ExchangeRateRepository(db)
+            rate_obj = await repo.get_rate(from_currency, to_currency)
+            if rate_obj:
+                return rate_obj.rate
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching rate from DB: {e}")
+        return None
 
 
 async def fetch_exchange_rates(base: str = "USD") -> dict[str, float]:
     """
-    Fetch current exchange rates from free API.
+    DEPRECATED: Fetch exchange rates - now uses database.
     
-    Uses exchangerate-api.com free tier (1500 requests/month).
-    Falls back to cached or static rates on failure.
+    This function is kept for backward compatibility but now returns
+    rates from the database. Use get_exchange_rate() instead.
     """
-    global _rates_cache, _cache_timestamp
+    from app.db.database import get_db
+    from app.db.repositories.exchange_rate import ExchangeRateRepository
     
-    # Check cache validity
-    if _cache_timestamp and datetime.utcnow() - _cache_timestamp < _cache_duration:
-        if _rates_cache:
-            return _rates_cache
+    rates = {}
     
     try:
-        # Free API: https://open.er-api.com/v6/latest/USD
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"https://open.er-api.com/v6/latest/{base}")
+        async for db in get_db():
+            repo = ExchangeRateRepository(db)
+            all_rates = await repo.get_all_rates()
             
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("result") == "success":
-                    rates = data.get("rates", {})
-                    # Filter to supported currencies
-                    _rates_cache = {
-                        currency: rates.get(currency, FALLBACK_RATES.get(currency, 1.0))
-                        for currency in SUPPORTED_CURRENCIES
-                    }
-                    _cache_timestamp = datetime.utcnow()
-                    logger.info(f"Exchange rates updated: {_rates_cache}")
-                    return _rates_cache
+            # Build rates dict with base as key
+            for rate_obj in all_rates:
+                if rate_obj.base_currency == base:
+                    rates[rate_obj.quote_currency] = float(rate_obj.rate)
             
-            logger.warning(f"Exchange rate API returned status {response.status_code}")
+            # Add base currency itself
+            rates[base] = 1.0
+            
+            if rates:
+                return rates
     except Exception as e:
-        logger.error(f"Failed to fetch exchange rates: {e}")
+        logger.error(f"Error fetching rates from DB: {e}")
     
-    # Return cached or fallback rates
-    if _rates_cache:
-        logger.info("Using cached exchange rates")
-        return _rates_cache
-    
-    logger.warning("Using fallback exchange rates")
-    return FALLBACK_RATES.copy()
+    # Fallback to hardcoded rates
+    logger.warning("Using fallback exchange rates - DB fetch failed")
+    fallback = {base: 1.0}
+    for (from_curr, to_curr), rate in FALLBACK_RATES.items():
+        if from_curr == base:
+            fallback[to_curr] = float(rate)
+    return fallback
 
 
 async def convert_currency(
@@ -91,11 +117,13 @@ async def convert_currency(
     """
     Convert amount from one currency to another.
     
+    DEPRECATED: Use convert() instead for Decimal precision.
+    
     Args:
         amount: Amount to convert
         from_currency: Source currency code (e.g., "EUR")
         to_currency: Target currency code (e.g., "USD")
-        rates: Optional pre-fetched rates (base USD)
+        rates: Optional pre-fetched rates (ignored, kept for compatibility)
         
     Returns:
         Converted amount
@@ -103,34 +131,32 @@ async def convert_currency(
     if from_currency == to_currency:
         return amount
     
-    if rates is None:
-        rates = await fetch_exchange_rates("USD")
+    # Use database rate directly
+    rate = await get_exchange_rate_from_db(from_currency, to_currency)
+    if rate:
+        return float(Decimal(str(amount)) * rate)
     
-    # Convert via USD as base
-    # If from_currency is EUR and rate is 0.92, then 1 EUR = 1/0.92 USD
-    from_rate = rates.get(from_currency, 1.0)
-    to_rate = rates.get(to_currency, 1.0)
-    
-    # Convert to USD first, then to target
-    amount_in_usd = amount / from_rate if from_rate != 0 else amount
-    result = amount_in_usd * to_rate
-    
-    return round(result, 2)
+    # Fallback
+    fallback_rate = FALLBACK_RATES.get((from_currency, to_currency), Decimal("1.0"))
+    logger.warning(f"Using fallback rate for {from_currency}/{to_currency}: {fallback_rate}")
+    return float(Decimal(str(amount)) * fallback_rate)
 
 
 async def get_conversion_rate(from_currency: str, to_currency: str) -> float:
-    """Get direct conversion rate between two currencies."""
+    """
+    Get direct conversion rate between two currencies.
+    
+    DEPRECATED: Use get_exchange_rate() instead for Decimal precision.
+    """
     if from_currency == to_currency:
         return 1.0
     
-    rates = await fetch_exchange_rates("USD")
-    from_rate = rates.get(from_currency, 1.0)
-    to_rate = rates.get(to_currency, 1.0)
+    rate = await get_exchange_rate_from_db(from_currency, to_currency)
+    if rate:
+        return float(rate)
     
-    # Rate from X to Y = (1/X_rate) * Y_rate
-    if from_rate == 0:
-        return 1.0
-    return to_rate / from_rate
+    fallback_rate = FALLBACK_RATES.get((from_currency, to_currency), Decimal("1.0"))
+    return float(fallback_rate)
 
 
 # =============================================================================
@@ -149,6 +175,9 @@ async def convert(
     It returns both the converted amount and the exchange rate used,
     which is essential for audit trail and P&L calculations.
     
+    Rates are fetched from the exchange_rates database table, which is
+    updated hourly by the fx_rate_update scheduled job.
+    
     Args:
         amount: Amount to convert (Decimal for precision)
         from_currency: Source currency code (e.g., "USD")
@@ -162,8 +191,8 @@ async def convert(
     Example:
         # Converting $275 USD to EUR
         eur_amount, rate = await convert(Decimal("275.00"), "USD", "EUR")
-        # Returns: (Decimal("254.12"), Decimal("0.924073"))
-        # Meaning: 275 USD * 0.924073 = 254.12 EUR
+        # Returns: (Decimal("261.25"), Decimal("0.95"))
+        # Meaning: 275 USD * 0.95 = 261.25 EUR
     """
     if from_currency == to_currency:
         return amount, Decimal("1.0")
@@ -171,22 +200,24 @@ async def convert(
     if not isinstance(amount, Decimal):
         amount = Decimal(str(amount))
     
-    # Get exchange rate
+    # Get exchange rate from database
     rate = await get_exchange_rate(from_currency, to_currency)
-    exchange_rate = Decimal(str(rate))
     
     # Convert with proper rounding
-    converted = (amount * exchange_rate).quantize(
+    converted = (amount * rate).quantize(
         Decimal("0.01"), 
         rounding=ROUND_HALF_UP
     )
     
-    return converted, exchange_rate
+    return converted, rate
 
 
 async def get_exchange_rate(from_currency: str, to_currency: str) -> Decimal:
     """
     Get the exchange rate from one currency to another.
+    
+    Fetches from database (exchange_rates table).
+    Falls back to hardcoded rates if DB unavailable.
     
     Args:
         from_currency: Source currency code
@@ -198,16 +229,20 @@ async def get_exchange_rate(from_currency: str, to_currency: str) -> Decimal:
     if from_currency == to_currency:
         return Decimal("1.0")
     
-    rates = await fetch_exchange_rates("USD")
-    from_rate = rates.get(from_currency, 1.0)
-    to_rate = rates.get(to_currency, 1.0)
+    # Try database first
+    rate = await get_exchange_rate_from_db(from_currency, to_currency)
+    if rate:
+        return rate.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     
-    # Rate from X to Y = Y_rate / X_rate
-    if from_rate == 0:
-        return Decimal("1.0")
-    
-    rate = Decimal(str(to_rate / from_rate))
-    return rate.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    # Fallback to hardcoded rates
+    fallback_rate = FALLBACK_RATES.get(
+        (from_currency.upper(), to_currency.upper()), 
+        Decimal("1.0")
+    )
+    logger.warning(
+        f"Using fallback rate for {from_currency}/{to_currency}: {fallback_rate}"
+    )
+    return fallback_rate
 
 
 # =============================================================================
@@ -220,10 +255,7 @@ def get_currency_symbol(currency: str) -> str:
         "USD": "$",
         "EUR": "€",
         "GBP": "£",
-        "JPY": "¥",
         "CHF": "CHF",
-        "CAD": "C$",
-        "AUD": "A$",
     }
     return symbols.get(currency, currency)
 
@@ -234,8 +266,5 @@ def get_supported_currencies() -> list[dict]:
         {"code": "USD", "name": "US Dollar", "symbol": "$"},
         {"code": "EUR", "name": "Euro", "symbol": "€"},
         {"code": "GBP", "name": "British Pound", "symbol": "£"},
-        {"code": "JPY", "name": "Japanese Yen", "symbol": "¥"},
         {"code": "CHF", "name": "Swiss Franc", "symbol": "CHF"},
-        {"code": "CAD", "name": "Canadian Dollar", "symbol": "C$"},
-        {"code": "AUD", "name": "Australian Dollar", "symbol": "A$"},
     ]

@@ -5,6 +5,11 @@ Manages price updates for all markets globally:
 - Real-time updates for open markets
 - EOD (End of Day) data for closed markets
 - Smart caching to avoid redundant API calls
+
+APPROACH B - Dynamic FX:
+- current_price stored in NATIVE currency
+- market_value and unrealized_pnl in PORTFOLIO currency
+- Uses current FX rate from exchange_rates table
 """
 from datetime import datetime, date, timedelta
 from typing import Optional, Dict, Set, List, Tuple
@@ -154,13 +159,20 @@ class GlobalPriceUpdater:
     async def update_position_price(
         self,
         position: Position,
+        portfolio_currency: str = "EUR",
         force_realtime: bool = False
     ) -> bool:
         """
         Update price for a single position.
         
+        APPROACH B - Dynamic FX:
+        - current_price: In NATIVE currency
+        - market_value: In PORTFOLIO currency (using current FX rate)
+        - unrealized_pnl: In PORTFOLIO currency
+        
         Args:
             position: The position to update
+            portfolio_currency: The portfolio's base currency for conversions
             force_realtime: If True, always try real-time first
             
         Returns:
@@ -192,17 +204,33 @@ class GlobalPriceUpdater:
                 return False
         
         if price:
-            # Update position
+            # Update position price in NATIVE currency
             position.current_price = Decimal(str(price))
-            position.market_value = position.quantity * position.current_price
-            position.unrealized_pnl = position.market_value - (position.quantity * position.avg_cost)
+            
+            # Get current FX rate from database
+            native_currency = position.native_currency or "USD"
+            fx_rate = Decimal("1.0")
+            
+            if native_currency != portfolio_currency:
+                from app.utils.currency import get_exchange_rate
+                fx_rate = await get_exchange_rate(native_currency, portfolio_currency)
+            
+            # Calculate market_value and unrealized_pnl in PORTFOLIO currency
+            market_value_native = position.quantity * position.current_price
+            position.market_value = market_value_native * fx_rate
+            
+            # P&L = (current_price - avg_cost) × quantity × fx_rate
+            pnl_native = (position.current_price - position.avg_cost) * position.quantity
+            position.unrealized_pnl = pnl_native * fx_rate
+            
+            # P&L percent is currency-agnostic (calculated in native)
             if position.avg_cost > 0:
                 position.unrealized_pnl_percent = float(
                     (position.current_price - position.avg_cost) / position.avg_cost * 100
                 )
             position.updated_at = datetime.utcnow()
             
-            logger.debug(f"Updated {symbol} price to {price} ({price_source})")
+            logger.debug(f"Updated {symbol} price to {price} ({price_source}), FX={fx_rate}")
             return True
         
         return False
@@ -227,6 +255,9 @@ class GlobalPriceUpdater:
         if not positions:
             return {"updated": 0, "skipped": 0, "failed": 0}
         
+        # Get portfolio currency for FX conversions
+        portfolio_currency = portfolio.currency or "EUR"
+        
         stats = {"updated": 0, "skipped": 0, "failed": 0, "by_exchange": {}}
         
         for position in positions:
@@ -236,7 +267,7 @@ class GlobalPriceUpdater:
                 stats["by_exchange"][exchange] = {"updated": 0, "skipped": 0}
             
             try:
-                updated = await self.update_position_price(position)
+                updated = await self.update_position_price(position, portfolio_currency)
                 if updated:
                     stats["updated"] += 1
                     stats["by_exchange"][exchange]["updated"] += 1
