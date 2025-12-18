@@ -11,7 +11,6 @@
 /* eslint-disable no-console */
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { refreshAccessToken } from '../services/api';
 
 // ==================== Types ====================
 
@@ -285,33 +284,13 @@ export function useBotWebSocket({
         setStatus('error');
       };
 
-      wsRef.current.onclose = async (event) => {
+      wsRef.current.onclose = (event) => {
         console.log('[BotWS] Disconnected:', event.code, event.reason);
         setStatus('disconnected');
         clearTimers();
         onDisconnect?.();
 
-        // Handle token expired codes - try to refresh token first
-        // 4001 = backend custom code, 4003 = standard forbidden
-        if (event.code === 4001 || event.code === 1008 || event.code === 403 || event.code === 4003) {
-          console.log('[BotWS] Token expired, attempting refresh...');
-          try {
-            const newToken = await refreshAccessToken();
-            if (newToken) {
-              console.log('[BotWS] Token refreshed, reconnecting...');
-              reconnectAttemptsRef.current = 0; // Reset attempts
-              // Small delay to let token propagate
-              reconnectTimeoutRef.current = setTimeout(() => {
-                connect();
-              }, 500);
-              return;
-            }
-          } catch (error) {
-            console.error('[BotWS] Token refresh failed:', error);
-          }
-        }
-
-        // Auto-reconnect logic (for non-auth errors)
+        // Auto-reconnect logic
         if (reconnect && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
           console.log(`[BotWS] Reconnecting in ${reconnectInterval}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);

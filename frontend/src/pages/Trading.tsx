@@ -111,22 +111,20 @@ const Trading = () => {
       );
       
       // Map API response to Position interface
-      // API returns: avg_cost (native), avg_cost_portfolio (base currency), market_value, unrealized_pnl_percent
-      // UI expects: average_cost (in portfolio base currency), current_value, unrealized_pnl_pct
+      // API returns: avg_cost, market_value, unrealized_pnl_percent
+      // UI expects: average_cost, current_value, unrealized_pnl_pct
       setPositions(data.map((p: any) => {
         const marketValue = parseFloat(p.market_value) || 0;
         return {
           symbol: p.symbol,
           exchange: p.exchange,
           quantity: parseFloat(p.quantity) || 0,
-          // Use avg_cost_portfolio (base currency) for display, fallback to avg_cost
-          average_cost: parseFloat(p.avg_cost_portfolio) || parseFloat(p.avg_cost) || 0,
+          average_cost: parseFloat(p.avg_cost) || 0,
           current_price: parseFloat(p.current_price) || 0,
           current_value: marketValue,
           unrealized_pnl: parseFloat(p.unrealized_pnl) || 0,
           unrealized_pnl_pct: parseFloat(p.unrealized_pnl_percent) || 0,
-          weight_pct: totalValue > 0 ? (marketValue / totalValue) * 100 : 0,
-          native_currency: p.native_currency || 'USD',
+          weight_pct: totalValue > 0 ? (marketValue / totalValue) * 100 : 0
         };
       }));
     } catch (err) {
@@ -429,7 +427,6 @@ const Trading = () => {
                   <PositionTable
                     positions={positions.slice(0, 5)}
                     onSell={handleSellPosition}
-                    baseCurrency={selectedPortfolio?.currency || 'EUR'}
                   />
                 ) : (
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -459,7 +456,6 @@ const Trading = () => {
               <PositionTable
                 positions={positions}
                 onSell={handleSellPosition}
-                baseCurrency={selectedPortfolio?.currency || 'EUR'}
               />
             </CardContent>
           </Card>

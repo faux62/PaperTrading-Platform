@@ -323,7 +323,6 @@ const Portfolio = () => {
         onSubmit={handleCreatePortfolio}
         isLoading={isCreating}
         error={createError}
-        userBaseCurrency={baseCurrency}
       />
 
       {/* Edit Portfolio Modal */}

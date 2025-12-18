@@ -31,8 +31,6 @@ class ApiKeyResponse(BaseModel):
     provider: str
     configured: bool
     masked_key: Optional[str] = None
-    source: Optional[str] = None  # "personal", "system", "environment", or None
-    is_personal: bool = False  # True if user has their own key
 
 
 class ApiKeysListResponse(BaseModel):
@@ -157,36 +155,16 @@ async def get_settings(
     db: AsyncSession = Depends(get_db)
 ) -> UserSettingsResponse:
     """Get current user's settings."""
-    from app.services.api_key_service import ApiKeyService
-    
     settings = await get_or_create_settings(db, current_user.id)
     
-    # Get API keys status with fallback info
-    api_key_service = ApiKeyService(db)
-    provider_status = await api_key_service.get_provider_status(settings)
-    
+    # Get API keys status
     providers_status = []
     for provider in SUPPORTED_PROVIDERS:
-        status = provider_status.get(provider, {})
-        
-        # Get masked key only if user has personal key or is system key
-        masked_key = None
-        if status.get("has_key"):
-            if status.get("is_personal"):
-                # Show user's own key masked
-                key = settings.get_provider_key(provider)
-                masked_key = mask_api_key(key) if key else None
-            elif status.get("source") == "system":
-                masked_key = "Using system key"
-            elif status.get("source") == "environment":
-                masked_key = "Using environment"
-        
+        key = settings.get_provider_key(provider)
         providers_status.append(ApiKeyResponse(
             provider=provider,
-            configured=status.get("has_key", False),
-            masked_key=masked_key,
-            source=status.get("source"),
-            is_personal=status.get("is_personal", False)
+            configured=bool(key),
+            masked_key=mask_api_key(key) if key else None
         ))
     
     return UserSettingsResponse(

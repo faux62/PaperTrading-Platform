@@ -143,7 +143,6 @@ export interface AllocationChartProps extends BaseChartProps {
   innerRadius?: number;
   outerRadius?: number;
   animate?: boolean;
-  currency?: string;  // Currency for value display
 }
 
 // Volume Chart Props

@@ -84,17 +84,11 @@ interface RebalanceResult {
 interface RebalancingWizardProps {
   portfolioId: number | string;
   currentRiskProfile?: string;
-  baseCurrency?: string;  // Portfolio base currency
   onComplete?: () => void;
   onCancel?: () => void;
 }
 
 type WizardStep = 'analysis' | 'preview' | 'execute' | 'result';
-
-// Currency symbols for display
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
-};
 
 const RISK_PROFILES = [
   { id: 'aggressive', name: 'Aggressive', description: 'Higher risk, higher potential returns' },
@@ -105,7 +99,6 @@ const RISK_PROFILES = [
 export function RebalancingWizard({
   portfolioId,
   currentRiskProfile = 'balanced',
-  baseCurrency = 'USD',
   onComplete,
   onCancel,
 }: RebalancingWizardProps) {
@@ -289,8 +282,10 @@ export function RebalancingWizard({
   };
 
   const formatCurrency = (value: number) => {
-    const symbol = CURRENCY_SYMBOLS[baseCurrency] || baseCurrency + ' ';
-    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(value);
   };
 
   const formatPercent = (value: number) => {

@@ -1,137 +1,277 @@
 # PaperTrading Platform - Handoff Notes
 
-## Data: 5 Dicembre 2025
+## Data: 18 Dicembre 2025
 
 ---
 
-## Stato Attuale
+## 🎯 Overview del Progetto
 
-### ✅ Completato
-- **Docker deployment** funzionante su localhost
-- **Autenticazione**: login/logout/sessione persistente
-- **Portfolio**: CRUD completo con currency preference
-- **Positions**: creazione ordini market, visualizzazione P&L
-- **Currency**: sistema conversione valute EUR/USD/GBP/CHF
+**PaperTrading-Platform** è una piattaforma completa di paper trading che permette di simulare operazioni di trading su mercati globali con dati reali, senza rischiare denaro vero.
 
-### 🔄 In Progress
-- **POS-02**: Chiusura posizione (sell) - da testare
-- **POS-03**: Modifica quantità posizione - da testare
-
-### ⬜ Da Fare
-- TRD-01 to TRD-06: Test trading avanzati
-- MKT, WL, ALT, ANA, SET: Altri moduli
+### Stack Tecnologico
+- **Frontend**: React 18 + TypeScript + Vite + TailwindCSS
+- **Backend**: FastAPI + SQLAlchemy (async) + Pydantic
+- **Database**: PostgreSQL 16
+- **Cache**: Redis 7
+- **Container**: Docker Compose con profiles
 
 ---
 
-## Setup su Nuovo Mac
+## ✅ Funzionalità Completate
 
-### 1. Collega il Volume Esterno
-Il progetto è su **X9 Pro** in:
+### Core Trading
+- ✅ **Autenticazione**: JWT con refresh tokens, sessione persistente
+- ✅ **Portfolio Management**: CRUD completo con currency base (EUR/USD/GBP/CHF)
+- ✅ **Order Execution**: Market orders con esecuzione automatica
+- ✅ **Positions**: Apertura, chiusura, visualizzazione P&L real-time
+- ✅ **Trade History**: Storico completo di tutte le operazioni
+
+### Single Currency Model (CRITICO!)
+Il sistema usa un modello **Single Currency** - ogni portfolio ha UNA SOLA valuta base:
+- `portfolio.cash_balance` è l'UNICA fonte di verità per il cash
+- Quando compri un titolo in valuta diversa (es. AAPL in USD con portfolio EUR), il sistema:
+  1. Ottiene il prezzo in USD
+  2. Converte il costo totale da USD → EUR usando `convert()`
+  3. Scala `portfolio.cash_balance` in EUR
+  4. Salva `exchange_rate` nel trade per audit trail
+- **File chiave**: `backend/app/utils/currency.py` con funzione `convert(amount, from_ccy, to_ccy)`
+
+### Global Market Universe
+- ✅ **623 simboli** da mercati globali (US, EU, UK, ASIA)
+- File: `backend/app/data_providers/symbol_universe.py`
+- Simboli con suffissi: `.MI` (Milano), `.L` (Londra), `.PA` (Parigi), `.DE` (Francoforte)
+
+### Data Providers (Orchestrator Pattern)
+- **Priorità provider**: Polygon → Finnhub → Alpha Vantage → Twelve Data → Yahoo Finance
+- **Fallback automatico** se un provider fallisce
+- **Cache Redis** per ridurre chiamate API
+- ⚠️ **MAI usare dati MOCK** - sempre dati reali
+
+### Email Notifications
+- ✅ Sistema SMTP via Gmail configurato
+- Notifiche per: conferma ordini, alert prezzi, report periodici
+
+---
+
+## 🏗️ Architettura Database
+
+### Tabelle Principali
 ```
-/Volumes/X9 Pro/Sviluppo/Applicazioni/Finance/PaperTrading-Platform
+users           → Utenti con autenticazione
+portfolios      → Portfolio con cash_balance e currency
+positions       → Posizioni aperte (symbol, quantity, avg_cost, etc.)
+trades          → Storico operazioni (buy/sell con exchange_rate)
+watchlists      → Liste titoli da monitorare
 ```
 
-### 2. Avvia Docker
+### Campi Position Importanti (Aggiunti Dicembre 2025)
+```sql
+positions.avg_cost              -- Costo medio in valuta NATIVA del titolo
+positions.avg_cost_portfolio    -- Costo medio in valuta del PORTFOLIO
+positions.entry_exchange_rate   -- Tasso di cambio all'apertura
+positions.native_currency       -- Valuta nativa del titolo (USD, EUR, etc.)
+```
+
+### Campi Trade
+```sql
+trades.exchange_rate            -- Tasso usato per la conversione
+trades.native_currency          -- Valuta nativa del titolo
+```
+
+---
+
+## 🐳 Docker Setup (IMPORTANTE!)
+
+### File Unificato con Profiles
+Da Dicembre 2025, esiste UN SOLO file `docker-compose.yml` con profiles:
+
 ```bash
 cd "/Volumes/X9 Pro/Sviluppo/Applicazioni/Finance/PaperTrading-Platform/infrastructure/docker"
-docker compose -f docker-compose.local.yml up -d
+
+# Solo infrastruttura (sviluppo locale con backend/frontend fuori Docker)
+docker-compose --profile infra up -d
+
+# Deploy completo (tutto in Docker)
+docker-compose --profile full up -d
+
+# Aggiungere strumenti di sviluppo (pgAdmin, Redis Commander)
+docker-compose --profile full --profile tools up -d
+
+# Rebuild backend/frontend
+docker-compose --profile full up -d --build backend frontend
+
+# Stop tutto
+docker-compose down
 ```
 
-### 3. Verifica Containers
-```bash
-docker compose -f docker-compose.local.yml ps
-# Tutti devono essere "healthy" o "running"
-```
+### ⚠️ File DEPRECATI (NON USARE!)
+- `docker-compose.dev.yml.DEPRECATED`
+- `docker-compose.local.yml.DEPRECATED`
 
-### 4. Accesso
-- URL: http://localhost
-- User test: `test@test.com` / `Test123!@#`
-- User faux62: `bandini.fausto@gmail.com` / `Pallazz@99`
+Usare file diversi causa conflitti di namespace nei volumi Docker e **PERDITA DATI**!
+
+### Volumi Docker
+```
+docker_postgres_data   → Dati PostgreSQL
+docker_redis_data      → Dati Redis
+docker_timescale_data  → Dati TimescaleDB (tools)
+docker_pgadmin_data    → Config pgAdmin (tools)
+```
 
 ---
 
-## Dati nel Database
+## 🔐 Credenziali
 
-### Utenti
-| ID | Email | Note |
-|----|-------|------|
-| 1 | test@test.com | Utente di test |
-| 2 | bandini.fausto@gmail.com | Utente principale |
+### Accesso Applicazione
+- **URL**: http://localhost (frontend) / http://localhost:8000 (API)
+- **Admin**: `administrator` / `admin123`
 
-### Portfolios (user 2)
-| ID | Nome | Note |
-|----|------|------|
-| 7 | Prova 3 | Ha 1 posizione AAPL |
+### Database (PostgreSQL)
+```
+Host: localhost:5432
+Database: papertrading
+User: papertrading_user
+Password: dev_password_123
+```
 
-### Posizioni Attive
-| Portfolio | Symbol | Qty | Avg Cost |
-|-----------|--------|-----|----------|
-| 7 | AAPL | 10 | $150.06 |
+### pgAdmin (tools profile)
+- URL: http://localhost:5050
+- Email: admin@papertrading.com
+- Password: admin123
+
+### Redis Commander (tools profile)
+- URL: http://localhost:8081
 
 ---
 
-## File Importanti Modificati
+## 📁 File Chiave Modificati (Dicembre 2025)
 
-### Backend
-- `backend/app/core/portfolio/service.py` - Aggiunto `get_portfolio_value()`
-- `backend/app/core/trading/order_manager.py` - Fix `position_limits.max_position_size_percent`
-- `backend/app/core/trading/execution.py` - Fix `avg_cost` field names
-- `backend/app/api/v1/endpoints/trades.py` - Auto-execute market orders
+### Backend - Single Currency Model
+| File | Scopo |
+|------|-------|
+| `backend/app/utils/currency.py` | Funzione `convert()` per conversioni real-time |
+| `backend/app/core/trading/execution.py` | Usa `portfolio.cash_balance` con conversione |
+| `backend/app/core/trading/order_manager.py` | Validazione ordini con conversione valuta |
+| `backend/app/db/models/position.py` | Campi `avg_cost_portfolio`, `entry_exchange_rate` |
+| `backend/app/core/currency_service.py` | DEPRECATED - non usare |
+
+### Backend - API Endpoints
+| File | Scopo |
+|------|-------|
+| `backend/app/api/v1/endpoints/positions.py` | Schema con `native_currency`, `avg_cost_portfolio` |
+| `backend/app/api/v1/endpoints/trades.py` | Schema con `native_currency`, `exchange_rate` |
+| `backend/app/api/v1/endpoints/currency.py` | Endpoint `/convert/precise` |
 
 ### Frontend
-- `frontend/src/pages/Trading.tsx` - Field mapping fix (avg_cost, market_value)
-- `frontend/src/components/trading/OrderForm.tsx` - Manual price input for Phase 1
-- `frontend/src/services/api.ts` - Portfolio positions endpoint fix
+| File | Scopo |
+|------|-------|
+| `frontend/src/pages/Dashboard.tsx` | `formatNativeCurrency()` per simboli valuta corretti |
+| `frontend/src/types/index.ts` | Interfacce Position/Trade con campi currency |
+
+### Docker
+| File | Scopo |
+|------|-------|
+| `infrastructure/docker/docker-compose.yml` | File UNIFICATO con profiles |
 
 ---
 
-## Comandi Utili
+## 🐛 Problemi Noti e Soluzioni
+
+### 1. Simboli Valuta Errati (€ invece di $)
+**Problema**: Dashboard mostrava € per titoli USD
+**Soluzione**: Usare `position.native_currency` per "Avg Price", `portfolioCurrency` per totali
+
+### 2. Sistema Doppio Cash (BUG CRITICO - Risolto)
+**Problema**: Esistevano due sistemi paralleli (`cash_balances` table vs `portfolio.cash_balance`)
+**Soluzione**: Eliminato uso di `cash_balances`, usare SOLO `portfolio.cash_balance`
+
+### 3. Perdita Dati Docker
+**Problema**: Usare `docker-compose.local.yml` dopo `docker-compose.dev.yml` creava volumi diversi
+**Soluzione**: File unificato `docker-compose.yml` con profiles
+
+### 4. TimescaleDB Warning
+**Warning**: `platform (linux/amd64) does not match host (linux/arm64/v8)`
+**Status**: Funziona comunque, è solo un warning per Mac M1/M2
+
+---
+
+## 🚀 Comandi Utili
 
 ### Logs
 ```bash
 # Backend logs
-docker compose -f docker-compose.local.yml logs -f backend
+docker-compose --profile full logs -f backend
 
 # Solo errori
-docker compose -f docker-compose.local.yml logs backend | grep -i error
+docker-compose --profile full logs backend 2>&1 | grep -i error
 ```
 
-### Database
+### Database Queries
 ```bash
-# Accesso diretto PostgreSQL
-docker compose -f docker-compose.local.yml exec postgres psql -U papertrading -d papertrading
+# Accesso psql
+docker exec -it papertrading-postgres psql -U papertrading_user -d papertrading
 
-# Query posizioni
-docker compose -f docker-compose.local.yml exec postgres psql -U papertrading -d papertrading -c "SELECT * FROM positions;"
+# Query utili
+SELECT id, username, email FROM users;
+SELECT id, name, cash_balance, currency FROM portfolios;
+SELECT symbol, quantity, avg_cost, native_currency FROM positions;
+SELECT * FROM trades ORDER BY executed_at DESC LIMIT 10;
 ```
 
-### Rebuild dopo modifiche
+### Migrazioni Alembic
 ```bash
-docker compose -f docker-compose.local.yml build backend --no-cache
-docker compose -f docker-compose.local.yml up -d backend
+cd backend
+
+# Nuova migrazione
+alembic revision --autogenerate -m "description"
+
+# Applica migrazioni
+alembic upgrade head
+
+# Rollback
+alembic downgrade -1
 ```
 
 ---
 
-## Note Tecniche
+## ⚠️ REGOLE IMPORTANTI
 
-### Slippage
-Gli ordini market hanno slippage simulato (~0.04%). Questo è intenzionale per realismo.
-
-### Phase 1 Testing
-In Phase 1 (senza API dati reali), l'utente deve inserire manualmente il prezzo nel form ordini.
-
-### Currency API
-Usa open.er-api.com (gratuito, cache 1 ora). Funziona offline con fallback rates.
+1. **MAI dati MOCK** - Usare sempre dati reali dai provider
+2. **INFORMARE prima di toccare il DB** - Specialmente DELETE/UPDATE
+3. **SOLO docker-compose.yml** - Mai usare i file .DEPRECATED
+4. **Single Currency Model** - `portfolio.cash_balance` è l'unica fonte di verità
+5. **Conversione on-demand** - `convert()` per ogni operazione cross-currency
 
 ---
 
-## Prossimi Passi Consigliati
+## 📋 TODO / Prossimi Passi
 
-1. **Testare POS-02**: Prova a vendere 5 shares AAPL dal portfolio 7
-2. **Testare POS-03**: Compra altre 5 shares AAPL (dovrebbe aggiornare la posizione esistente)
-3. **Continuare con TESTING-ROADMAP.md**
+### Alta Priorità
+- [ ] Implementare Limit Orders
+- [ ] Stop Loss / Take Profit
+- [ ] Portfolio Analytics avanzati
+- [ ] ML Predictions integration
+
+### Media Priorità
+- [ ] WebSocket per prezzi real-time
+- [ ] Alert sistema notifiche push
+- [ ] Mobile responsive improvements
+
+### Bassa Priorità
+- [ ] Multi-user permissions
+- [ ] API rate limiting dashboard
+- [ ] Export dati CSV/PDF
 
 ---
 
-*Generato automaticamente - 5 Dicembre 2025*
+## 🔄 Come Continuare lo Sviluppo
+
+1. **Leggi questo file** per avere il contesto completo
+2. **Avvia Docker** con `docker-compose --profile full --profile tools up -d`
+3. **Verifica stato** con `docker ps`
+4. **Accedi** a http://localhost con `administrator/admin123`
+5. **Consulta** la documentazione in `docs/` per dettagli specifici
+
+---
+
+*Ultimo aggiornamento: 18 Dicembre 2025*

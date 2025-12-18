@@ -176,19 +176,6 @@ class Settings(BaseSettings):
     ENABLE_ML_PREDICTIONS: bool = True
     ENABLE_WEBSOCKET_STREAMING: bool = True
     ENABLE_PROVIDER_HEALTH_MONITOR: bool = True
-    
-    # =========================
-    # Email Settings (SMTP)
-    # =========================
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM_EMAIL: str = ""
-    SMTP_FROM_NAME: str = "PaperTrading Platform"
-    SMTP_TLS: bool = True
-    SMTP_SSL: bool = False
-    EMAIL_ENABLED: bool = False  # Set to True when SMTP is configured
 
 
 # Create global settings instance

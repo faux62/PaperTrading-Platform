@@ -39,11 +39,11 @@ const formatPercent = (value: number, total: number): string => {
   return `${((value / total) * 100).toFixed(1)}%`;
 };
 
-// Format currency with dynamic currency
-const formatCurrencyValue = (value: number, currency: string = 'USD'): string => {
+// Format currency
+const formatCurrency = (value: number): string => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: currency,
+    currency: 'USD',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
@@ -82,7 +82,7 @@ const renderActiveShape = (props: any) => {
         fill="#6b7280"
         className="text-sm"
       >
-        {formatCurrencyValue(value)}
+        {formatCurrency(value)}
       </text>
       <text
         x={cx}
@@ -136,7 +136,7 @@ const CustomTooltip: React.FC<any> = ({ active, payload }) => {
         <span className="font-medium text-gray-900 dark:text-white">{name}</span>
       </div>
       <div className="text-sm text-gray-600 dark:text-gray-300">
-        <div>{formatCurrencyValue(value)}</div>
+        <div>{formatCurrency(value)}</div>
         {percentage !== undefined && (
           <div className="text-gray-500">{percentage.toFixed(1)}%</div>
         )}
@@ -187,12 +187,8 @@ export const AllocationChart: React.FC<AllocationChartProps> = ({
   innerRadius = 60,
   outerRadius = 100,
   animate = true,
-  currency = 'USD',
 }) => {
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
-
-  // Helper for formatting currency values
-  const formatCurrency = (value: number) => formatCurrencyValue(value, currency);
 
   // Calculate total and add colors
   const { chartData, total } = useMemo(() => {

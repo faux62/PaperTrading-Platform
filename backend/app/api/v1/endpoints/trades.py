@@ -176,8 +176,6 @@ async def list_trades(
             total_value=t.total_value,
             commission=t.commission,
             realized_pnl=t.realized_pnl,
-            native_currency=t.native_currency or "USD",
-            exchange_rate=t.exchange_rate,
             created_at=t.created_at,
             executed_at=t.executed_at,
             notes=t.notes
@@ -381,8 +379,6 @@ async def execute_order(
         total_value=trade.total_value,
         commission=trade.commission,
         realized_pnl=trade.realized_pnl,
-        native_currency=trade.native_currency or "USD",
-        exchange_rate=trade.exchange_rate,
         created_at=trade.created_at,
         executed_at=trade.executed_at,
         notes=trade.notes
@@ -416,8 +412,6 @@ async def get_order(
         total_value=trade.total_value,
         commission=trade.commission,
         realized_pnl=trade.realized_pnl,
-        native_currency=trade.native_currency or "USD",
-        exchange_rate=trade.exchange_rate,
         created_at=trade.created_at,
         executed_at=trade.executed_at,
         notes=trade.notes
@@ -481,8 +475,6 @@ async def list_pending_orders(
             total_value=t.total_value,
             commission=t.commission,
             realized_pnl=t.realized_pnl,
-            native_currency=t.native_currency or "USD",
-            exchange_rate=t.exchange_rate,
             created_at=t.created_at,
             executed_at=t.executed_at,
             notes=t.notes
@@ -544,8 +536,6 @@ async def get_trade_history(
             total_value=t.total_value,
             commission=t.commission,
             realized_pnl=t.realized_pnl,
-            native_currency=t.native_currency or "USD",
-            exchange_rate=t.exchange_rate,
             created_at=t.created_at,
             executed_at=t.executed_at,
             notes=t.notes
@@ -637,8 +627,6 @@ async def get_trades_by_symbol(
             total_value=t.total_value,
             commission=t.commission,
             realized_pnl=t.realized_pnl,
-            native_currency=t.native_currency or "USD",
-            exchange_rate=t.exchange_rate,
             created_at=t.created_at,
             executed_at=t.executed_at,
             notes=t.notes

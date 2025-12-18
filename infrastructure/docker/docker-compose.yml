@@ -80,7 +80,6 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../../backend/app:/app/app  # Mount source code for development
       - ../../ml-pipeline/models:/app/ml_models:ro
     environment:
       - ENVIRONMENT=production
@@ -104,15 +103,6 @@ services:
       - MARKETSTACK_API_KEY=${MARKETSTACK_API_KEY:-}
       - STOCKDATA_API_KEY=${STOCKDATA_API_KEY:-}
       - INTRINIO_API_KEY=${INTRINIO_API_KEY:-}
-      # Email Configuration
-      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:-}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-PaperTrading Platform}
-      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
-      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
-      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,8 +127,6 @@ services:
     profiles: ["full"]
     ports:
       - "80:80"
-    volumes:
-      - ../../frontend/dist:/usr/share/nginx/html:ro  # Mount build output for development
     depends_on:
       backend:
         condition: service_healthy
@@ -173,24 +161,23 @@ services:
       timeout: 5s
       retries: 5
 
-  # ==================== RedisInsight (Tools) ====================
-  # Native ARM64 support - replaces redis-commander
-  redisinsight:
-    image: redis/redisinsight:latest
-    container_name: papertrading-redisinsight
+  # ==================== Redis Commander (Tools) ====================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: papertrading-redis-commander
     restart: unless-stopped
     profiles: ["tools"]
+    environment:
+      REDIS_HOSTS: local:redis:6379
     ports:
-      - "5540:5540"
-    volumes:
-      - redisinsight_data:/data
+      - "8081:8081"
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - papertrading-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5540/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -230,6 +217,4 @@ volumes:
   timescale_data:
     driver: local
   pgadmin_data:
-    driver: local
-  redisinsight_data:
     driver: local

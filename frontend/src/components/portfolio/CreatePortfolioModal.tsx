@@ -22,13 +22,9 @@ interface CreatePortfolioModalProps {
   }) => Promise<void>;
   isLoading?: boolean;
   error?: string | null;
-  userBaseCurrency: string; // User's base currency - read-only for portfolio
 }
 
-// Currency symbols for display
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
-};
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF'];
 
 // Strategy period options (in weeks)
 const STRATEGY_PERIODS = [
@@ -45,14 +41,12 @@ export const CreatePortfolioModal = ({
   onSubmit,
   isLoading = false,
   error = null,
-  userBaseCurrency,
 }: CreatePortfolioModalProps) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [riskProfile, setRiskProfile] = useState('balanced');
   const [initialCapital, setInitialCapital] = useState('10000');
-  // Currency is ALWAYS the user's base currency (read-only)
-  const currency = userBaseCurrency;
+  const [currency, setCurrency] = useState('USD');
   const [strategyPeriodWeeks, setStrategyPeriodWeeks] = useState(12);
   const [isActive, setIsActive] = useState(true);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -104,7 +98,7 @@ export const CreatePortfolioModal = ({
       setDescription('');
       setRiskProfile('balanced');
       setInitialCapital('10000');
-      // currency is read-only from user profile
+      setCurrency('USD');
       setStrategyPeriodWeeks(12);
       setIsActive(true);
       setValidationError(null);
@@ -224,18 +218,20 @@ export const CreatePortfolioModal = ({
 
             <div>
               <label className="block text-sm font-medium text-surface-300 mb-2">
-                Base Currency
+                Currency
               </label>
-              <div className="w-full px-4 py-2.5 bg-surface-900/50 border border-surface-700 rounded-lg text-white flex items-center gap-2">
-                <span className="text-lg font-semibold text-primary-400">
-                  {CURRENCY_SYMBOLS[currency] || currency}
-                </span>
-                <span>{currency}</span>
-                <span className="text-xs text-surface-500 ml-auto">(from profile)</span>
-              </div>
-              <p className="text-xs text-surface-500 mt-1">
-                All portfolio values in this currency
-              </p>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="w-full px-4 py-2.5 bg-surface-900 border border-surface-700 rounded-lg text-white focus:outline-none focus:border-primary-500 transition-colors"
+                disabled={isLoading}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

@@ -39,11 +39,6 @@ interface PortfolioStats {
   positions_count: number;
 }
 
-// Currency symbols for display
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
-};
-
 const PortfolioDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -133,20 +128,12 @@ const PortfolioDetail = () => {
     fetchPortfolioData();
   }, [fetchPortfolioData]);
 
-  // Portfolio base currency
-  const portfolioCurrency = (portfolio as any)?.currency || 'USD';
-  const currencySymbol = CURRENCY_SYMBOLS[portfolioCurrency] || portfolioCurrency + ' ';
-
-  // Format currency in portfolio BASE currency
   const formatCurrency = (value: number) => {
-    return `${currencySymbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  // Format price in NATIVE currency (for current prices only)
-  const formatNativePrice = (value: number, nativeCurrency?: string) => {
-    const currency = nativeCurrency || 'USD';
-    const symbol = CURRENCY_SYMBOLS[currency] || currency + ' ';
-    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+    }).format(value);
   };
 
   const formatPercent = (value: number) => {
@@ -371,9 +358,7 @@ const PortfolioDetail = () => {
                 {positions.length > 0 ? (
                   <div className="space-y-3">
                     {positions.map((position) => {
-                      // Use market_value from API (already in portfolio currency)
-                      // Fallback only if market_value not available
-                      const value = position.market_value || position.current_value || 0;
+                      const value = position.current_value || position.quantity * (position.current_price || position.average_price);
                       const percentage = stats ? (value / stats.total_value) * 100 : 0;
                       return (
                         <div key={position.id} className="flex items-center gap-3">
@@ -430,41 +415,32 @@ const PortfolioDetail = () => {
               <CardContent>
                 {trades.length > 0 ? (
                   <div className="space-y-2">
-                    {trades.slice(0, 5).map((trade) => {
-                      const tradePrice = trade.price || trade.limit_price || 0;
-                      const exchangeRate = (trade as any).exchange_rate || 1;
-                      // Convert price to portfolio currency using the FX rate at trade time
-                      const priceInPortfolioCurrency = tradePrice * exchangeRate;
-                      // Calculate total in portfolio currency (qty × price × exchange_rate)
-                      const totalValue = trade.quantity * priceInPortfolioCurrency;
-                      
-                      return (
-                        <div
-                          key={trade.id}
-                          className="flex items-center justify-between p-2 bg-surface-800/50 rounded-lg"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Badge variant={(trade.trade_type || trade.side) === 'buy' ? 'success' : 'danger'}>
-                              {(trade.trade_type || trade.side || 'N/A').toUpperCase()}
-                            </Badge>
-                            <div>
-                              <p className="text-sm font-medium text-white">{trade.symbol}</p>
-                              <p className="text-xs text-surface-400">
-                                {trade.quantity} @ {formatCurrency(priceInPortfolioCurrency)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm text-white">
-                              {formatCurrency(totalValue)}
-                            </p>
+                    {trades.slice(0, 5).map((trade) => (
+                      <div
+                        key={trade.id}
+                        className="flex items-center justify-between p-2 bg-surface-800/50 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Badge variant={(trade.trade_type || trade.side) === 'buy' ? 'success' : 'danger'}>
+                            {(trade.trade_type || trade.side || 'N/A').toUpperCase()}
+                          </Badge>
+                          <div>
+                            <p className="text-sm font-medium text-white">{trade.symbol}</p>
                             <p className="text-xs text-surface-400">
-                              {new Date(trade.created_at).toLocaleDateString()}
+                              {trade.quantity} @ {formatCurrency(trade.price || trade.limit_price || 0)}
                             </p>
                           </div>
                         </div>
-                      );
-                    })}
+                        <div className="text-right">
+                          <p className="text-sm text-white">
+                            {formatCurrency(trade.quantity * (trade.price || trade.limit_price || 0))}
+                          </p>
+                          <p className="text-xs text-surface-400">
+                            {new Date(trade.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="text-center text-surface-400 py-8">
@@ -502,17 +478,15 @@ const PortfolioDetail = () => {
                         const value = position.quantity * currentPrice;
                         const pnl = position.unrealized_pnl || (currentPrice - position.average_price) * position.quantity;
                         const pnlPct = position.unrealized_pnl_pct || ((currentPrice - position.average_price) / position.average_price) * 100;
-                        const nativeCurrency = (position as any).native_currency || 'USD';
 
                         return (
                           <tr key={position.id} className="text-sm">
                             <td className="py-3">
                               <div className="font-medium text-white">{position.symbol}</div>
-                              <div className="text-xs text-surface-500">{nativeCurrency}</div>
                             </td>
                             <td className="py-3 text-right text-white">{position.quantity}</td>
                             <td className="py-3 text-right text-white">{formatCurrency(position.average_price)}</td>
-                            <td className="py-3 text-right text-white">{formatNativePrice(currentPrice, nativeCurrency)}</td>
+                            <td className="py-3 text-right text-white">{formatCurrency(currentPrice)}</td>
                             <td className="py-3 text-right text-white">{formatCurrency(value)}</td>
                             <td className={`py-3 text-right ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                               {formatCurrency(pnl)}
@@ -586,7 +560,7 @@ const PortfolioDetail = () => {
         )}
 
         {activeTab === 'history' && (
-          <TradeHistory portfolioId={portfolioId} baseCurrency={portfolioCurrency} />
+          <TradeHistory portfolioId={portfolioId} />
         )}
       </div>
 
@@ -596,7 +570,6 @@ const PortfolioDetail = () => {
           <div className="bg-surface-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <RebalancingWizard
               portfolioId={portfolioId}
-              baseCurrency={portfolioCurrency}
               onComplete={() => {
                 setShowRebalanceWizard(false);
                 fetchPortfolioData();

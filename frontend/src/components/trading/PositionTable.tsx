@@ -28,13 +28,7 @@ export interface Position {
   day_change?: number;
   day_change_pct?: number;
   weight_pct?: number;
-  native_currency?: string;  // Currency the symbol is quoted in
 }
-
-// Currency symbols for display
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$'
-};
 
 interface PositionTableProps {
   positions: Position[];
@@ -42,7 +36,6 @@ interface PositionTableProps {
   onSell?: (symbol: string, quantity: number) => void;
   onViewDetails?: (symbol: string) => void;
   className?: string;
-  baseCurrency?: string;  // Portfolio base currency for values display
 }
 
 type SortField = 'symbol' | 'value' | 'pnl' | 'pnl_pct' | 'weight';
@@ -53,8 +46,7 @@ export function PositionTable({
   isLoading = false,
   onSell,
   onViewDetails,
-  className,
-  baseCurrency = 'USD'
+  className
 }: PositionTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('value');
@@ -114,19 +106,13 @@ export function PositionTable({
     </button>
   );
 
-  // Format currency in portfolio BASE currency (for values, P&L, etc.)
-  const formatBaseCurrency = (value: number | undefined) => {
+  const formatCurrency = (value: number | undefined) => {
     if (value === undefined) return '-';
-    const symbol = CURRENCY_SYMBOLS[baseCurrency] || baseCurrency + ' ';
-    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  // Format price in NATIVE currency (current price only)
-  const formatNativePrice = (value: number | undefined, nativeCurrency?: string) => {
-    if (value === undefined) return '-';
-    const currency = nativeCurrency || 'USD';
-    const symbol = CURRENCY_SYMBOLS[currency] || currency + ' ';
-    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2
+    }).format(value);
   };
 
   const formatPercent = (value: number | undefined) => {
@@ -254,13 +240,13 @@ export function PositionTable({
                   {position.quantity.toLocaleString()}
                 </td>
                 <td className="py-4 px-4 text-right font-mono text-gray-600 dark:text-gray-400">
-                  {formatBaseCurrency(position.average_cost)}
+                  {formatCurrency(position.average_cost)}
                 </td>
                 <td className="py-4 px-4 text-right font-mono text-gray-900 dark:text-white">
-                  {formatNativePrice(position.current_price, position.native_currency)}
+                  {formatCurrency(position.current_price)}
                 </td>
                 <td className="py-4 px-4 text-right font-mono font-medium text-gray-900 dark:text-white">
-                  {formatBaseCurrency(position.current_value)}
+                  {formatCurrency(position.current_value)}
                 </td>
                 <td className="py-4 px-4 text-right">
                   <span className={clsx(
@@ -270,7 +256,7 @@ export function PositionTable({
                       : 'text-red-600 dark:text-red-400'
                   )}>
                     {(position.unrealized_pnl || 0) >= 0 ? '+' : ''}
-                    {formatBaseCurrency(position.unrealized_pnl)}
+                    {formatCurrency(position.unrealized_pnl)}
                   </span>
                 </td>
                 <td className="py-4 px-4 text-right">
@@ -343,7 +329,7 @@ export function PositionTable({
               </td>
               <td className="pt-4 px-4" colSpan={3}></td>
               <td className="pt-4 px-4 text-right font-mono text-gray-900 dark:text-white">
-                {formatBaseCurrency(totalValue)}
+                {formatCurrency(totalValue)}
               </td>
               <td className="pt-4 px-4 text-right">
                 <span className={clsx(
@@ -352,7 +338,7 @@ export function PositionTable({
                     ? 'text-green-600 dark:text-green-400' 
                     : 'text-red-600 dark:text-red-400'
                 )}>
-                  {totalPnL >= 0 ? '+' : ''}{formatBaseCurrency(totalPnL)}
+                  {totalPnL >= 0 ? '+' : ''}{formatCurrency(totalPnL)}
                 </span>
               </td>
               <td className="pt-4 px-4 text-right">

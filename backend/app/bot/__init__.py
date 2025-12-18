@@ -70,26 +70,6 @@ async def initialize_bot() -> BotScheduler:
     scheduler.initialize()
     
     # ==========================================================
-    # FX RATE UPDATE JOB - Runs every 5 minutes
-    # ==========================================================
-    # This job handles:
-    # - Fetching latest exchange rates from Frankfurter API
-    # - Caching in Redis for fast access
-    # - Broadcasting updates via WebSocket
-    async def fx_rate_update_job():
-        from app.services.fx_rate_service import update_fx_rates_job
-        
-        stats = await update_fx_rates_job()
-        logger.debug(f"FX rate update: {stats['rates_count']} currencies refreshed")
-    
-    # Run every 5 minutes
-    scheduler.add_interval_job(
-        job_id="fx_rate_update",
-        func=fx_rate_update_job,
-        minutes=5
-    )
-    
-    # ==========================================================
     # GLOBAL PRICE UPDATE JOB - Runs every minute for ALL markets
     # ==========================================================
     # This job handles:

@@ -744,8 +744,6 @@ class ExecutionEngine:
         - avg_cost: Average cost in NATIVE currency (USD for AAPL)
         - avg_cost_portfolio: Average cost converted to PORTFOLIO currency
         - entry_exchange_rate: Weighted average exchange rate at entry
-        - market_value: Current value in PORTFOLIO currency
-        - unrealized_pnl: P&L in PORTFOLIO currency
         """
         # Check for existing position
         result = await self.db.execute(
@@ -760,21 +758,11 @@ class ExecutionEngine:
         exchange_rate = trade.exchange_rate or Decimal("1.0")
         
         # Calculate price in portfolio currency
-        if native_currency != portfolio_currency:
-            executed_price_portfolio, _ = await convert(
-                trade.executed_price,
-                native_currency,
-                portfolio_currency
-            )
-            # Convert total_value to portfolio currency for market_value
-            market_value_portfolio, _ = await convert(
-                trade.total_value,
-                native_currency,
-                portfolio_currency
-            )
-        else:
-            executed_price_portfolio = trade.executed_price
-            market_value_portfolio = trade.total_value
+        executed_price_portfolio, _ = await convert(
+            trade.executed_price,
+            native_currency,
+            portfolio_currency
+        ) if native_currency != portfolio_currency else (trade.executed_price, Decimal("1.0"))
         
         if position:
             # Update existing position (weighted average cost basis)
@@ -790,8 +778,7 @@ class ExecutionEngine:
             position.avg_cost = (old_value_native + new_value_native) / total_quantity
             
             # Weighted average in portfolio currency
-            new_avg_cost_portfolio = (old_value_portfolio + new_value_portfolio) / total_quantity
-            position.avg_cost_portfolio = new_avg_cost_portfolio
+            position.avg_cost_portfolio = (old_value_portfolio + new_value_portfolio) / total_quantity
             
             # Weighted average exchange rate
             old_rate = position.entry_exchange_rate or Decimal("1.0")
@@ -800,21 +787,6 @@ class ExecutionEngine:
             )
             
             position.quantity = total_quantity
-            position.current_price = trade.executed_price  # Native currency
-            
-            # Calculate market_value in PORTFOLIO currency
-            position.market_value = (total_quantity * trade.executed_price * exchange_rate).quantize(Decimal("0.01"))
-            
-            # Calculate unrealized P&L in PORTFOLIO currency
-            cost_basis_portfolio = total_quantity * new_avg_cost_portfolio
-            position.unrealized_pnl = (position.market_value - cost_basis_portfolio).quantize(Decimal("0.01"))
-            
-            # P&L percentage based on native prices
-            if position.avg_cost > 0:
-                position.unrealized_pnl_percent = float(
-                    (position.current_price - position.avg_cost) / position.avg_cost * 100
-                )
-            
             position.updated_at = datetime.utcnow()
         else:
             # Create new position
@@ -826,10 +798,8 @@ class ExecutionEngine:
                 avg_cost=trade.executed_price,  # Native currency
                 avg_cost_portfolio=executed_price_portfolio,  # Portfolio currency
                 entry_exchange_rate=exchange_rate,
-                current_price=trade.executed_price,  # Native currency
-                market_value=market_value_portfolio,  # Portfolio currency
-                unrealized_pnl=Decimal("0"),  # No P&L at entry
-                unrealized_pnl_percent=Decimal("0"),
+                current_price=trade.executed_price,
+                market_value=trade.total_value,
                 native_currency=native_currency,
                 opened_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
