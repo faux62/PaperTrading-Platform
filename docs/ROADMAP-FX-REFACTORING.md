@@ -1,7 +1,7 @@
 # PaperTrading Platform - Roadmap FX Refactoring
 
 ## Data: 18 Dicembre 2025
-## Versione: 1.3 (Fasi 1-11 completate)
+## Versione: 1.4 (Fasi 1-12 completate)
 
 ---
 
@@ -290,47 +290,39 @@ Casi d'uso:
 
 ---
 
-### FASE 12: Test
+### FASE 12: Test ✅ COMPLETATA
 **Tempo stimato: 3 ore**
+**Data completamento: 18 Dicembre 2025**
 
-#### 12.1 Unit test nuovi componenti
+#### 12.1 Unit test nuovi componenti ✅
 
 File: `backend/tests/unit/test_exchange_rate_repository.py`
-```python
-- test_get_rate_existing
-- test_get_rate_not_found
-- test_upsert_rate_insert
-- test_upsert_rate_update
-- test_get_all_rates
-```
+- TestExchangeRateRepository: 10 test cases
+- TestExchangeRateModel: 2 test cases
 
 File: `backend/tests/unit/test_fx_rate_service.py`
-```python
-- test_convert_same_currency
-- test_convert_different_currency
-- test_get_rate_fresh
-- test_get_rate_stale_fallback_api
-- test_get_rate_api_failure_use_stale
-- test_update_all_rates
-```
+- TestFxRateUpdaterService: 10 test cases
+- TestCurrencyConversion: 4 test cases
+- TestRateFreshness: 2 test cases
 
-#### 12.2 Integration test
+File: `backend/tests/unit/test_position_analytics.py`
+- TestGetHistoricalCostInPortfolioCurrency: 3 test cases
+- TestGetAvgEntryExchangeRate: 3 test cases
+- TestGetPositionCostBreakdown: 3 test cases
+- TestCalculateForexImpact: 3 test cases
+- TestEdgeCases: 3 test cases
 
-File: `backend/tests/integration/test_fx_rate_job.py`
-```python
-- test_scheduler_job_updates_rates
-- test_startup_populates_rates
-```
+#### 12.2 Integration tests ✅
 
-#### 12.3 Test di regressione
-
-File: `backend/tests/integration/test_trading_with_new_fx.py`
-```python
-- test_buy_creates_position_without_fx_fields
-- test_sell_calculates_pnl_correctly
-- test_price_update_uses_current_rate
-- test_portfolio_value_calculation
-```
+File: `backend/tests/integration/test_fx_system.py`
+- TestFxRateUpdateJob: Job e scheduler configuration
+- TestExchangeRateRepository: Repository methods existence
+- TestCurrencyConversionIntegration: convert() function tests
+- TestPositionWithFx: Position model structure
+- TestTradingWithFx: Trade FX fields
+- TestGlobalPriceUpdaterWithFx: Price updater integration
+- TestApiSchemasNoDeprecatedFields: API cleanup verification
+- TestFrankfurterApiIntegration: Live API tests (skipped by default)
 
 ---
 
