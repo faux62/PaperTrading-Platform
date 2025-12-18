@@ -19,6 +19,7 @@ from app.db.models.bot_signal import (
 )
 from app.db.models.market_universe import MarketUniverse, MarketRegion, AssetType
 from app.db.models.price_bar import PriceBar, TimeFrame
+from app.db.models.exchange_rate import ExchangeRate
 
 __all__ = [
     "User",
@@ -50,4 +51,6 @@ __all__ = [
     # Price Bars
     "PriceBar",
     "TimeFrame",
+    # Exchange Rates
+    "ExchangeRate",
 ]

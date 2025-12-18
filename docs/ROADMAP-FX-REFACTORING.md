@@ -86,271 +86,101 @@ Nessuna modifica - `exchange_rate` già presente per audit trail.
 
 ---
 
-### FASE 1: Database - Nuova Tabella `exchange_rates`
+### FASE 1: Database - Nuova Tabella `exchange_rates` ✅ COMPLETATA
 **Tempo stimato: 1-2 ore**
+**Data completamento: 18 Dicembre 2025**
 
-#### 1.1 Creare migration Alembic
+#### 1.1 Creare migration Alembic ✅
 
-File: `backend/alembic/versions/YYYYMMDD_HHMMSS_add_exchange_rates_table.py`
+File: `backend/alembic/versions/20251218_163000_add_exchange_rates_table.py`
 
-```python
-"""Add exchange_rates table
-
-Revision ID: xxx
-Revises: xxx
-Create Date: 2025-12-18
-"""
-
-def upgrade():
-    op.create_table(
-        'exchange_rates',
-        sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('base_currency', sa.String(3), nullable=False),
-        sa.Column('quote_currency', sa.String(3), nullable=False),
-        sa.Column('rate', sa.Numeric(20, 10), nullable=False),
-        sa.Column('source', sa.String(50), default='frankfurter'),
-        sa.Column('fetched_at', sa.DateTime(), nullable=False),
-        sa.Column('created_at', sa.DateTime(), default=datetime.utcnow),
-        sa.Column('updated_at', sa.DateTime(), default=datetime.utcnow),
-        sa.UniqueConstraint('base_currency', 'quote_currency', name='uq_exchange_rates_pair')
-    )
-    op.create_index('ix_exchange_rates_pair', 'exchange_rates', ['base_currency', 'quote_currency'])
-
-def downgrade():
-    op.drop_index('ix_exchange_rates_pair')
-    op.drop_table('exchange_rates')
-```
-
-#### 1.2 Seed iniziale
-
-Coppie supportate (4 valute × 3 = 12 coppie):
-- EUR/USD, EUR/GBP, EUR/CHF
-- USD/EUR, USD/GBP, USD/CHF
-- GBP/EUR, GBP/USD, GBP/CHF
-- CHF/EUR, CHF/USD, CHF/GBP
-
----
-
-### FASE 2: Database - Modifica Tabella `positions`
-**Tempo stimato: 1 ora**
-
-#### 2.1 Creare migration Alembic
-
-File: `backend/alembic/versions/YYYYMMDD_HHMMSS_remove_position_fx_fields.py`
-
-```python
-"""Remove avg_cost_portfolio and entry_exchange_rate from positions
-
-Revision ID: xxx
-Revises: xxx
-Create Date: 2025-12-18
-"""
-
-def upgrade():
-    op.drop_column('positions', 'avg_cost_portfolio')
-    op.drop_column('positions', 'entry_exchange_rate')
-
-def downgrade():
-    op.add_column('positions', sa.Column('avg_cost_portfolio', sa.Numeric(20, 8)))
-    op.add_column('positions', sa.Column('entry_exchange_rate', sa.Numeric(20, 8)))
-```
-
-#### 2.2 Aggiornare modello SQLAlchemy
-
-File: `backend/app/db/models/position.py`
-
-Rimuovere:
-```python
-avg_cost_portfolio = Column(Numeric(15, 4), default=Decimal("0"))
-entry_exchange_rate = Column(Numeric(15, 6), default=Decimal("1.0"))
-```
-
----
-
-### FASE 3: Modelli e Repository
-**Tempo stimato: 2 ore**
-
-#### 3.1 Nuovo modello ExchangeRate
+#### 1.2 Creare modello SQLAlchemy ✅
 
 File: `backend/app/db/models/exchange_rate.py`
 
-```python
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, UniqueConstraint
-from app.db.base import Base
-
-class ExchangeRate(Base):
-    __tablename__ = "exchange_rates"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    base_currency = Column(String(3), nullable=False)
-    quote_currency = Column(String(3), nullable=False)
-    rate = Column(Numeric(20, 10), nullable=False)
-    source = Column(String(50), default="frankfurter")
-    fetched_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
-    
-    __table_args__ = (
-        UniqueConstraint('base_currency', 'quote_currency', name='uq_exchange_rates_pair'),
-    )
-```
-
-#### 3.2 Aggiornare `__init__.py` dei models
-
-File: `backend/app/db/models/__init__.py`
-
-Aggiungere:
-```python
-from app.db.models.exchange_rate import ExchangeRate
-```
-
-#### 3.3 Nuovo repository ExchangeRateRepository
+#### 1.3 Creare repository ✅
 
 File: `backend/app/db/repositories/exchange_rate.py`
 
-```python
-class ExchangeRateRepository:
-    def __init__(self, db: AsyncSession):
-        self.db = db
-    
-    async def get_rate(self, base: str, quote: str) -> Optional[ExchangeRate]:
-        """Get single exchange rate"""
-        
-    async def get_all_rates(self) -> List[ExchangeRate]:
-        """Get all exchange rates"""
-        
-    async def upsert_rate(self, base: str, quote: str, rate: Decimal, source: str):
-        """Insert or update single rate"""
-        
-    async def upsert_all_rates(self, rates: Dict[str, Decimal], source: str):
-        """Bulk upsert all rates"""
-```
+#### 1.4 Seed iniziale ✅
+
+Incluso nella migration con valori approssimati (source='seed').
+
+#### 1.5 Aggiornare documentazione ✅
+
+File: `docs/DATABASE-SCHEMA.md` - aggiunta sezione EXCHANGE_RATES
 
 ---
 
-### FASE 4: Service FX Rate Updater
-**Tempo stimato: 2 ore**
-
-#### 4.1 Nuovo service
-
-File: `backend/app/services/fx_rate_service.py`
-
-```python
-from decimal import Decimal
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
-from loguru import logger
-
-from app.db.repositories.exchange_rate import ExchangeRateRepository
-from app.data_providers.adapters.frankfurter import FrankfurterAdapter
-
-
-class FXRateService:
-    """Service for managing exchange rates"""
-    
-    SUPPORTED_CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF']
-    STALE_THRESHOLD_HOURS = 2
-    
-    def __init__(self, db: AsyncSession):
-        self.db = db
-        self.repo = ExchangeRateRepository(db)
-        self.frankfurter = FrankfurterAdapter()
-    
-    async def update_all_rates(self) -> Dict[str, Any]:
-        """
-        Fetch all rates from Frankfurter and update DB.
-        Called by scheduler every hour.
-        """
-        stats = {"updated": 0, "failed": 0}
-        
-        for base in self.SUPPORTED_CURRENCIES:
-            try:
-                # Fetch rates for this base currency
-                rates = await self.frankfurter.get_rates(base, self.SUPPORTED_CURRENCIES)
-                
-                for quote, rate in rates.items():
-                    if quote != base:
-                        await self.repo.upsert_rate(base, quote, rate, "frankfurter")
-                        stats["updated"] += 1
-                        
-            except Exception as e:
-                logger.error(f"Failed to fetch rates for {base}: {e}")
-                stats["failed"] += 1
-        
-        return stats
-    
-    async def get_rate(self, from_currency: str, to_currency: str) -> Decimal:
-        """
-        Get exchange rate from DB.
-        Falls back to API if rate is stale or missing.
-        """
-        if from_currency == to_currency:
-            return Decimal("1.0")
-        
-        rate_record = await self.repo.get_rate(from_currency, to_currency)
-        
-        # Check if rate exists and is fresh
-        if rate_record:
-            age = datetime.utcnow() - rate_record.fetched_at
-            if age < timedelta(hours=self.STALE_THRESHOLD_HOURS):
-                return rate_record.rate
-            else:
-                logger.warning(f"Stale rate for {from_currency}/{to_currency}, fetching fresh")
-        
-        # Fallback to API
-        try:
-            fresh_rate = await self.frankfurter.get_rate(from_currency, to_currency)
-            await self.repo.upsert_rate(from_currency, to_currency, fresh_rate, "frankfurter")
-            return fresh_rate
-        except Exception as e:
-            logger.error(f"API fallback failed: {e}")
-            # Use stale rate if available
-            if rate_record:
-                return rate_record.rate
-            raise
-    
-    async def convert(self, amount: Decimal, from_currency: str, to_currency: str) -> Decimal:
-        """Convert amount using current rate from DB"""
-        rate = await self.get_rate(from_currency, to_currency)
-        return amount * rate
-```
-
----
-
-### FASE 5: Scheduler Job Orario
+### FASE 2: Database - Modifica Tabella `positions` ✅ COMPLETATA
 **Tempo stimato: 1 ora**
+**Data completamento: 18 Dicembre 2025**
 
-#### 5.1 Nuovo job in bot/__init__.py
+#### 2.1 Creare migration Alembic ✅
 
-File: `backend/app/bot/__init__.py`
+File: `backend/alembic/versions/20251218_170000_remove_position_fx_fields.py`
 
-```python
-from app.services.fx_rate_service import FXRateService
+#### 2.2 Aggiornare modello Position ✅
 
-# ==========================================================
-# FX RATE UPDATE JOB - Updates exchange rates every hour
-# ==========================================================
-async def fx_rate_update_job():
-    """Update all exchange rates from Frankfurter API"""
-    async for db in get_db():
-        fx_service = FXRateService(db)
-        stats = await fx_service.update_all_rates()
-        logger.info(f"FX rates updated: {stats['updated']} rates, {stats['failed']} failed")
+File: `backend/app/db/models/position.py` - rimossi campi `avg_cost_portfolio` e `entry_exchange_rate`
 
-# Run every hour
-scheduler.add_interval_job(
-    job_id="fx_rate_update",
-    func=fx_rate_update_job,
-    hours=1
-)
+---
 
-# Also run at startup
-scheduler.add_startup_job(
-    job_id="fx_rate_update_startup",
-    func=fx_rate_update_job
-)
-```
+### FASE 3: Modelli e Repository ✅ COMPLETATA (in Fase 1)
+**Tempo stimato: 2 ore**
+**Nota: Completata insieme alla Fase 1**
+
+#### 3.1 Nuovo modello ExchangeRate ✅
+
+File: `backend/app/db/models/exchange_rate.py`
+
+#### 3.2 Aggiornare `__init__.py` dei models ✅
+
+File: `backend/app/db/models/__init__.py` - aggiunto export ExchangeRate
+
+#### 3.3 Nuovo repository ExchangeRateRepository ✅
+
+File: `backend/app/db/repositories/exchange_rate.py`
+
+Metodi implementati:
+- `get_rate()` - Get singolo tasso
+- `get_rate_value()` - Get valore tasso (ritorna 1.0 se non trovato)
+- `get_all_rates()` - Get tutti i tassi
+- `upsert_rate()` - Insert o update singolo tasso
+- `bulk_upsert_rates()` - Bulk upsert
+- `convert_amount()` - Converti importo tra valute
+
+---
+
+### FASE 4: Service FX Rate Updater ✅ COMPLETATA
+**Tempo stimato: 2 ore**
+**Data completamento: 18 Dicembre 2025**
+
+#### 4.1 Nuovo service ✅
+
+File: `backend/app/services/fx_rate_updater.py`
+
+Funzionalità implementate:
+- `FxRateUpdaterService` class con metodi:
+  - `fetch_rates_from_api()` - Fetch da Frankfurter API
+  - `fetch_all_rates()` - Fetch tutte le 12 coppie
+  - `update_all_rates()` - Aggiorna DB
+  - `get_rate()` - Get rate con fallback API
+- Singleton `fx_rate_updater`
+- Funzione `update_exchange_rates()` per scheduler
+
+---
+
+### FASE 5: Scheduler Job Orario ✅ COMPLETATA
+**Tempo stimato: 1 ora**
+**Data completamento: 18 Dicembre 2025**
+
+#### 5.1 Job in bot/__init__.py ✅
+
+Aggiunto job `fx_rate_update` che:
+- Esegue ogni ora
+- Chiama `update_exchange_rates()` 
+- Aggiorna tutte le 12 coppie valutarie
 
 ---
 

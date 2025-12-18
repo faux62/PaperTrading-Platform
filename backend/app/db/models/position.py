@@ -32,10 +32,6 @@ class Position(Base):
     avg_cost = Column(Numeric(15, 4), default=Decimal("0"))  # Average cost in NATIVE currency
     current_price = Column(Numeric(15, 4), default=Decimal("0"))  # Current price in NATIVE currency
     
-    # Position details - PORTFOLIO CURRENCY values (for P&L calculations)
-    avg_cost_portfolio = Column(Numeric(15, 4), default=Decimal("0"))  # Average cost in PORTFOLIO currency
-    entry_exchange_rate = Column(Numeric(15, 6), default=Decimal("1.0"))  # FX rate at entry (native -> portfolio)
-    
     # Calculated fields (updated on price change) - in PORTFOLIO currency
     market_value = Column(Numeric(15, 2), default=Decimal("0"))  # Current value in PORTFOLIO currency
     unrealized_pnl = Column(Numeric(15, 2), default=Decimal("0"))  # P&L in PORTFOLIO currency

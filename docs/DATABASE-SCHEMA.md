@@ -6,7 +6,7 @@
 
 ## 📊 Overview
 
-Il database PostgreSQL 16 contiene **13 tabelle** e **13 tipi ENUM** personalizzati.
+Il database PostgreSQL 16 contiene **14 tabelle** e **13 tipi ENUM** personalizzati.
 
 ### Tabelle
 | Tabella | Descrizione |
@@ -24,6 +24,7 @@ Il database PostgreSQL 16 contiene **13 tabelle** e **13 tipi ENUM** personalizz
 | `bot_signals` | Segnali generati dal bot |
 | `bot_reports` | Report periodici del bot |
 | `price_bars` | Dati OHLCV storici |
+| `exchange_rates` | Tassi di cambio FX cached |
 
 > ⚠️ **NOTA**: La tabella `cash_balances` è stata **RIMOSSA** il 18/12/2025.
 > Usare `portfolios.cash_balance` come unica fonte di verità per il cash.
@@ -232,8 +233,9 @@ Posizioni aperte con supporto multi-currency.
 | `unrealized_pnl_percent` | NUMERIC(8,4) | NULL | - | P&L % |
 | `opened_at` | TIMESTAMP | NULL | - | Data apertura |
 | `updated_at` | TIMESTAMP | NULL | - | Data aggiornamento |
-| `avg_cost_portfolio` | NUMERIC(20,8) | NULL | - | **Costo medio in valuta PORTFOLIO** |
-| `entry_exchange_rate` | NUMERIC(20,8) | NULL | - | **Tasso cambio all'apertura** |
+
+> ⚠️ **NOTA**: I campi `avg_cost_portfolio` e `entry_exchange_rate` sono stati **RIMOSSI** il 18/12/2025.
+> Con l'Approccio B (FX dinamico), questi valori vengono calcolati on-demand usando i tassi dalla tabella `exchange_rates`.
 
 **Indici:**
 - `positions_pkey` - PRIMARY KEY (id)
@@ -542,6 +544,42 @@ Dati OHLCV storici per analisi e grafici.
 
 ---
 
+### 💱 EXCHANGE_RATES
+
+> **Descrizione**: Tassi di cambio FX cached, aggiornati ogni ora dal job `fx_rate_updater`.
+> 
+> **Valute supportate**: EUR, USD, GBP, CHF (12 coppie totali)
+>
+> **Fonte dati**: Frankfurter API (ECB - European Central Bank)
+
+| Campo | Tipo | Nullable | Default | Descrizione |
+|-------|------|----------|---------|-------------|
+| `id` | INTEGER | NOT NULL | auto | PK |
+| `base_currency` | VARCHAR(3) | NOT NULL | - | Valuta base (es. EUR) |
+| `quote_currency` | VARCHAR(3) | NOT NULL | - | Valuta quota (es. USD) |
+| `rate` | NUMERIC(20,10) | NOT NULL | - | Tasso (1 base = rate quote) |
+| `source` | VARCHAR(50) | NOT NULL | 'frankfurter' | Fonte dati |
+| `fetched_at` | TIMESTAMP | NOT NULL | - | Quando il tasso è stato recuperato |
+| `created_at` | TIMESTAMP | NULL | now() | Data creazione |
+| `updated_at` | TIMESTAMP | NULL | now() | Ultimo aggiornamento |
+
+**Vincoli:**
+- `uq_exchange_rates_pair` - UNIQUE (base_currency, quote_currency)
+
+**Indici:**
+- `ix_exchange_rates_pair` - INDEX (base_currency, quote_currency)
+
+**Esempio dati:**
+```
+| base | quote | rate       | source      |
+|------|-------|------------|-------------|
+| EUR  | USD   | 1.05000000 | frankfurter |
+| EUR  | GBP   | 0.86000000 | frankfurter |
+| USD  | EUR   | 0.95238095 | frankfurter |
+```
+
+---
+
 ## 🔄 Diagramma Relazioni
 
 ```
@@ -572,6 +610,10 @@ Dati OHLCV storici per analisi e grafici.
                     
                     ┌──────────────┐
                     │  PRICE_BARS  │
+                    └──────────────┘
+                    
+                    ┌──────────────┐
+                    │EXCHANGE_RATES│ (standalone)
                     └──────────────┘
 ```
 

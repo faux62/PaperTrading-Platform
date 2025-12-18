@@ -163,6 +163,23 @@ async def initialize_bot() -> BotScheduler:
     )
     
     # ==========================================================
+    # FX RATE UPDATE - Exchange rates from Frankfurter API (ECB)
+    # ==========================================================
+    # Updates EUR, USD, GBP, CHF rates every hour
+    async def fx_rate_update_job():
+        from app.services.fx_rate_updater import update_exchange_rates
+        
+        count = await update_exchange_rates()
+        if count > 0:
+            logger.info(f"FX rate update: {count} rates updated from Frankfurter API")
+    
+    scheduler.add_interval_job(
+        job_id="fx_rate_update",
+        func=fx_rate_update_job,
+        hours=1
+    )
+    
+    # ==========================================================
     # UNIVERSE DATA COLLECTION - ~900 symbols from major indices
     # ==========================================================
     # Quote updates for universe (every 5 min during market hours)
