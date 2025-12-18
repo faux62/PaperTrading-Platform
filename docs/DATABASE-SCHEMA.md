@@ -6,7 +6,7 @@
 
 ## 📊 Overview
 
-Il database PostgreSQL 16 contiene **14 tabelle** e **13 tipi ENUM** personalizzati.
+Il database PostgreSQL 16 contiene **13 tabelle** e **13 tipi ENUM** personalizzati.
 
 ### Tabelle
 | Tabella | Descrizione |
@@ -19,12 +19,14 @@ Il database PostgreSQL 16 contiene **14 tabelle** e **13 tipi ENUM** personalizz
 | `watchlist_symbols` | Simboli nelle watchlist |
 | `alerts` | Alert sui prezzi |
 | `user_settings` | Impostazioni utente e API keys |
-| `cash_balances` | ⚠️ DEPRECATED - Non usare |
 | `fx_transactions` | Transazioni forex |
 | `market_universe` | Universo simboli globale |
 | `bot_signals` | Segnali generati dal bot |
 | `bot_reports` | Report periodici del bot |
 | `price_bars` | Dati OHLCV storici |
+
+> ⚠️ **NOTA**: La tabella `cash_balances` è stata **RIMOSSA** il 18/12/2025.
+> Usare `portfolios.cash_balance` come unica fonte di verità per il cash.
 
 ---
 
@@ -207,7 +209,7 @@ Portfolio utente con cash balance e valuta. **`cash_balance` è l'UNICA fonte di
 - `portfolios_user_id_fkey` - FK → users(id) ON DELETE CASCADE
 
 **Referenze FK:**
-- `positions`, `trades`, `cash_balances`, `fx_transactions`, `bot_signals`
+- `positions`, `trades`, `fx_transactions`, `bot_signals`
 
 ---
 
@@ -385,21 +387,6 @@ Impostazioni utente e chiavi API per data provider.
 **Constraints:**
 - `ix_user_settings_user_id` - UNIQUE (user_id)
 - `user_settings_user_id_fkey` - FK → users(id) ON DELETE CASCADE
-
----
-
-### ⚠️ CASH_BALANCES (DEPRECATED)
-
-**NON USARE** - Mantenuto per retrocompatibilità. Usare `portfolios.cash_balance`.
-
-| Campo | Tipo | Null | Default | Descrizione |
-|-------|------|------|---------|-------------|
-| `id` | INTEGER | NOT NULL | SERIAL | Chiave primaria |
-| `portfolio_id` | INTEGER | NOT NULL | - | FK → portfolios.id |
-| `currency` | VARCHAR(3) | NOT NULL | - | Valuta |
-| `balance` | NUMERIC(15,2) | NULL | - | Saldo |
-| `created_at` | TIMESTAMP | NULL | - | Data creazione |
-| `updated_at` | TIMESTAMP | NULL | - | Data aggiornamento |
 
 ---
 

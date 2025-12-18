@@ -53,7 +53,7 @@ class Portfolio(Base):
     user = relationship("User", back_populates="portfolios")
     positions = relationship("Position", back_populates="portfolio", cascade="all, delete-orphan")
     trades = relationship("Trade", back_populates="portfolio", cascade="all, delete-orphan")
-    cash_balances = relationship("CashBalance", back_populates="portfolio", cascade="all, delete-orphan")
+    # cash_balances relationship REMOVED - table deprecated, use portfolio.cash_balance
     fx_transactions = relationship("FxTransaction", back_populates="portfolio", cascade="all, delete-orphan")
     bot_signals = relationship("BotSignal", back_populates="portfolio")
     

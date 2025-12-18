@@ -1,44 +1,19 @@
 """
-PaperTrading Platform - Cash Balance Model
-IBKR-style multi-currency cash management
+PaperTrading Platform - FX Transaction Model
+
+NOTE: CashBalance class has been REMOVED (Dec 2025).
+The cash_balances table is deprecated - use portfolio.cash_balance instead.
 """
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
 
 
-class CashBalance(Base):
-    """
-    Multi-currency cash balance for a portfolio.
-    Each portfolio can hold cash in multiple currencies (IBKR-style).
-    """
-    
-    __tablename__ = "cash_balances"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False, index=True)
-    
-    # Currency and amount
-    currency = Column(String(3), nullable=False)  # USD, EUR, GBP, etc.
-    balance = Column(Numeric(15, 2), default=Decimal("0.00"))
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    portfolio = relationship("Portfolio", back_populates="cash_balances")
-    
-    # Ensure one balance per currency per portfolio
-    __table_args__ = (
-        UniqueConstraint('portfolio_id', 'currency', name='uq_portfolio_currency'),
-    )
-    
-    def __repr__(self):
-        return f"<CashBalance {self.currency}: {self.balance}>"
+# CashBalance class REMOVED - table deprecated
+# Use portfolio.cash_balance (Single Currency Model) instead
 
 
 class FxTransaction(Base):

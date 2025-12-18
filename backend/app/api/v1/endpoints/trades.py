@@ -21,7 +21,7 @@ from app.db.repositories.trade import TradeRepository
 from app.core.trading.order_manager import OrderManager, OrderRequest
 from app.core.trading.execution import OrderExecutor, MarketCondition
 from app.core.trading.pnl_calculator import PnLCalculator, TimeFrame
-from app.core.currency_service import CurrencyService, get_symbol_currency
+from app.core.currency_service import get_symbol_currency  # CurrencyService removed
 from app.services.email_service import email_service, should_send_notification
 
 router = APIRouter()

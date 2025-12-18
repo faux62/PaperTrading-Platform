@@ -23,7 +23,7 @@ from sqlalchemy import select
 
 from app.dependencies import get_current_active_user, get_db
 from app.db.models.user import User
-from app.db.models import Portfolio, CashBalance, FxTransaction
+from app.db.models import Portfolio, FxTransaction  # CashBalance REMOVED
 from app.utils.currency import (
     fetch_exchange_rates,
     convert_currency,
@@ -200,9 +200,7 @@ async def convert_precise(
 
 
 # ============================================
-# DEPRECATED: IBKR-style Multi-Currency Endpoints
-# These endpoints will be removed in a future version.
-# Use portfolio.cash_balance instead of cash_balances table.
+# CURRENCY SYMBOLS (used by remaining endpoints)
 # ============================================
 
 CURRENCY_SYMBOLS = {
@@ -211,209 +209,15 @@ CURRENCY_SYMBOLS = {
 }
 
 
-async def get_or_create_cash_balance(db: AsyncSession, portfolio_id: int, currency: str) -> CashBalance:
-    """DEPRECATED: Get or create a cash balance for a specific currency."""
-    result = await db.execute(
-        select(CashBalance).where(
-            CashBalance.portfolio_id == portfolio_id,
-            CashBalance.currency == currency
-        )
-    )
-    balance = result.scalar_one_or_none()
-    
-    if not balance:
-        balance = CashBalance(
-            portfolio_id=portfolio_id,
-            currency=currency,
-            balance=Decimal("0.00")
-        )
-        db.add(balance)
-        await db.flush()
-    
-    return balance
-
-
-@router.get("/portfolio/{portfolio_id}/balances", response_model=PortfolioCashResponse, deprecated=True)
-async def get_portfolio_cash_balances(
-    portfolio_id: int,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    DEPRECATED: Get all cash balances for a portfolio (IBKR-style multi-currency).
-    
-    Use portfolio.cash_balance instead for the Single Currency Model.
-    """
-    result = await db.execute(
-        select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == current_user.id)
-    )
-    portfolio = result.scalar_one_or_none()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
-    
-    # Get all cash balances
-    result = await db.execute(
-        select(CashBalance).where(CashBalance.portfolio_id == portfolio_id)
-    )
-    cash_balances = result.scalars().all()
-    
-    # Convert to response format
-    balances = []
-    total_in_base = Decimal("0.00")
-    
-    for cb in cash_balances:
-        if cb.currency == portfolio.currency:
-            converted = cb.balance
-        else:
-            rate = await get_conversion_rate(cb.currency, portfolio.currency)
-            converted = cb.balance * Decimal(str(rate))
-        total_in_base += converted
-        
-        balances.append({
-            "currency": cb.currency,
-            "balance": float(cb.balance),
-            "symbol": CURRENCY_SYMBOLS.get(cb.currency, cb.currency)
-        })
-    
-    balances.sort(key=lambda x: x["balance"], reverse=True)
-    
-    return {
-        "portfolio_id": portfolio_id,
-        "portfolio_name": portfolio.name,
-        "base_currency": portfolio.currency,
-        "balances": balances,
-        "total_in_base": float(total_in_base)
-    }
-
-
-@router.post("/portfolio/{portfolio_id}/fx-convert", response_model=FxConvertResponse)
-async def portfolio_convert_currency(
-    portfolio_id: int,
-    request: FxConvertRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Convert currency within a portfolio (IBKR-style FX trade).
-    Deducts from one currency balance and adds to another.
-    """
-    result = await db.execute(
-        select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == current_user.id)
-    )
-    portfolio = result.scalar_one_or_none()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
-    
-    from_currency = request.from_currency.upper()
-    to_currency = request.to_currency.upper()
-    amount = Decimal(str(request.amount))
-    
-    if from_currency == to_currency:
-        raise HTTPException(status_code=400, detail="Cannot convert to same currency")
-    
-    # Get source balance
-    from_balance = await get_or_create_cash_balance(db, portfolio_id, from_currency)
-    
-    if from_balance.balance < amount:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Insufficient {from_currency} balance: have {from_balance.balance}, need {amount}"
-        )
-    
-    # Get exchange rate and convert
-    rate = await get_conversion_rate(from_currency, to_currency)
-    converted_amount = (amount * Decimal(str(rate))).quantize(Decimal("0.01"))
-    
-    # Update balances
-    from_balance.balance -= amount
-    to_balance = await get_or_create_cash_balance(db, portfolio_id, to_currency)
-    to_balance.balance += converted_amount
-    
-    # Record transaction
-    fx_tx = FxTransaction(
-        portfolio_id=portfolio_id,
-        from_currency=from_currency,
-        to_currency=to_currency,
-        from_amount=amount,
-        to_amount=converted_amount,
-        exchange_rate=Decimal(str(rate))
-    )
-    db.add(fx_tx)
-    await db.commit()
-    
-    return {
-        "from_currency": from_currency,
-        "to_currency": to_currency,
-        "from_amount": float(amount),
-        "to_amount": float(converted_amount),
-        "exchange_rate": rate,
-        "transaction_id": fx_tx.id
-    }
-
-
-@router.post("/portfolio/{portfolio_id}/deposit")
-async def deposit_cash(
-    portfolio_id: int,
-    request: DepositWithdrawRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Deposit cash in a specific currency (paper trading)."""
-    result = await db.execute(
-        select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == current_user.id)
-    )
-    portfolio = result.scalar_one_or_none()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
-    
-    currency = request.currency.upper()
-    amount = Decimal(str(request.amount))
-    
-    balance = await get_or_create_cash_balance(db, portfolio_id, currency)
-    balance.balance += amount
-    await db.commit()
-    
-    return {
-        "message": f"Deposited {request.amount} {currency}",
-        "new_balance": float(balance.balance),
-        "currency": currency
-    }
-
-
-@router.post("/portfolio/{portfolio_id}/withdraw")
-async def withdraw_cash(
-    portfolio_id: int,
-    request: DepositWithdrawRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Withdraw cash in a specific currency (paper trading)."""
-    result = await db.execute(
-        select(Portfolio).where(Portfolio.id == portfolio_id, Portfolio.user_id == current_user.id)
-    )
-    portfolio = result.scalar_one_or_none()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
-    
-    currency = request.currency.upper()
-    amount = Decimal(str(request.amount))
-    
-    balance = await get_or_create_cash_balance(db, portfolio_id, currency)
-    
-    if balance.balance < amount:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Insufficient balance: have {balance.balance} {currency}"
-        )
-    
-    balance.balance -= amount
-    await db.commit()
-    
-    return {
-        "message": f"Withdrew {request.amount} {currency}",
-        "new_balance": float(balance.balance),
-        "currency": currency
-    }
+# ============================================
+# REMOVED ENDPOINTS (Dec 2025):
+# - /portfolio/{id}/balances - Used cash_balances table (deprecated)
+# - /portfolio/{id}/fx-convert - Used cash_balances table (deprecated)
+# - /portfolio/{id}/deposit - Used cash_balances table (deprecated)
+# - /portfolio/{id}/withdraw - Used cash_balances table (deprecated)
+# 
+# Use portfolio.cash_balance (Single Currency Model) instead.
+# ============================================
 
 
 @router.get("/portfolio/{portfolio_id}/fx-history")

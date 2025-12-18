@@ -8,7 +8,7 @@ from app.db.models.position import Position
 from app.db.models.trade import Trade, TradeType, OrderType, TradeStatus
 from app.db.models.watchlist import Watchlist, watchlist_symbols
 from app.db.models.alert import Alert, AlertType, AlertStatus
-from app.db.models.cash_balance import CashBalance, FxTransaction
+from app.db.models.cash_balance import FxTransaction  # CashBalance REMOVED - deprecated
 from app.db.models.bot_signal import (
     BotSignal,
     BotReport,
@@ -35,7 +35,7 @@ __all__ = [
     "Alert",
     "AlertType",
     "AlertStatus",
-    "CashBalance",
+    # "CashBalance",  # REMOVED - deprecated
     "FxTransaction",
     "BotSignal",
     "BotReport",
