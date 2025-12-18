@@ -1,8 +1,10 @@
 # 📋 Specifiche Tecniche - PaperTrading Platform
 
-**Versione:** 1.0  
-**Data:** 7 Dicembre 2025  
+**Versione:** 2.0  
+**Data:** 18 Dicembre 2025  
 **Autore:** Sistema
+
+> **Changelog v2.0:** Aggiunta sezione 8 (Gestione Multi-Currency FX)
 
 ---
 
@@ -500,34 +502,132 @@ origins = [
 
 ---
 
-## 8. Performance
+## 8. Gestione Multi-Currency (FX)
 
-### 8.1 Caching (Redis)
+### 8.1 Approccio Architetturale
+
+Il sistema utilizza l'**Approccio B - Tasso FX Dinamico** per la gestione multi-valuta:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    FX ARCHITECTURE (Approach B)                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐    Ogni ora    ┌──────────────────┐               │
+│  │ Frankfurter  │───────────────►│  exchange_rates  │               │
+│  │  API (ECB)   │                │     table        │               │
+│  └──────────────┘                └────────┬─────────┘               │
+│                                           │                          │
+│                                           ▼                          │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │                    CONVERSION FLOW                              │ │
+│  │                                                                  │ │
+│  │  avg_cost (native)  ×  current_fx_rate  =  market_value (port.) │ │
+│  │  unrealized_pnl = qty × (price - avg_cost) × current_fx_rate    │ │
+│  │                                                                  │ │
+│  │  P&L riflette SOLO performance titolo (non forex)               │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Valute Supportate
+
+| Valuta | Descrizione | Uso |
+|--------|-------------|-----|
+| EUR | Euro | Portfolio base, Euronext |
+| USD | US Dollar | NYSE, NASDAQ |
+| GBP | British Pound | LSE |
+| CHF | Swiss Franc | SIX |
+
+**Coppie FX gestite:** 12 (tutte le combinazioni)
+
+### 8.3 Tabella `exchange_rates`
+
+```sql
+CREATE TABLE exchange_rates (
+    id SERIAL PRIMARY KEY,
+    base_currency VARCHAR(3) NOT NULL,    -- EUR, USD, GBP, CHF
+    quote_currency VARCHAR(3) NOT NULL,   -- EUR, USD, GBP, CHF
+    rate NUMERIC(20,10) NOT NULL,         -- 1 base = rate quote
+    source VARCHAR(50) DEFAULT 'frankfurter',
+    fetched_at TIMESTAMP NOT NULL,
+    UNIQUE(base_currency, quote_currency)
+);
+```
+
+### 8.4 Servizi FX
+
+| Servizio | File | Descrizione |
+|----------|------|-------------|
+| `FxRateUpdaterService` | `services/fx_rate_updater.py` | Fetch da Frankfurter API |
+| `ExchangeRateRepository` | `db/repositories/exchange_rate.py` | CRUD tassi FX |
+| `convert()` | `utils/currency.py` | Conversione importi |
+| `position_analytics` | `services/position_analytics.py` | Audit FX storico |
+
+### 8.5 Scheduler Job
+
+```python
+# Job FX Rate Update - eseguito ogni ora
+scheduler.add_job(
+    update_exchange_rates,
+    'cron',
+    minute=5,  # :05 di ogni ora
+    id='fx_rate_update'
+)
+```
+
+### 8.6 Calcolo P&L
+
+```
+unrealized_pnl = quantity × (current_price - avg_cost) × current_fx_rate
+```
+
+**Caratteristiche:**
+- P&L riflette **SOLO** la performance del titolo
+- Non include variazioni forex
+- Audit trail completo in `TRADES.exchange_rate`
+- Funzioni helper per analisi storica con FX al momento dell'acquisto
+
+### 8.7 Funzioni Audit
+
+| Funzione | Descrizione |
+|----------|-------------|
+| `get_historical_cost_in_portfolio_currency()` | Costo medio con FX storico |
+| `get_avg_entry_exchange_rate()` | Tasso FX medio di ingresso |
+| `get_position_cost_breakdown()` | Breakdown completo costi |
+| `calculate_forex_impact()` | Impatto forex sulla posizione |
+
+---
+
+## 9. Performance
+
+### 9.1 Caching (Redis)
 - Quote real-time: TTL 60 secondi
 - Exchange rates: TTL 1 ora
 - Session data: TTL = token expiry
 - Rate limit counters: sliding window
 
-### 8.2 Database
+### 9.2 Database
 - Connection pooling: 5-20 connessioni
 - Async queries via asyncpg
 - Indici su: user_id, portfolio_id, symbol, created_at
 
-### 8.3 Rate Limiting Provider
+### 9.3 Rate Limiting Provider
 - Budget 75% dei rate limits giornalieri
 - Failover automatico tra provider
 - Circuit breaker per provider non disponibili
 
 ---
 
-## 9. Logging e Monitoring
+## 10. Logging e Monitoring
 
-### 9.1 Logging
+### 10.1 Logging
 - **Library:** Loguru
 - **Livelli:** DEBUG, INFO, WARNING, ERROR
 - **Output:** Console + file rotativo
 
-### 9.2 Metriche Provider
+### 10.2 Metriche Provider
 - Latenza media e P95
 - Error rate
 - Requests totali/successo/fallite
@@ -535,29 +635,29 @@ origins = [
 
 ---
 
-## 10. Testing
+## 11. Testing
 
-### 10.1 Framework
+### 11.1 Framework
 - **Backend:** pytest, pytest-asyncio
 - **Frontend:** Vitest, Playwright (E2E)
 - **Load:** Locust
 
-### 10.2 Coverage Target
+### 11.2 Coverage Target
 - Unit tests: 80%+
 - Integration tests: API endpoints
 - E2E tests: User flows critici
 
 ---
 
-## 11. Requisiti di Sistema
+## 12. Requisiti di Sistema
 
-### 11.1 Sviluppo
+### 12.1 Sviluppo
 - Python 3.11+
 - Node.js 18+
 - Docker Desktop
 - 8GB RAM minimo
 
-### 11.2 Produzione
+### 12.2 Produzione
 - 4 vCPU
 - 16GB RAM
 - 100GB SSD
