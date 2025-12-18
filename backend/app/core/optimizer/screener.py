@@ -245,12 +245,14 @@ class AssetScreener:
         filtered = {}
         
         for symbol, asset in data.items():
-            # Market cap filter
+            # Market cap filter (handle None values explicitly)
             if config.min_market_cap:
-                if asset.get('market_cap', 0) < config.min_market_cap:
+                market_cap = asset.get('market_cap')
+                if market_cap is None or market_cap < config.min_market_cap:
                     continue
             if config.max_market_cap:
-                if asset.get('market_cap', float('inf')) > config.max_market_cap:
+                market_cap = asset.get('market_cap')
+                if market_cap is not None and market_cap > config.max_market_cap:
                     continue
             
             # Sector filter
@@ -261,17 +263,20 @@ class AssetScreener:
                 if asset.get('sector') in config.excluded_sectors:
                     continue
             
-            # Volume filter
+            # Volume filter (handle None values explicitly)
             if config.min_avg_volume:
-                if asset.get('volume', 0) < config.min_avg_volume:
+                volume = asset.get('volume')
+                if volume is None or volume < config.min_avg_volume:
                     continue
             
-            # Price filter
+            # Price filter (handle None values explicitly)
             if config.min_price:
-                if asset.get('price', 0) < config.min_price:
+                price = asset.get('price')
+                if price is None or price < config.min_price:
                     continue
             if config.max_price:
-                if asset.get('price', float('inf')) > config.max_price:
+                price = asset.get('price')
+                if price is not None and price > config.max_price:
                     continue
             
             filtered[symbol] = asset
