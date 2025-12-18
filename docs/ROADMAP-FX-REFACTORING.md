@@ -1,7 +1,7 @@
 # PaperTrading Platform - Roadmap FX Refactoring
 
 ## Data: 18 Dicembre 2025
-## Versione: 1.1 (Fasi 1-6 completate)
+## Versione: 1.2 (Fasi 1-10 completate)
 
 ---
 
@@ -234,33 +234,38 @@ Modifiche:
 
 ---
 
-### FASE 9: Refactoring PositionRepository
+### FASE 9: Refactoring PositionRepository ✅ COMPLETATA
 **Tempo stimato: 1 ora**
+**Data completamento: 18 Dicembre 2025**
 
-#### 9.1 File: `backend/app/db/repositories/position.py`
+#### 9.1 File: `backend/app/db/repositories/position.py` ✅
 
-Rimuovere riferimenti ai campi eliminati in tutti i metodi:
-- `add_to_position()`
-- `create_position()`
-- Altri metodi che accedono a `avg_cost_portfolio` o `entry_exchange_rate`
+Verificato - il repository NON conteneva riferimenti ai campi eliminati.
+I metodi `create()`, `add_to_position()`, `update()` usano solo:
+- `avg_cost` (valuta nativa)
+- `current_price` (valuta nativa)
+- `market_value`, `unrealized_pnl` (calcolati)
 
 ---
 
-### FASE 10: Refactoring API Endpoints
+### FASE 10: Refactoring API Endpoints ✅ COMPLETATA
 **Tempo stimato: 1 ora**
+**Data completamento: 18 Dicembre 2025**
 
-#### 10.1 File: `backend/app/api/v1/endpoints/positions.py`
+#### 10.1 File: `backend/app/api/v1/endpoints/positions.py` ✅
 
-Rimuovere campi da schema response:
-```python
-# RIMUOVERE:
-avg_cost_portfolio: Optional[float] = None
-entry_exchange_rate: Optional[float] = None
-```
+Rimossi campi deprecati da `PositionResponse`:
+- `native_currency` (rimosso)
+- `avg_cost_portfolio` (rimosso)
+- `entry_exchange_rate` (rimosso)
 
-#### 10.2 File: `backend/app/schemas/position.py` (se esiste)
+Aggiornato docstring per chiarire semantica valori:
+- `avg_cost`, `current_price`: valuta NATIVA
+- `market_value`, `unrealized_pnl`: valuta PORTFOLIO (convertiti)
 
-Stessa modifica agli schema Pydantic.
+#### 10.2 File: `backend/app/schemas/position.py`
+
+Non esiste - gli schema sono definiti inline nell'endpoint.
 
 ---
 

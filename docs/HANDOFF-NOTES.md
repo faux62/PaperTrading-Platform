@@ -64,12 +64,14 @@ trades          → Storico operazioni (buy/sell con exchange_rate)
 watchlists      → Liste titoli da monitorare
 ```
 
-### Campi Position Importanti (Aggiunti Dicembre 2025)
+### Campi Position (Approccio B - FX Dinamico, Dicembre 2025)
 ```sql
-positions.avg_cost              -- Costo medio in valuta NATIVA del titolo
-positions.avg_cost_portfolio    -- Costo medio in valuta del PORTFOLIO
-positions.entry_exchange_rate   -- Tasso di cambio all'apertura
-positions.native_currency       -- Valuta nativa del titolo (USD, EUR, etc.)
+positions.avg_cost       -- Costo medio in valuta NATIVA del titolo (USD per US stocks)
+positions.current_price  -- Prezzo corrente in valuta NATIVA
+positions.market_value   -- Valore in valuta PORTFOLIO (convertito con FX corrente)
+positions.unrealized_pnl -- P&L in valuta PORTFOLIO (riflette solo performance stock)
+-- NOTA: Non esistono più avg_cost_portfolio e entry_exchange_rate!
+-- Il P&L è calcolato con tasso FX corrente per isolare performance stock da forex.
 ```
 
 ### Campi Trade
@@ -146,20 +148,21 @@ Password: dev_password_123
 
 ## 📁 File Chiave Modificati (Dicembre 2025)
 
-### Backend - Single Currency Model
+### Backend - Sistema FX (Approccio B)
 | File | Scopo |
 |------|-------|
-| `backend/app/utils/currency.py` | Funzione `convert()` per conversioni real-time |
-| `backend/app/core/trading/execution.py` | Usa `portfolio.cash_balance` con conversione |
-| `backend/app/core/trading/order_manager.py` | Validazione ordini con conversione valuta |
-| `backend/app/db/models/position.py` | Campi `avg_cost_portfolio`, `entry_exchange_rate` |
+| `backend/app/utils/currency.py` | Conversione `convert()` usando tassi da DB |
+| `backend/app/services/fx/fx_rate_updater.py` | Aggiorna tassi FX da ECB (Frankfurter API) |
+| `backend/app/db/repositories/exchange_rate.py` | Repository per tabella `exchange_rates` |
+| `backend/app/bot/services/global_price_updater.py` | Aggiorna prezzi con conversione FX dinamica |
+| `backend/app/core/trading/execution.py` | Esecuzione trade (solo valuta nativa) |
 | `backend/app/core/currency_service.py` | DEPRECATED - non usare |
 
 ### Backend - API Endpoints
 | File | Scopo |
 |------|-------|
-| `backend/app/api/v1/endpoints/positions.py` | Schema con `native_currency`, `avg_cost_portfolio` |
-| `backend/app/api/v1/endpoints/trades.py` | Schema con `native_currency`, `exchange_rate` |
+| `backend/app/api/v1/endpoints/positions.py` | Schema position (valori convertiti in portfolio currency) |
+| `backend/app/api/v1/endpoints/trades.py` | Schema trade con `exchange_rate` storico |
 | `backend/app/api/v1/endpoints/currency.py` | Endpoint `/convert/precise` |
 
 ### Frontend

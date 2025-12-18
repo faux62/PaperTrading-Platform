@@ -22,20 +22,24 @@ router = APIRouter()
 # ==================== Pydantic Schemas ====================
 
 class PositionResponse(BaseModel):
-    """Position response schema."""
+    """
+    Position response schema.
+    
+    Note: All monetary values (avg_cost, current_price, market_value, unrealized_pnl)
+    are expressed in the NATIVE CURRENCY of the stock (e.g., USD for US stocks, EUR
+    for Euronext stocks). The portfolio-level aggregation handles currency conversion
+    using current FX rates from the exchange_rates table.
+    """
     id: int
     portfolio_id: int
     symbol: str
     exchange: Optional[str]
     quantity: float
-    avg_cost: float
-    current_price: float
-    market_value: float
-    unrealized_pnl: float
+    avg_cost: float  # In native currency
+    current_price: float  # In native currency
+    market_value: float  # In portfolio currency (converted via current FX rate)
+    unrealized_pnl: float  # In portfolio currency
     unrealized_pnl_percent: float
-    native_currency: Optional[str] = "USD"  # Currency the symbol is quoted in
-    avg_cost_portfolio: Optional[float] = None  # Average cost in portfolio currency
-    entry_exchange_rate: Optional[float] = None  # FX rate at entry
     opened_at: Optional[str]
     updated_at: Optional[str]
     
