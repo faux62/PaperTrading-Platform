@@ -87,11 +87,11 @@ async def initialize_bot() -> BotScheduler:
                     f"{stats['positions_skipped']} skipped"
                 )
     
-    # Run every minute - NOT limited to US market hours
+    # Run every 5 minutes - NOT limited to US market hours
     scheduler.add_interval_job(
         job_id="global_price_update",
         func=global_price_update_job,
-        minutes=1
+        minutes=5
     )
     
     # ==========================================================

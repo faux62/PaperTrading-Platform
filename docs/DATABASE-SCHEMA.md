@@ -226,9 +226,9 @@ Posizioni aperte con supporto multi-currency.
 | `native_currency` | VARCHAR(3) | NOT NULL | - | **Valuta NATIVA del titolo** |
 | `quantity` | NUMERIC(15,4) | NULL | - | Quantità posseduta |
 | `avg_cost` | NUMERIC(15,4) | NULL | - | **Costo medio in valuta NATIVA** |
-| `current_price` | NUMERIC(15,4) | NULL | - | Prezzo corrente |
-| `market_value` | NUMERIC(15,2) | NULL | - | Valore di mercato |
-| `unrealized_pnl` | NUMERIC(15,2) | NULL | - | P&L non realizzato |
+| `current_price` | NUMERIC(15,4) | NULL | - | **Prezzo corrente in valuta NATIVA** |
+| `market_value` | NUMERIC(15,2) | NULL | - | **Valore di mercato in valuta PORTFOLIO** |
+| `unrealized_pnl` | NUMERIC(15,2) | NULL | - | **P&L non realizzato in valuta PORTFOLIO** |
 | `unrealized_pnl_percent` | NUMERIC(8,4) | NULL | - | P&L % |
 | `opened_at` | TIMESTAMP | NULL | - | Data apertura |
 | `updated_at` | TIMESTAMP | NULL | - | Data aggiornamento |
@@ -260,12 +260,12 @@ Storico di tutte le operazioni eseguite.
 | `order_type` | ENUM ordertype | NULL | - | MARKET / LIMIT / STOP / STOP_LIMIT |
 | `status` | ENUM tradestatus | NULL | - | Stato ordine |
 | `quantity` | NUMERIC(15,4) | NOT NULL | - | Quantità richiesta |
-| `price` | NUMERIC(15,4) | NULL | - | Prezzo richiesto |
-| `executed_price` | NUMERIC(15,4) | NULL | - | Prezzo eseguito |
+| `price` | NUMERIC(15,4) | NULL | - | **Prezzo limite/stop in valuta NATIVA** |
+| `executed_price` | NUMERIC(15,4) | NULL | - | **Prezzo eseguito in valuta NATIVA** |
 | `executed_quantity` | NUMERIC(15,4) | NULL | - | Quantità eseguita |
-| `total_value` | NUMERIC(15,2) | NULL | - | Valore totale |
-| `commission` | NUMERIC(10,2) | NULL | - | Commissioni |
-| `realized_pnl` | NUMERIC(15,2) | NULL | - | P&L realizzato (su vendita) |
+| `total_value` | NUMERIC(15,2) | NULL | - | **Valore totale in valuta NATIVA** |
+| `commission` | NUMERIC(10,2) | NULL | - | **Commissioni in valuta NATIVA** |
+| `realized_pnl` | NUMERIC(15,2) | NULL | - | **P&L realizzato in valuta NATIVA** |
 | `created_at` | TIMESTAMP | NULL | - | Data creazione ordine |
 | `executed_at` | TIMESTAMP | NULL | - | Data esecuzione |
 | `notes` | VARCHAR(500) | NULL | - | Note |
