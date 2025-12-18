@@ -12,6 +12,8 @@ import logging
 
 from app.data_providers.orchestrator import ProviderOrchestrator
 from app.data_providers.adapters.base import TimeFrame
+from app.db.database import async_session_maker
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -143,11 +145,7 @@ class OptimizerDataAdapter:
     
     async def get_fundamentals(self, symbol: str) -> Dict[str, Any]:
         """
-        Get fundamental data for a symbol.
-        
-        Note: Currently returns empty dict as fundamentals require
-        additional data sources. Can be extended to fetch from
-        providers that support fundamental data.
+        Get fundamental data for a symbol from market_universe table.
         
         Args:
             symbol: Ticker symbol
@@ -155,8 +153,35 @@ class OptimizerDataAdapter:
         Returns:
             Dictionary with fundamental metrics
         """
-        # TODO: Implement fundamental data fetching
-        # For now, try to get basic info from a quote
+        from app.db.models.market_universe import MarketUniverse
+        
+        try:
+            # Fetch from market_universe table
+            async with async_session_maker() as session:
+                result = await session.execute(
+                    select(MarketUniverse).where(MarketUniverse.symbol == symbol)
+                )
+                asset = result.scalar_one_or_none()
+                
+                if asset:
+                    return {
+                        'name': asset.name or symbol,
+                        'sector': asset.sector,
+                        'industry': asset.industry,
+                        'market_cap': asset.market_cap,
+                        'pe_ratio': None,  # Not stored in market_universe
+                        'pb_ratio': None,
+                        'dividend_yield': None,
+                        'roe': None,
+                        'debt_to_equity': None,
+                        'revenue_growth': None,
+                        'earnings_growth': None,
+                        'beta': None
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to get fundamentals from DB for {symbol}: {e}")
+        
+        # Fallback: try to get basic info from a quote
         try:
             quote = await self.orchestrator.get_quote(symbol)
             return {
