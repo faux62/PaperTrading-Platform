@@ -1,7 +1,7 @@
 # PaperTrading Platform - Roadmap FX Refactoring
 
 ## Data: 18 Dicembre 2025
-## Versione: 1.2 (Fasi 1-10 completate)
+## Versione: 1.3 (Fasi 1-11 completate)
 
 ---
 
@@ -269,87 +269,24 @@ Non esiste - gli schema sono definiti inline nell'endpoint.
 
 ---
 
-### FASE 11: Helper Funzione per Audit
+### FASE 11: Helper Funzione per Audit ✅ COMPLETATA
 **Tempo stimato: 1 ora**
+**Data completamento: 18 Dicembre 2025**
 
-#### 11.1 Nuova funzione per calcolare costo storico
+#### 11.1 Nuovo service per analytics ✅
 
 File: `backend/app/services/position_analytics.py`
 
-```python
-from decimal import Decimal
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+Funzioni implementate:
+- `get_historical_cost_in_portfolio_currency()` - Calcola costo medio storico usando FX rates da TRADES
+- `get_avg_entry_exchange_rate()` - Calcola tasso FX medio ponderato di ingresso
+- `get_position_cost_breakdown()` - Breakdown dettagliato dei costi (native e portfolio currency)
+- `calculate_forex_impact()` - Calcola impatto forex sulla posizione
 
-from app.db.models import Trade, TradeType, TradeStatus
-
-
-async def get_historical_cost_in_portfolio_currency(
-    db: AsyncSession,
-    portfolio_id: int, 
-    symbol: str
-) -> Decimal:
-    """
-    Calcola il costo effettivo pagato in valuta portfolio
-    usando i tassi storici salvati in TRADES.
-    
-    Utile per audit e analisi storica.
-    """
-    result = await db.execute(
-        select(Trade).where(
-            and_(
-                Trade.portfolio_id == portfolio_id,
-                Trade.symbol == symbol,
-                Trade.trade_type == TradeType.BUY,
-                Trade.status == TradeStatus.EXECUTED
-            )
-        )
-    )
-    trades = result.scalars().all()
-    
-    if not trades:
-        return Decimal("0")
-    
-    total_cost_portfolio = sum(
-        t.executed_price * t.executed_quantity * (t.exchange_rate or Decimal("1"))
-        for t in trades
-    )
-    total_qty = sum(t.executed_quantity for t in trades)
-    
-    return total_cost_portfolio / total_qty if total_qty > 0 else Decimal("0")
-
-
-async def get_avg_entry_exchange_rate(
-    db: AsyncSession,
-    portfolio_id: int,
-    symbol: str
-) -> Decimal:
-    """
-    Calcola il tasso di cambio medio ponderato di ingresso.
-    """
-    result = await db.execute(
-        select(Trade).where(
-            and_(
-                Trade.portfolio_id == portfolio_id,
-                Trade.symbol == symbol,
-                Trade.trade_type == TradeType.BUY,
-                Trade.status == TradeStatus.EXECUTED
-            )
-        )
-    )
-    trades = result.scalars().all()
-    
-    if not trades:
-        return Decimal("1.0")
-    
-    weighted_rate = sum(
-        t.executed_quantity * (t.exchange_rate or Decimal("1"))
-        for t in trades
-    )
-    total_qty = sum(t.executed_quantity for t in trades)
-    
-    return weighted_rate / total_qty if total_qty > 0 else Decimal("1.0")
-```
+Casi d'uso:
+- Audit trail: cosa è stato effettivamente pagato
+- Tax reporting: cost basis con tassi storici
+- Analisi: isolare performance stock da forex
 
 ---
 
