@@ -101,6 +101,25 @@ class RedisClient:
         return await self._client.get(key)
     
     # =========================
+    # Generic Get/Set Methods
+    # =========================
+    async def get(self, key: str) -> str | None:
+        """Get value by key."""
+        if not self._client:
+            return None
+        return await self._client.get(key)
+    
+    async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+        """Set value with optional expiry (in seconds)."""
+        if not self._client:
+            return False
+        if ex:
+            await self._client.setex(key, ex, value)
+        else:
+            await self._client.set(key, value)
+        return True
+    
+    # =========================
     # Pub/Sub Methods
     # =========================
     async def publish(self, channel: str, message: str):

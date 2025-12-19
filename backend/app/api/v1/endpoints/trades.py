@@ -204,14 +204,19 @@ async def create_order(
         # Determine the symbol's native currency (IBKR-style)
         native_currency = get_symbol_currency(request.symbol.upper())
         
+        # Parse order type
+        order_type = request.order_type if isinstance(request.order_type, OrderType) else OrderType(request.order_type)
+        
+        # For MARKET orders, don't pass limit_price/stop_price (they should be NULL in DB)
+        # The frontend may send limit_price as a "reference price" but we don't store it
         order_request = OrderRequest(
             portfolio_id=request.portfolio_id,
             symbol=request.symbol.upper(),
             trade_type=request.trade_type if isinstance(request.trade_type, TradeType) else TradeType(request.trade_type),
             quantity=request.quantity,
-            order_type=request.order_type if isinstance(request.order_type, OrderType) else OrderType(request.order_type),
-            limit_price=request.limit_price,
-            stop_price=request.stop_price,
+            order_type=order_type,
+            limit_price=request.limit_price if order_type in (OrderType.LIMIT, OrderType.STOP_LIMIT) else None,
+            stop_price=request.stop_price if order_type in (OrderType.STOP, OrderType.STOP_LIMIT) else None,
             notes=request.notes,
             native_currency=native_currency  # Pass native currency to order
         )
@@ -227,7 +232,6 @@ async def create_order(
             )
         
         # For MARKET orders, execute immediately with real price
-        order_type = request.order_type if isinstance(request.order_type, OrderType) else OrderType(request.order_type)
         if order_type == OrderType.MARKET and result.order_id:
             # Get the created trade
             trade = await repo.get_by_id(result.order_id)

@@ -2,14 +2,14 @@
  * Layered Symbol Selector
  * 
  * A user-friendly, hierarchical stock selector:
- * 1. Select Market (US, EU, UK, Asia, Crypto)
+ * 1. Select Market/Region (US, EU, UK, Asia)
  * 2. Select Sector (Technology, Healthcare, etc.)
  * 3. Select Stock from filtered list
  * 
- * No API calls for navigation - instant response!
+ * Data is fetched from the market_universe table via API.
  * Price is fetched only when a stock is selected.
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   ChevronDown, 
   Globe, 
@@ -18,18 +18,11 @@ import {
   Loader2,
   Search,
   X,
-  Check
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { 
-  stocksDatabase, 
-  MARKETS, 
-  getSectorsForMarket, 
-  getStocksByMarketAndSector,
-  searchAllStocks,
-  StockInfo 
-} from '../../data/stocksDatabase';
-import { marketDataApi } from '../../services/api';
+import { marketDataApi, universeApi, UniverseSymbol } from '../../services/api';
 
 interface LayeredSymbolSelectorProps {
   onSelect: (symbol: string, price: number | null, name: string, currency: string) => void;
@@ -38,6 +31,14 @@ interface LayeredSymbolSelectorProps {
   disabled?: boolean;
 }
 
+// Region metadata for display
+const REGION_INFO: Record<string, { name: string; flag: string }> = {
+  US: { name: 'United States', flag: '🇺🇸' },
+  UK: { name: 'United Kingdom', flag: '🇬🇧' },
+  EU: { name: 'Europe', flag: '🇪🇺' },
+  ASIA: { name: 'Asia Pacific', flag: '🌏' },
+};
+
 export function LayeredSymbolSelector({
   onSelect,
   initialSymbol: _initialSymbol = '',
@@ -45,10 +46,16 @@ export function LayeredSymbolSelector({
   disabled = false
 }: LayeredSymbolSelectorProps) {
   // Note: _initialSymbol could be used for pre-selection in future
+  
+  // Data from API
+  const [allSymbols, setAllSymbols] = useState<UniverseSymbol[]>([]);
+  const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  
   // Selection state
-  const [selectedMarket, setSelectedMarket] = useState<string | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
-  const [selectedStock, setSelectedStock] = useState<StockInfo | null>(null);
+  const [selectedStock, setSelectedStock] = useState<UniverseSymbol | null>(null);
   
   // UI state
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
@@ -58,23 +65,73 @@ export function LayeredSymbolSelector({
   // Quick search state
   const [quickSearchQuery, setQuickSearchQuery] = useState('');
   const [showQuickSearch, setShowQuickSearch] = useState(false);
+  const [searchResults, setSearchResults] = useState<UniverseSymbol[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  // Get available sectors based on selected market
+  // Load all symbols on mount
+  useEffect(() => {
+    const loadSymbols = async () => {
+      try {
+        setIsLoadingSymbols(true);
+        setLoadError(null);
+        const symbols = await universeApi.getAllSymbols();
+        setAllSymbols(symbols);
+      } catch (err) {
+        console.error('Failed to load market universe:', err);
+        setLoadError('Failed to load symbols. Please refresh.');
+      } finally {
+        setIsLoadingSymbols(false);
+      }
+    };
+    loadSymbols();
+  }, []);
+
+  // Get available regions from loaded data
+  const availableRegions = useMemo(() => {
+    const regions = new Set<string>();
+    allSymbols.forEach(s => regions.add(s.region));
+    return Array.from(regions).sort();
+  }, [allSymbols]);
+
+  // Get available sectors based on selected region
   const availableSectors = useMemo(() => {
-    if (!selectedMarket) return [];
-    return getSectorsForMarket(selectedMarket);
-  }, [selectedMarket]);
+    if (!selectedRegion) return [];
+    const sectors = new Set<string>();
+    allSymbols
+      .filter(s => s.region === selectedRegion && s.sector)
+      .forEach(s => sectors.add(s.sector!));
+    return Array.from(sectors).sort();
+  }, [allSymbols, selectedRegion]);
 
-  // Get available stocks based on selected market and sector
+  // Get available stocks based on selected region and sector
   const availableStocks = useMemo(() => {
-    if (!selectedMarket || !selectedSector) return [];
-    return getStocksByMarketAndSector(selectedMarket, selectedSector);
-  }, [selectedMarket, selectedSector]);
+    if (!selectedRegion || !selectedSector) return [];
+    return allSymbols
+      .filter(s => s.region === selectedRegion && s.sector === selectedSector)
+      .sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  }, [allSymbols, selectedRegion, selectedSector]);
 
-  // Quick search results
-  const quickSearchResults = useMemo(() => {
-    if (!quickSearchQuery || quickSearchQuery.length < 1) return [];
-    return searchAllStocks(quickSearchQuery);
+  // Quick search with debounce
+  useEffect(() => {
+    if (!quickSearchQuery || quickSearchQuery.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const searchTimer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await universeApi.search(quickSearchQuery, 20);
+        setSearchResults(results);
+      } catch (err) {
+        console.error('Search failed:', err);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(searchTimer);
   }, [quickSearchQuery]);
 
   // Fetch price when a stock is selected
@@ -96,9 +153,9 @@ export function LayeredSymbolSelector({
     }
   };
 
-  // Handle market selection
-  const handleMarketSelect = (marketId: string) => {
-    setSelectedMarket(marketId);
+  // Handle region selection
+  const handleRegionSelect = (region: string) => {
+    setSelectedRegion(region);
     setSelectedSector(null);
     setSelectedStock(null);
     setCurrentPrice(null);
@@ -112,31 +169,54 @@ export function LayeredSymbolSelector({
   };
 
   // Handle stock selection
-  const handleStockSelect = async (stock: StockInfo) => {
+  const handleStockSelect = async (stock: UniverseSymbol) => {
     setSelectedStock(stock);
     const price = await fetchPrice(stock.symbol);
-    onSelect(stock.symbol, price, stock.name, stock.currency);
+    onSelect(stock.symbol, price, stock.name || stock.symbol, stock.currency);
   };
 
   // Handle quick search selection
-  const handleQuickSearchSelect = async (stock: StockInfo) => {
-    setSelectedMarket(stock.market);
+  const handleQuickSearchSelect = async (stock: UniverseSymbol) => {
+    setSelectedRegion(stock.region);
     setSelectedSector(stock.sector);
     setSelectedStock(stock);
     setShowQuickSearch(false);
     setQuickSearchQuery('');
+    setSearchResults([]);
     const price = await fetchPrice(stock.symbol);
-    onSelect(stock.symbol, price, stock.name, stock.currency);
+    onSelect(stock.symbol, price, stock.name || stock.symbol, stock.currency);
   };
 
   // Reset selection
   const handleReset = () => {
-    setSelectedMarket(null);
+    setSelectedRegion(null);
     setSelectedSector(null);
     setSelectedStock(null);
     setCurrentPrice(null);
     setPriceError(null);
+    setQuickSearchQuery('');
+    setSearchResults([]);
   };
+
+  // Loading state
+  if (isLoadingSymbols) {
+    return (
+      <div className={clsx('flex items-center justify-center py-8', className)}>
+        <Loader2 className="h-6 w-6 animate-spin text-blue-500 mr-2" />
+        <span className="text-gray-600 dark:text-gray-400">Loading market universe...</span>
+      </div>
+    );
+  }
+
+  // Error state
+  if (loadError) {
+    return (
+      <div className={clsx('flex items-center justify-center py-8 text-red-500', className)}>
+        <AlertCircle className="h-5 w-5 mr-2" />
+        <span>{loadError}</span>
+      </div>
+    );
+  }
 
   return (
     <div className={clsx('space-y-4', className)}>
@@ -177,16 +257,19 @@ export function LayeredSymbolSelector({
               type="text"
               value={quickSearchQuery}
               onChange={(e) => setQuickSearchQuery(e.target.value)}
-              placeholder="Type symbol or company name..."
+              placeholder="Type symbol or company name (min 2 chars)..."
               className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               autoFocus
             />
+            {isSearching && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
+            )}
           </div>
           
           {/* Quick Search Results */}
-          {quickSearchResults.length > 0 && (
+          {searchResults.length > 0 && (
             <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-              {quickSearchResults.map((stock) => (
+              {searchResults.map((stock) => (
                 <button
                   key={stock.symbol}
                   type="button"
@@ -202,11 +285,20 @@ export function LayeredSymbolSelector({
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span>{stocksDatabase[stock.market]?.flag}</span>
-                    <span>{stock.sector}</span>
+                    <span>{REGION_INFO[stock.region]?.flag || '🌍'}</span>
+                    <span>{stock.exchange}</span>
+                    <span className="text-gray-300">|</span>
+                    <span>{stock.sector || 'N/A'}</span>
                   </div>
                 </button>
               ))}
+            </div>
+          )}
+          
+          {/* No results message */}
+          {quickSearchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
+            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 text-center text-gray-500">
+              No symbols found for "{quickSearchQuery}"
             </div>
           )}
         </div>
@@ -215,31 +307,31 @@ export function LayeredSymbolSelector({
       {/* Layered Selection */}
       {!showQuickSearch && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Market Selection */}
+          {/* Region Selection */}
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               <Globe className="h-4 w-4" />
-              Market
+              Region
             </label>
             <div className="relative">
               <select
-                value={selectedMarket || ''}
-                onChange={(e) => handleMarketSelect(e.target.value)}
+                value={selectedRegion || ''}
+                onChange={(e) => handleRegionSelect(e.target.value)}
                 disabled={disabled}
                 className={clsx(
                   'w-full appearance-none px-4 py-2.5 rounded-lg border bg-white dark:bg-gray-700',
                   'text-gray-900 dark:text-white',
                   'focus:ring-2 focus:ring-blue-500 focus:border-transparent',
                   'disabled:opacity-50 disabled:cursor-not-allowed',
-                  selectedMarket 
+                  selectedRegion 
                     ? 'border-blue-500 dark:border-blue-400' 
                     : 'border-gray-300 dark:border-gray-600'
                 )}
               >
-                <option value="">Select market...</option>
-                {MARKETS.map((market) => (
-                  <option key={market.id} value={market.id}>
-                    {market.flag} {market.name}
+                <option value="">Select region...</option>
+                {availableRegions.map((region) => (
+                  <option key={region} value={region}>
+                    {REGION_INFO[region]?.flag || '🌍'} {REGION_INFO[region]?.name || region}
                   </option>
                 ))}
               </select>
@@ -257,7 +349,7 @@ export function LayeredSymbolSelector({
               <select
                 value={selectedSector || ''}
                 onChange={(e) => handleSectorSelect(e.target.value)}
-                disabled={disabled || !selectedMarket}
+                disabled={disabled || !selectedRegion}
                 className={clsx(
                   'w-full appearance-none px-4 py-2.5 rounded-lg border bg-white dark:bg-gray-700',
                   'text-gray-900 dark:text-white',
@@ -269,7 +361,7 @@ export function LayeredSymbolSelector({
                 )}
               >
                 <option value="">
-                  {selectedMarket ? 'Select sector...' : 'Select market first'}
+                  {selectedRegion ? `Select sector (${availableSectors.length})...` : 'Select region first'}
                 </option>
                 {availableSectors.map((sector) => (
                   <option key={sector} value={sector}>
@@ -312,7 +404,7 @@ export function LayeredSymbolSelector({
                 </option>
                 {availableStocks.map((stock) => (
                   <option key={stock.symbol} value={stock.symbol}>
-                    {stock.symbol} - {stock.name}
+                    {stock.symbol} - {stock.name || 'Unknown'}
                   </option>
                 ))}
               </select>
@@ -340,11 +432,11 @@ export function LayeredSymbolSelector({
                     {selectedStock.symbol}
                   </span>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                    {stocksDatabase[selectedStock.market]?.flag} {selectedStock.market}
+                    {REGION_INFO[selectedStock.region]?.flag || '🌍'} {selectedStock.exchange || selectedStock.region}
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {selectedStock.name}
+                  {selectedStock.name || selectedStock.symbol}
                 </p>
               </div>
             </div>
@@ -370,10 +462,12 @@ export function LayeredSymbolSelector({
                     {selectedStock.currency === 'EUR' && '€'}
                     {selectedStock.currency === 'GBP' && '£'}
                     {selectedStock.currency === 'JPY' && '¥'}
+                    {selectedStock.currency === 'HKD' && 'HK$'}
                     {selectedStock.currency === 'CHF' && 'CHF '}
                     {currentPrice.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
+                      // JPY doesn't use decimal places
+                      minimumFractionDigits: selectedStock.currency === 'JPY' ? 0 : 2,
+                      maximumFractionDigits: selectedStock.currency === 'JPY' ? 0 : 2
                     })}
                   </span>
                   <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
@@ -389,7 +483,7 @@ export function LayeredSymbolSelector({
       {/* Help text when nothing selected */}
       {!selectedStock && !showQuickSearch && (
         <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
-          Select Market → Sector → Stock, or use Quick Search
+          Select Region → Sector → Stock, or use Quick Search ({allSymbols.length} symbols available)
         </p>
       )}
     </div>

@@ -160,7 +160,8 @@ class GlobalPriceUpdater:
         self,
         position: Position,
         portfolio_currency: str = "EUR",
-        force_realtime: bool = False
+        force_realtime: bool = False,
+        force_fx_recalc: bool = False
     ) -> bool:
         """
         Update price for a single position.
@@ -174,6 +175,7 @@ class GlobalPriceUpdater:
             position: The position to update
             portfolio_currency: The portfolio's base currency for conversions
             force_realtime: If True, always try real-time first
+            force_fx_recalc: If True, recalculate FX even without price update
             
         Returns:
             True if price was updated, False otherwise
@@ -199,9 +201,14 @@ class GlobalPriceUpdater:
                     await self._mark_eod_fetched(symbol)
                     price_source = "eod"
             else:
-                # EOD already fetched today - skip
-                logger.debug(f"EOD already fetched today for {symbol}")
-                return False
+                # EOD already fetched today
+                if force_fx_recalc:
+                    # Use existing price but recalculate FX
+                    price = float(position.current_price)
+                    price_source = "cached"
+                else:
+                    logger.debug(f"EOD already fetched today for {symbol}")
+                    return False
         
         if price:
             # Update position price in NATIVE currency
@@ -267,7 +274,8 @@ class GlobalPriceUpdater:
                 stats["by_exchange"][exchange] = {"updated": 0, "skipped": 0}
             
             try:
-                updated = await self.update_position_price(position, portfolio_currency)
+                # Always force FX recalc to ensure market_value/unrealized_pnl are in portfolio currency
+                updated = await self.update_position_price(position, portfolio_currency, force_fx_recalc=True)
                 if updated:
                     stats["updated"] += 1
                     stats["by_exchange"][exchange]["updated"] += 1

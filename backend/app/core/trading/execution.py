@@ -265,12 +265,12 @@ class ExecutionEngine:
                 trade_type=trade.trade_type
             )
             
-            # Calculate total value
-            total_value = trade.quantity * executed_price
+            # Calculate total value in native currency
+            total_value_native = trade.quantity * executed_price
             
-            # Calculate commission with breakdown
-            commission, commission_breakdown = self._calculate_commission_with_breakdown(
-                trade_value=total_value,
+            # Calculate commission with breakdown (in native currency)
+            commission_native, commission_breakdown = self._calculate_commission_with_breakdown(
+                trade_value=total_value_native,
                 quantity=trade.quantity,
                 trade_type=trade.trade_type
             )
@@ -279,11 +279,33 @@ class ExecutionEngine:
             spread_cost = abs(base_price - current_price) * trade.quantity
             slippage_cost = abs(executed_price - base_price) * trade.quantity
             
-            # Update the trade record
+            # Get portfolio to determine currency
+            portfolio_result = await self.db.execute(
+                select(Portfolio).where(Portfolio.id == trade.portfolio_id)
+            )
+            portfolio = portfolio_result.scalar_one_or_none()
+            portfolio_currency = portfolio.currency or "EUR" if portfolio else "EUR"
+            trade_currency = trade.native_currency or "USD"
+            
+            # Convert total_value and commission to portfolio currency
+            if trade_currency != portfolio_currency:
+                total_value_portfolio, exchange_rate = await convert(
+                    total_value_native, trade_currency, portfolio_currency
+                )
+                commission_portfolio, _ = await convert(
+                    commission_native, trade_currency, portfolio_currency
+                )
+                trade.exchange_rate = exchange_rate
+            else:
+                total_value_portfolio = total_value_native
+                commission_portfolio = commission_native
+                trade.exchange_rate = Decimal("1.0")
+            
+            # Update the trade record (values in PORTFOLIO currency)
             trade.executed_price = executed_price
             trade.executed_quantity = trade.quantity
-            trade.total_value = total_value
-            trade.commission = commission
+            trade.total_value = total_value_portfolio
+            trade.commission = commission_portfolio
             trade.status = TradeStatus.EXECUTED
             trade.executed_at = datetime.utcnow()
             
@@ -302,14 +324,14 @@ class ExecutionEngine:
                 success=True,
                 executed_price=executed_price,
                 executed_quantity=trade.quantity,
-                total_value=total_value,
+                total_value=total_value_portfolio,
                 slippage=slippage,
                 slippage_cost=slippage_cost,
                 bid_price=bid_price,
                 ask_price=ask_price,
                 spread=spread_pct,
                 spread_cost=spread_cost,
-                commission=commission,
+                commission=commission_portfolio,
                 commission_breakdown=commission_breakdown,
                 message="Order executed successfully",
                 executed_at=trade.executed_at
@@ -392,18 +414,40 @@ class ExecutionEngine:
         is_partial = fill_quantity < requested_quantity
         remaining = requested_quantity - fill_quantity if is_partial else None
         
-        # Execute at limit price
+        # Execute at limit price - calculate values in native currency
         executed_price = trade.price
-        total_value = fill_quantity * executed_price
-        commission, breakdown = self._calculate_commission_with_breakdown(
-            total_value, fill_quantity, trade.trade_type
+        total_value_native = fill_quantity * executed_price
+        commission_native, breakdown = self._calculate_commission_with_breakdown(
+            total_value_native, fill_quantity, trade.trade_type
         )
         
-        # Update trade
+        # Get portfolio to determine currency
+        portfolio_result = await self.db.execute(
+            select(Portfolio).where(Portfolio.id == trade.portfolio_id)
+        )
+        portfolio = portfolio_result.scalar_one_or_none()
+        portfolio_currency = portfolio.currency or "EUR" if portfolio else "EUR"
+        trade_currency = trade.native_currency or "USD"
+        
+        # Convert total_value and commission to portfolio currency
+        if trade_currency != portfolio_currency:
+            total_value_portfolio, exchange_rate = await convert(
+                total_value_native, trade_currency, portfolio_currency
+            )
+            commission_portfolio, _ = await convert(
+                commission_native, trade_currency, portfolio_currency
+            )
+            trade.exchange_rate = exchange_rate
+        else:
+            total_value_portfolio = total_value_native
+            commission_portfolio = commission_native
+            trade.exchange_rate = Decimal("1.0")
+        
+        # Update trade (values in PORTFOLIO currency)
         trade.executed_price = executed_price
         trade.executed_quantity = fill_quantity
-        trade.total_value = total_value
-        trade.commission = commission
+        trade.total_value = total_value_portfolio
+        trade.commission = commission_portfolio
         
         if is_partial:
             trade.status = TradeStatus.PARTIAL
@@ -426,9 +470,9 @@ class ExecutionEngine:
             success=True,
             executed_price=executed_price,
             executed_quantity=fill_quantity,
-            total_value=total_value,
+            total_value=total_value_portfolio,
             slippage=Decimal("0"),
-            commission=commission,
+            commission=commission_portfolio,
             commission_breakdown=breakdown,
             message=f"Limit order {fill_type}" + (f" ({remaining} remaining)" if remaining else ""),
             executed_at=trade.executed_at,
@@ -743,9 +787,14 @@ class ExecutionEngine:
         
         APPROACH B - Dynamic FX (Simplified):
         - avg_cost: Average cost in NATIVE currency only (USD for AAPL)
-        - Portfolio currency values calculated on-demand using current FX rate
+        - market_value, unrealized_pnl: In PORTFOLIO currency (using current FX rate)
         - Historical FX rate preserved in TRADES.exchange_rate for audit
         """
+        # Get FX rate for converting to portfolio currency
+        fx_rate = Decimal("1.0")
+        if native_currency != portfolio_currency:
+            _, fx_rate = await convert(Decimal("1"), native_currency, portfolio_currency)
+        
         # Check for existing position
         result = await self.db.execute(
             select(Position).where(
@@ -764,8 +813,23 @@ class ExecutionEngine:
             # Weighted average in native currency ONLY
             position.avg_cost = (old_value_native + new_value_native) / total_quantity
             position.quantity = total_quantity
+            position.current_price = trade.executed_price
+            
+            # Calculate market_value and unrealized_pnl in PORTFOLIO currency
+            market_value_native = position.quantity * position.current_price
+            position.market_value = market_value_native * fx_rate
+            pnl_native = (position.current_price - position.avg_cost) * position.quantity
+            position.unrealized_pnl = pnl_native * fx_rate
+            if position.avg_cost > 0:
+                position.unrealized_pnl_percent = float(
+                    (position.current_price - position.avg_cost) / position.avg_cost * 100
+                )
             position.updated_at = datetime.utcnow()
         else:
+            # Calculate market_value in PORTFOLIO currency
+            market_value_native = trade.executed_quantity * trade.executed_price
+            market_value_portfolio = market_value_native * fx_rate
+            
             # Create new position
             position = Position(
                 portfolio_id=trade.portfolio_id,
@@ -774,7 +838,9 @@ class ExecutionEngine:
                 quantity=trade.executed_quantity,
                 avg_cost=trade.executed_price,  # Native currency only
                 current_price=trade.executed_price,
-                market_value=trade.total_value,
+                market_value=market_value_portfolio,  # Portfolio currency
+                unrealized_pnl=Decimal("0"),  # P&L = 0 at purchase
+                unrealized_pnl_percent=Decimal("0"),
                 native_currency=native_currency,
                 opened_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -794,13 +860,29 @@ class ExecutionEngine:
         if not position:
             raise ValueError(f"No position found for {trade.symbol}")
         
-        # Calculate realized P&L
+        # Calculate realized P&L in NATIVE currency
         cost_basis = trade.executed_quantity * position.avg_cost
         sale_proceeds = trade.executed_quantity * trade.executed_price
-        realized_pnl = sale_proceeds - cost_basis
+        realized_pnl_native = sale_proceeds - cost_basis
         
-        # Update trade with realized P&L
-        trade.realized_pnl = realized_pnl
+        # Get portfolio to determine currency
+        portfolio_result = await self.db.execute(
+            select(Portfolio).where(Portfolio.id == trade.portfolio_id)
+        )
+        portfolio = portfolio_result.scalar_one_or_none()
+        portfolio_currency = portfolio.currency or "EUR" if portfolio else "EUR"
+        trade_currency = trade.native_currency or position.native_currency or "USD"
+        
+        # Convert realized P&L to PORTFOLIO currency
+        if trade_currency != portfolio_currency:
+            realized_pnl_portfolio, _ = await convert(
+                realized_pnl_native, trade_currency, portfolio_currency
+            )
+        else:
+            realized_pnl_portfolio = realized_pnl_native
+        
+        # Update trade with realized P&L (in PORTFOLIO currency)
+        trade.realized_pnl = realized_pnl_portfolio
         
         # Update position
         position.quantity -= trade.executed_quantity

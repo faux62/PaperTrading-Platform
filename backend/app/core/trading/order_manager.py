@@ -251,11 +251,28 @@ class OrderManager:
         if request.trade_type == TradeType.BUY:
             estimated_price = request.limit_price or await self._get_estimated_price(request.symbol)
             if estimated_price:
-                new_value = request.quantity * estimated_price
+                # Calculate value in native currency
+                new_value_native = request.quantity * estimated_price
+                
+                # Get currencies
+                symbol_currency = get_symbol_currency(request.symbol)
+                portfolio_currency = portfolio.currency or "EUR"
+                
+                # Convert to portfolio currency for proper comparison
+                if symbol_currency != portfolio_currency:
+                    new_value_portfolio, _ = await convert(
+                        new_value_native,
+                        symbol_currency,
+                        portfolio_currency
+                    )
+                else:
+                    new_value_portfolio = new_value_native
+                
+                # Get portfolio value (already in portfolio currency)
                 portfolio_value = await self.portfolio_service.get_portfolio_value(portfolio.id)
                 
                 if portfolio_value > 0:
-                    position_pct = (new_value / portfolio_value) * 100
+                    position_pct = (float(new_value_portfolio) / float(portfolio_value)) * 100
                     
                     # Check max position size from risk profile
                     risk_profile = get_risk_profile(portfolio.risk_profile.value)

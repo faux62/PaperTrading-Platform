@@ -95,17 +95,17 @@ const PortfolioDetail = () => {
       setPositions(positionsData);
       setTrades(Array.isArray(tradesData) ? tradesData : tradesData.items || []);
 
-      // Calculate stats
+      // Calculate stats - use market_value which is already in portfolio currency
       const investedValue = positionsData.reduce?.(
-        (sum: number, p: Position) => sum + (p.market_value || p.current_value || p.quantity * (p.current_price || p.average_price || 0)),
+        (sum: number, p: any) => sum + (parseFloat(p.market_value) || 0),
         0
       ) || 0;
       const totalReturn = positionsData.reduce?.(
-        (sum: number, p: Position) => sum + (p.unrealized_pnl || 0),
+        (sum: number, p: any) => sum + (parseFloat(p.unrealized_pnl) || 0),
         0
       ) || 0;
-      const initialValue = portfolioData.initial_balance || 100000;
-      const totalValue = portfolioData.cash_balance + investedValue;
+      const initialValue = parseFloat(portfolioData.initial_capital) || 10000;
+      const totalValue = parseFloat(portfolioData.cash_balance) + investedValue;
 
       setStats({
         total_value: totalValue,
@@ -128,11 +128,27 @@ const PortfolioDetail = () => {
     fetchPortfolioData();
   }, [fetchPortfolioData]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
+  // Get portfolio currency (default EUR)
+  const portfolioCurrency = (portfolio as any)?.currency || 'EUR';
+  
+  const formatCurrency = (value: number, currency?: string) => {
+    const curr = currency || portfolioCurrency;
+    const locale = curr === 'EUR' ? 'de-DE' : curr === 'GBP' ? 'en-GB' : curr === 'JPY' ? 'ja-JP' : 'en-US';
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
+      currency: curr,
+      minimumFractionDigits: curr === 'JPY' ? 0 : 2,
+    }).format(value);
+  };
+  
+  // Format price in native currency for positions
+  const formatNativePrice = (value: number, nativeCurrency?: string) => {
+    const curr = nativeCurrency || 'USD';
+    const locale = curr === 'EUR' ? 'de-DE' : curr === 'GBP' ? 'en-GB' : curr === 'JPY' ? 'ja-JP' : 'en-US';
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: curr,
+      minimumFractionDigits: curr === 'JPY' ? 0 : 2,
     }).format(value);
   };
 
@@ -357,9 +373,10 @@ const PortfolioDetail = () => {
               <CardContent>
                 {positions.length > 0 ? (
                   <div className="space-y-3">
-                    {positions.map((position) => {
-                      const value = position.current_value || position.quantity * (position.current_price || position.average_price);
-                      const percentage = stats ? (value / stats.total_value) * 100 : 0;
+                    {positions.map((position: any) => {
+                      // Use market_value which is already converted to portfolio currency
+                      const value = parseFloat(position.market_value) || 0;
+                      const percentage = stats && stats.total_value > 0 ? (value / stats.total_value) * 100 : 0;
                       return (
                         <div key={position.id} className="flex items-center gap-3">
                           <div className="w-12 text-sm font-medium text-white">{position.symbol}</div>
@@ -415,32 +432,38 @@ const PortfolioDetail = () => {
               <CardContent>
                 {trades.length > 0 ? (
                   <div className="space-y-2">
-                    {trades.slice(0, 5).map((trade) => (
+                    {trades.slice(0, 5).map((trade: any) => {
+                      // Use executed_price for display, total_value for the total (already in portfolio currency)
+                      const displayPrice = parseFloat(trade.executed_price) || parseFloat(trade.price) || 0;
+                      const totalValue = parseFloat(trade.total_value) || 0;
+                      const nativeCurrency = trade.native_currency || 'USD';
+                      return (
                       <div
                         key={trade.id}
                         className="flex items-center justify-between p-2 bg-surface-800/50 rounded-lg"
                       >
                         <div className="flex items-center gap-3">
-                          <Badge variant={(trade.trade_type || trade.side) === 'buy' ? 'success' : 'danger'}>
+                          <Badge variant={(trade.trade_type || trade.side)?.toLowerCase() === 'buy' ? 'success' : 'danger'}>
                             {(trade.trade_type || trade.side || 'N/A').toUpperCase()}
                           </Badge>
                           <div>
                             <p className="text-sm font-medium text-white">{trade.symbol}</p>
                             <p className="text-xs text-surface-400">
-                              {trade.quantity} @ {formatCurrency(trade.price || trade.limit_price || 0)}
+                              {trade.executed_quantity || trade.quantity} @ {formatNativePrice(displayPrice, nativeCurrency)}
                             </p>
                           </div>
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-white">
-                            {formatCurrency(trade.quantity * (trade.price || trade.limit_price || 0))}
+                            {formatCurrency(totalValue)}
                           </p>
                           <p className="text-xs text-surface-400">
-                            {new Date(trade.created_at).toLocaleDateString()}
+                            {new Date(trade.executed_at || trade.created_at).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-center text-surface-400 py-8">
@@ -473,11 +496,15 @@ const PortfolioDetail = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-700">
-                      {positions.map((position) => {
-                        const currentPrice = position.current_price || position.average_price;
-                        const value = position.quantity * currentPrice;
-                        const pnl = position.unrealized_pnl || (currentPrice - position.average_price) * position.quantity;
-                        const pnlPct = position.unrealized_pnl_pct || ((currentPrice - position.average_price) / position.average_price) * 100;
+                      {positions.map((position: any) => {
+                        // API returns: avg_cost, current_price (in native currency)
+                        // market_value, unrealized_pnl (in portfolio currency)
+                        const nativeCurrency = position.native_currency || 'USD';
+                        const avgCost = parseFloat(position.avg_cost) || 0;
+                        const currentPrice = parseFloat(position.current_price) || avgCost;
+                        const marketValue = parseFloat(position.market_value) || 0;
+                        const pnl = parseFloat(position.unrealized_pnl) || 0;
+                        const pnlPct = parseFloat(position.unrealized_pnl_percent) || 0;
 
                         return (
                           <tr key={position.id} className="text-sm">
@@ -485,9 +512,9 @@ const PortfolioDetail = () => {
                               <div className="font-medium text-white">{position.symbol}</div>
                             </td>
                             <td className="py-3 text-right text-white">{position.quantity}</td>
-                            <td className="py-3 text-right text-white">{formatCurrency(position.average_price)}</td>
-                            <td className="py-3 text-right text-white">{formatCurrency(currentPrice)}</td>
-                            <td className="py-3 text-right text-white">{formatCurrency(value)}</td>
+                            <td className="py-3 text-right text-white">{formatNativePrice(avgCost, nativeCurrency)}</td>
+                            <td className="py-3 text-right text-white">{formatNativePrice(currentPrice, nativeCurrency)}</td>
+                            <td className="py-3 text-right text-white">{formatCurrency(marketValue)}</td>
                             <td className={`py-3 text-right ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                               {formatCurrency(pnl)}
                             </td>

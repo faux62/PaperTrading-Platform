@@ -25,15 +25,14 @@ class PositionResponse(BaseModel):
     """
     Position response schema.
     
-    Note: All monetary values (avg_cost, current_price, market_value, unrealized_pnl)
-    are expressed in the NATIVE CURRENCY of the stock (e.g., USD for US stocks, EUR
-    for Euronext stocks). The portfolio-level aggregation handles currency conversion
-    using current FX rates from the exchange_rates table.
+    Note: avg_cost and current_price are in NATIVE CURRENCY of the stock.
+    market_value and unrealized_pnl are in PORTFOLIO CURRENCY.
     """
     id: int
     portfolio_id: int
     symbol: str
     exchange: Optional[str]
+    native_currency: str  # Currency the stock is quoted in (USD, EUR, GBP, JPY, etc.)
     quantity: float
     avg_cost: float  # In native currency
     current_price: float  # In native currency
@@ -87,6 +86,7 @@ def position_to_dict(position) -> dict:
         "portfolio_id": position.portfolio_id,
         "symbol": position.symbol,
         "exchange": position.exchange,
+        "native_currency": position.native_currency or "USD",  # Currency the stock is quoted in
         "quantity": float(position.quantity),
         "avg_cost": float(position.avg_cost),
         "current_price": float(position.current_price),
@@ -151,6 +151,54 @@ async def get_position_by_symbol(
         )
     
     return position_to_dict(position)
+
+
+@router.post("/portfolio/{portfolio_id}/refresh-prices")
+async def refresh_portfolio_prices(
+    portfolio_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Refresh prices for all positions in a portfolio.
+    
+    Uses GlobalPriceUpdater to fetch current prices and convert
+    market_value/unrealized_pnl to portfolio currency.
+    """
+    from app.db.models.portfolio import Portfolio
+    from sqlalchemy import select
+    
+    await verify_portfolio_ownership(portfolio_id, current_user.id, db)
+    
+    # Get portfolio
+    result = await db.execute(
+        select(Portfolio).where(Portfolio.id == portfolio_id)
+    )
+    portfolio = result.scalar_one_or_none()
+    
+    if not portfolio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found"
+        )
+    
+    # Use GlobalPriceUpdater for proper FX conversion
+    from app.bot.services.global_price_updater import GlobalPriceUpdater
+    
+    updater = GlobalPriceUpdater(db)
+    stats = await updater.update_portfolio_prices(portfolio)
+    
+    await db.commit()
+    
+    # Return updated positions
+    repo = PositionRepository(db)
+    positions = await repo.get_all_by_portfolio(portfolio_id)
+    
+    return {
+        "message": "Prices refreshed",
+        "stats": stats,
+        "positions": [position_to_dict(p) for p in positions],
+    }
 
 
 @router.get("/{position_id}")

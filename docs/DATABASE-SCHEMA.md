@@ -257,20 +257,22 @@ Storico di tutte le operazioni eseguite.
 | `symbol` | VARCHAR(20) | NOT NULL | - | Simbolo titolo (indexed) |
 | `exchange` | VARCHAR(20) | NULL | - | Exchange |
 | `native_currency` | VARCHAR(3) | NOT NULL | - | **Valuta NATIVA del titolo** |
-| `exchange_rate` | NUMERIC(15,6) | NULL | - | **Tasso cambio usato** |
+| `exchange_rate` | NUMERIC(15,6) | NULL | - | **Tasso cambio (nativa → portfolio)** |
 | `trade_type` | ENUM tradetype | NOT NULL | - | BUY / SELL |
 | `order_type` | ENUM ordertype | NULL | - | MARKET / LIMIT / STOP / STOP_LIMIT |
 | `status` | ENUM tradestatus | NULL | - | Stato ordine |
 | `quantity` | NUMERIC(15,4) | NOT NULL | - | Quantità richiesta |
-| `price` | NUMERIC(15,4) | NULL | - | **Prezzo limite/stop in valuta NATIVA** |
-| `executed_price` | NUMERIC(15,4) | NULL | - | **Prezzo eseguito in valuta NATIVA** |
-| `executed_quantity` | NUMERIC(15,4) | NULL | - | Quantità eseguita |
-| `total_value` | NUMERIC(15,2) | NULL | - | **Valore totale in valuta NATIVA** |
-| `commission` | NUMERIC(10,2) | NULL | - | **Commissioni in valuta NATIVA** |
-| `realized_pnl` | NUMERIC(15,2) | NULL | - | **P&L realizzato in valuta NATIVA** |
+| `price` | NUMERIC(15,4) | NULL | - | **Prezzo UNITARIO limite/stop in valuta NATIVA** |
+| `executed_price` | NUMERIC(15,4) | NULL | - | **Prezzo UNITARIO eseguito in valuta NATIVA** |
+| `executed_quantity` | NUMERIC(15,4) | NULL | - | **Quantità eseguita** |
+| `total_value` | NUMERIC(15,2) | NULL | - | **Valore TOTALE in valuta PORTFOLIO** (\*) |
+| `commission` | NUMERIC(10,2) | NULL | - | **Commissioni in valuta PORTFOLIO** |
+| `realized_pnl` | NUMERIC(15,2) | NULL | - | **P&L realizzato in valuta PORTFOLIO** |
 | `created_at` | TIMESTAMP | NULL | - | Data creazione ordine |
 | `executed_at` | TIMESTAMP | NULL | - | Data esecuzione |
 | `notes` | VARCHAR(500) | NULL | - | Note |
+
+> (\*) **Formula**: `total_value = executed_quantity × executed_price × exchange_rate`
 
 **Indici:**
 - `trades_pkey` - PRIMARY KEY (id)

@@ -47,7 +47,9 @@ class TestFxRateUpdaterService:
         assert "USD" in SUPPORTED_CURRENCIES
         assert "GBP" in SUPPORTED_CURRENCIES
         assert "CHF" in SUPPORTED_CURRENCIES
-        assert len(SUPPORTED_CURRENCIES) == 4
+        assert "HKD" in SUPPORTED_CURRENCIES
+        assert "JPY" in SUPPORTED_CURRENCIES
+        assert len(SUPPORTED_CURRENCIES) == 6
     
     def test_frankfurter_api_base(self):
         """Should have correct API base URL."""

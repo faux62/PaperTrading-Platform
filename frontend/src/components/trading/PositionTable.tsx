@@ -28,6 +28,7 @@ export interface Position {
   day_change?: number;
   day_change_pct?: number;
   weight_pct?: number;
+  native_currency?: string;  // Currency the symbol is quoted in (e.g., USD, GBP, JPY)
 }
 
 interface PositionTableProps {
@@ -36,6 +37,7 @@ interface PositionTableProps {
   onSell?: (symbol: string, quantity: number) => void;
   onViewDetails?: (symbol: string) => void;
   className?: string;
+  currency?: string;  // Portfolio currency for display
 }
 
 type SortField = 'symbol' | 'value' | 'pnl' | 'pnl_pct' | 'weight';
@@ -46,7 +48,8 @@ export function PositionTable({
   isLoading = false,
   onSell,
   onViewDetails,
-  className
+  className,
+  currency = 'EUR'
 }: PositionTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('value');
@@ -106,12 +109,27 @@ export function PositionTable({
     </button>
   );
 
+  // Format currency in PORTFOLIO currency (for Value, P&L)
   const formatCurrency = (value: number | undefined) => {
     if (value === undefined) return '-';
+    const decimals = currency === 'JPY' ? 0 : 2;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2
+      currency: currency,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    }).format(value);
+  };
+
+  // Format price in NATIVE currency (for Avg Cost, Price)
+  const formatNativePrice = (value: number | undefined, nativeCurrency: string = 'USD') => {
+    if (value === undefined) return '-';
+    const decimals = nativeCurrency === 'JPY' ? 0 : 2;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: nativeCurrency,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
     }).format(value);
   };
 
@@ -240,10 +258,10 @@ export function PositionTable({
                   {position.quantity.toLocaleString()}
                 </td>
                 <td className="py-4 px-4 text-right font-mono text-gray-600 dark:text-gray-400">
-                  {formatCurrency(position.average_cost)}
+                  {formatNativePrice(position.average_cost, position.native_currency)}
                 </td>
                 <td className="py-4 px-4 text-right font-mono text-gray-900 dark:text-white">
-                  {formatCurrency(position.current_price)}
+                  {formatNativePrice(position.current_price, position.native_currency)}
                 </td>
                 <td className="py-4 px-4 text-right font-mono font-medium text-gray-900 dark:text-white">
                   {formatCurrency(position.current_value)}

@@ -23,7 +23,7 @@ from app.db.repositories.exchange_rate import ExchangeRateRepository
 
 
 # Supported currencies for the platform
-SUPPORTED_CURRENCIES = ["EUR", "USD", "GBP", "CHF"]
+SUPPORTED_CURRENCIES = ["EUR", "USD", "GBP", "CHF", "HKD", "JPY"]
 
 # Frankfurter API base URL (free, no API key required)
 FRANKFURTER_API_BASE = "https://api.frankfurter.app"
@@ -106,9 +106,19 @@ class FxRateUpdaterService:
         
         Returns:
             List of dicts with keys: base_currency, quote_currency, rate
+            Includes identity pairs (EUR/EUR=1, USD/USD=1, etc.) for uniform handling
         """
         all_rates = []
         
+        # Add identity pairs (same currency = rate 1.0)
+        for currency in self.currencies:
+            all_rates.append({
+                "base_currency": currency,
+                "quote_currency": currency,
+                "rate": Decimal("1.0"),
+            })
+        
+        # Fetch cross-currency rates from API
         for base_currency in self.currencies:
             rates = await self.fetch_rates_from_api(base_currency)
             
@@ -120,7 +130,7 @@ class FxRateUpdaterService:
                         "rate": rate,
                     })
         
-        logger.info(f"Fetched {len(all_rates)} exchange rates from Frankfurter API")
+        logger.info(f"Fetched {len(all_rates)} exchange rates from Frankfurter API (incl. {len(self.currencies)} identity pairs)")
         return all_rates
     
     async def update_all_rates(self) -> int:

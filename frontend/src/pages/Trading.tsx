@@ -43,6 +43,8 @@ interface Trade {
   price: number;
   executed_price: number | null;
   total_value: number | null;
+  native_currency: string;
+  exchange_rate: number | null;
   status: string;
   executed_at: string | null;
   created_at: string;
@@ -56,6 +58,7 @@ const Trading = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'trade' | 'positions' | 'history'>('trade');
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
   
   // Trade filters state
   const [filterSymbol, setFilterSymbol] = useState('');
@@ -124,7 +127,8 @@ const Trading = () => {
           current_value: marketValue,
           unrealized_pnl: parseFloat(p.unrealized_pnl) || 0,
           unrealized_pnl_pct: parseFloat(p.unrealized_pnl_percent) || 0,
-          weight_pct: totalValue > 0 ? (marketValue / totalValue) * 100 : 0
+          weight_pct: totalValue > 0 ? (marketValue / totalValue) * 100 : 0,
+          native_currency: p.native_currency || 'USD'  // Currency the symbol is quoted in
         };
       }));
     } catch (err) {
@@ -237,6 +241,37 @@ const Trading = () => {
     if (selectedPortfolio) {
       await loadPositions();
       await loadRecentTrades();
+    }
+  };
+
+  const handleRefreshPrices = async () => {
+    if (!selectedPortfolio) return;
+    setIsRefreshingPrices(true);
+    try {
+      const result = await portfolioApi.refreshPrices(selectedPortfolio.id);
+      // Update positions with refreshed data
+      const totalValue = result.positions.reduce((sum: number, p: any) => 
+        sum + (parseFloat(p.market_value) || 0), 0
+      );
+      setPositions(result.positions.map((p: any) => {
+        const marketValue = parseFloat(p.market_value) || 0;
+        return {
+          symbol: p.symbol,
+          exchange: p.exchange,
+          quantity: parseFloat(p.quantity) || 0,
+          average_cost: parseFloat(p.avg_cost) || 0,
+          current_price: parseFloat(p.current_price) || 0,
+          current_value: marketValue,
+          unrealized_pnl: parseFloat(p.unrealized_pnl) || 0,
+          unrealized_pnl_pct: parseFloat(p.unrealized_pnl_percent) || 0,
+          weight_pct: totalValue > 0 ? (marketValue / totalValue) * 100 : 0,
+          native_currency: p.native_currency || 'USD'
+        };
+      }));
+    } catch (err) {
+      console.error('Failed to refresh prices:', err);
+    } finally {
+      setIsRefreshingPrices(false);
     }
   };
 
@@ -420,13 +455,27 @@ const Trading = () => {
             {/* Quick Position Overview */}
             <Card className="lg:col-span-2">
               <CardHeader>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Positions</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Positions</h3>
+                  <button
+                    onClick={handleRefreshPrices}
+                    disabled={isRefreshingPrices}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 
+                               border border-gray-300 dark:border-gray-600 rounded-lg 
+                               hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors
+                               disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className={clsx("w-4 h-4", isRefreshingPrices && "animate-spin")} />
+                    {isRefreshingPrices ? 'Refreshing...' : 'Refresh Prices'}
+                  </button>
+                </div>
               </CardHeader>
               <CardContent>
                 {positions.length > 0 ? (
                   <PositionTable
                     positions={positions.slice(0, 5)}
                     onSell={handleSellPosition}
+                    currency={selectedPortfolio?.currency || 'EUR'}
                   />
                 ) : (
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -456,6 +505,7 @@ const Trading = () => {
               <PositionTable
                 positions={positions}
                 onSell={handleSellPosition}
+                currency={selectedPortfolio?.currency || 'EUR'}
               />
             </CardContent>
           </Card>
@@ -571,10 +621,12 @@ const Trading = () => {
                             {trade.quantity}
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-gray-600 dark:text-gray-400">
-                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{(trade.executed_price || trade.price)?.toFixed(2)}
+                            {/* Price is in NATIVE currency */}
+                            {(trade.executed_price || trade.price)?.toFixed(2)} {trade.native_currency || ''}
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-medium text-gray-900 dark:text-white">
-                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'USD'] || '$'}{(trade.total_value || (trade.quantity * trade.price))?.toFixed(2)}
+                            {/* total_value is already in PORTFOLIO currency */}
+                            {CURRENCY_SYMBOLS[selectedPortfolio?.currency || 'EUR'] || '€'}{trade.total_value?.toFixed(2) || '—'}
                           </td>
                           <td className="py-3 pl-4">
                             <span className={clsx(

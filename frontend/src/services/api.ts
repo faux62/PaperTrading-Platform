@@ -197,6 +197,18 @@ export const portfolioApi = {
       average_cost: p.avg_cost ?? p.average_cost ?? 0,
     }));
   },
+
+  refreshPrices: async (portfolioId: number) => {
+    const response = await api.post(`/positions/portfolio/${portfolioId}/refresh-prices`);
+    const positions = response.data.positions || [];
+    return {
+      ...response.data,
+      positions: positions.map((p: any) => ({
+        ...p,
+        average_cost: p.avg_cost ?? p.average_cost ?? 0,
+      })),
+    };
+  },
 };
 
 // ============================================
@@ -556,6 +568,94 @@ export const mlApi = {
   healthCheck: async () => {
     const response = await api.get('/ml/health');
     return response.data;
+  },
+};
+
+// ============================================
+// Universe API (Market Universe)
+// ============================================
+export interface UniverseSymbol {
+  id: number;
+  symbol: string;
+  name: string | null;
+  asset_type: string;
+  region: string;
+  exchange: string | null;
+  currency: string;
+  indices: string[];
+  sector: string | null;
+  industry: string | null;
+  market_cap: number | null;
+  is_active: boolean;
+  priority: number;
+  last_quote_update: string | null;
+}
+
+export interface UniverseStats {
+  total_symbols: number;
+  active_symbols: number;
+  by_region: Record<string, number>;
+  by_asset_type: Record<string, number>;
+  updated_last_hour: number;
+  failed_symbols: number;
+}
+
+export const universeApi = {
+  // Get universe statistics
+  getStats: async (): Promise<UniverseStats> => {
+    const response = await api.get('/universe/stats');
+    return response.data;
+  },
+
+  // Get all symbols with filters
+  getSymbols: async (params?: {
+    region?: string;
+    exchange?: string;
+    index?: string;
+    asset_type?: string;
+    sector?: string;
+    active_only?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<UniverseSymbol[]> => {
+    const response = await api.get('/universe/symbols', { params });
+    return response.data;
+  },
+
+  // Get all symbols (no limit for selector)
+  getAllSymbols: async (): Promise<UniverseSymbol[]> => {
+    const response = await api.get('/universe/symbols', { 
+      params: { active_only: true, limit: 1000 } 
+    });
+    return response.data;
+  },
+
+  // Search symbols
+  search: async (query: string, limit: number = 20): Promise<UniverseSymbol[]> => {
+    const response = await api.get('/universe/search', { 
+      params: { q: query, limit } 
+    });
+    return response.data;
+  },
+
+  // Get available regions
+  getRegions: async (): Promise<string[]> => {
+    const stats = await universeApi.getStats();
+    return Object.keys(stats.by_region);
+  },
+
+  // Get sectors for a region
+  getSectors: async (region?: string): Promise<string[]> => {
+    const symbols = await universeApi.getSymbols({ 
+      region, 
+      active_only: true, 
+      limit: 1000 
+    });
+    const sectors = new Set<string>();
+    symbols.forEach(s => {
+      if (s.sector) sectors.add(s.sector);
+    });
+    return Array.from(sectors).sort();
   },
 };
 

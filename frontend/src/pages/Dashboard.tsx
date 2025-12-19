@@ -253,42 +253,25 @@ const Dashboard = () => {
           }
         }
 
-        // Update positions with current prices
-        if (allPositions.length > 0) {
-          const symbols = [...new Set(allPositions.map(p => p.symbol))];
-          try {
-            const quotes = await marketApi.getQuotes(symbols);
-            allPositions = allPositions.map(pos => {
-              const quote = quotes[pos.symbol];
-              if (quote) {
-                const currentPrice = quote.price || quote.regularMarketPrice || pos.average_cost;
-                const marketValue = currentPrice * pos.quantity;
-                const costBasis = pos.average_cost * pos.quantity;
-                const unrealizedPnl = marketValue - costBasis;
-                const unrealizedPnlPercent = costBasis > 0 ? (unrealizedPnl / costBasis) * 100 : 0;
-                return {
-                  ...pos,
-                  current_price: currentPrice,
-                  market_value: marketValue,
-                  unrealized_pnl: unrealizedPnl,
-                  unrealized_pnl_percent: unrealizedPnlPercent,
-                };
-              }
-              return pos;
-            });
-          } catch (e) {
-            console.warn('Failed to fetch quotes for positions');
-          }
-        }
+        // NOTE: Positions from backend already have:
+        // - market_value: in portfolio currency (EUR) - already FX-converted
+        // - unrealized_pnl: in portfolio currency (EUR) - already FX-converted
+        // - current_price: current price in native currency
+        // - average_cost: avg cost in native currency
+        // DO NOT recalculate these values in frontend as it ignores FX conversion!
 
         setPositions(allPositions);
         setRecentTrades(allTrades.slice(0, 5));
 
-        // Calculate stats
+        // Calculate stats using pre-converted values from backend
+        // market_value and unrealized_pnl are already in portfolio currency (EUR)
         const totalMarketValue = allPositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
-        const totalCostBasis = allPositions.reduce((sum, p) => sum + (p.average_cost * p.quantity), 0);
-        const totalUnrealizedPL = totalMarketValue - totalCostBasis;
+        const totalUnrealizedPL = allPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
         const totalValue = totalCash + totalMarketValue;
+        
+        // Calculate unrealized PL percent based on market value vs cost basis
+        // cost_basis in portfolio currency = market_value - unrealized_pnl
+        const totalCostBasis = totalMarketValue - totalUnrealizedPL;
 
         setStats({
           totalValue,
@@ -297,7 +280,7 @@ const Dashboard = () => {
           unrealizedPL: totalUnrealizedPL,
           unrealizedPLPercent: totalCostBasis > 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0,
           cashAvailable: totalCash,
-          buyingPower: totalCash * 2,
+          buyingPower: totalCash,  // No margin - buying power equals cash
         });
       }
 
@@ -460,7 +443,7 @@ const Dashboard = () => {
                           {position.quantity}
                         </td>
                         <td className="p-4 text-right font-medium text-white">
-                          {formatCurrency(position.market_value || position.average_cost * position.quantity, portfolioCurrency)}
+                          {formatCurrency(position.market_value || 0, portfolioCurrency)}
                         </td>
                         <td className="p-4 text-right">
                           <Badge color={(position.unrealized_pnl || 0) >= 0 ? 'success' : 'danger'}>
