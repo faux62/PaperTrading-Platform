@@ -10,6 +10,8 @@ An ADVISORY-only bot that assists with trading operations:
 IMPORTANT: This bot does NOT execute any trades automatically.
 All actions are suggestions that require user confirmation.
 """
+import asyncio
+
 from app.bot.scheduler import BotScheduler, get_bot_scheduler
 from app.bot.signal_engine import SignalEngine, get_signal_engine
 from app.bot.analyzers import (
@@ -178,6 +180,38 @@ async def initialize_bot() -> BotScheduler:
         func=fx_rate_update_job,
         hours=1
     )
+    
+    # Run FX update at startup if table is empty or data is stale (>1 hour)
+    async def fx_rate_startup_check():
+        from datetime import datetime, timedelta
+        from sqlalchemy import select, func
+        from app.db.models.exchange_rate import ExchangeRate
+        
+        async for db in get_db():
+            # Check if table is empty
+            result = await db.execute(select(func.count(ExchangeRate.id)))
+            count = result.scalar()
+            
+            if count == 0:
+                logger.info("FX rates table is empty - running initial update...")
+                await fx_rate_update_job()
+                return
+            
+            # Check if data is stale (last update > 1 hour ago)
+            result = await db.execute(
+                select(func.max(ExchangeRate.fetched_at))
+            )
+            last_fetch = result.scalar()
+            
+            if last_fetch is None or datetime.utcnow() - last_fetch > timedelta(hours=1):
+                logger.info(f"FX rates are stale (last: {last_fetch}) - running update...")
+                await fx_rate_update_job()
+            else:
+                logger.info(f"FX rates are fresh (last: {last_fetch}) - skipping startup update")
+            break
+    
+    # Schedule startup check
+    asyncio.create_task(fx_rate_startup_check())
     
     # ==========================================================
     # UNIVERSE DATA COLLECTION - ~900 symbols from major indices
