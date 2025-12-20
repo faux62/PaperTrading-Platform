@@ -139,10 +139,12 @@ export function PositionTable({
   };
 
   // Calculate totals
+  // NOTE: current_value and unrealized_pnl are already in portfolio currency (EUR)
+  // Cost basis in portfolio currency = market_value - unrealized_pnl
   const totalValue = positions.reduce((sum, pos) => sum + (pos.current_value || 0), 0);
   const totalPnL = positions.reduce((sum, pos) => sum + (pos.unrealized_pnl || 0), 0);
-  const totalCost = positions.reduce((sum, pos) => sum + (pos.quantity * pos.average_cost), 0);
-  const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
+  const totalCostInPortfolioCurrency = totalValue - totalPnL;
+  const totalPnLPct = totalCostInPortfolioCurrency > 0 ? (totalPnL / totalCostInPortfolioCurrency) * 100 : 0;
 
   if (isLoading) {
     return (
