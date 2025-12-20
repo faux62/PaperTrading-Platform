@@ -273,8 +273,8 @@ class AssetAllocator:
             weight = (value / total_value * 100) if total_value > 0 else Decimal("0")
             
             # Determine asset class
-            asset_class_str = pos.get("asset_class", "").lower()
-            country = pos.get("country", "").lower()
+            asset_class_str = (pos.get("asset_class") or "").lower()
+            country = (pos.get("country") or "").lower()
             
             # Map to asset class
             if asset_class_str == "fixed_income":
@@ -309,7 +309,7 @@ class AssetAllocator:
         for pos in positions:
             value = Decimal(str(pos.get("market_value", 0)))
             weight = (value / total_value * 100) if total_value > 0 else Decimal("0")
-            sector = pos.get("sector", "other").lower()
+            sector = (pos.get("sector") or "other").lower()
             allocations[sector] = allocations.get(sector, Decimal("0")) + weight
         
         return allocations
@@ -407,7 +407,7 @@ class AssetAllocator:
             current_value = Decimal(str(pos.get("market_value", 0)))
             current_weight = (current_value / total_value * 100) if total_value > 0 else Decimal("0")
             
-            sector = pos.get("sector", "other").lower()
+            sector = (pos.get("sector") or "other").lower()
             
             # Find sector drift
             sector_drift = Decimal("0")
@@ -420,7 +420,9 @@ class AssetAllocator:
             if sector_drift > self.profile.rebalancing_rules.drift_threshold_percent:
                 # Sector is overweight, consider selling
                 target_reduction = sector_drift / 100 * total_value
-                trade_value = min(target_reduction / len([p for p in positions if p.get("sector", "").lower() == sector]), current_value * Decimal("0.3"))
+                sector_positions = [p for p in positions if (p.get("sector") or "other").lower() == sector]
+                positions_count = len(sector_positions) if sector_positions else 1
+                trade_value = min(target_reduction / positions_count, current_value * Decimal("0.3"))
                 
                 if trade_value >= min_trade:
                     recommendations.append(RebalanceRecommendation(

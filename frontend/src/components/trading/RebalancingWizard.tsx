@@ -30,7 +30,7 @@ interface AllocationTarget {
 
 interface RebalanceRecommendation {
   symbol: string;
-  action: 'buy' | 'sell' | 'hold';
+  action: 'buy' | 'sell' | 'hold' | 'deploy';
   current_value: number;
   target_value: number;
   trade_value: number;
@@ -459,6 +459,42 @@ export function RebalancingWizard({
             <h4 className="text-sm font-medium text-surface-300 mb-2">
               Orders to Execute ({preview.orders_to_create.length})
             </h4>
+            
+            {/* Show message when no executable orders but there are recommendations */}
+            {preview.orders_to_create.length === 0 && preview.analysis.rebalance_recommendations.length > 0 && (
+              <div className="p-4 rounded-lg bg-surface-800 border border-surface-600">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-white font-medium">Nessun ordine automatico disponibile</p>
+                    <p className="text-sm text-surface-400 mt-1">
+                      Il sistema suggerisce di investire il cash in eccesso, ma non può generare 
+                      ordini automaticamente. Considera di acquistare manualmente titoli per 
+                      bilanciare il portfolio secondo il profilo di rischio selezionato.
+                    </p>
+                    <div className="mt-3 p-2 rounded bg-surface-700">
+                      <p className="text-xs text-surface-300 font-medium">Raccomandazioni:</p>
+                      {preview.analysis.rebalance_recommendations.map((rec, i) => (
+                        <p key={i} className="text-sm text-yellow-400 mt-1">
+                          • {rec.symbol}: {rec.reason}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {preview.orders_to_create.length === 0 && preview.analysis.rebalance_recommendations.length === 0 && (
+              <div className="p-4 rounded-lg bg-surface-800 text-center">
+                <CheckCircle className="h-8 w-8 text-green-500 mx-auto mb-2" />
+                <p className="text-white font-medium">Portfolio bilanciato</p>
+                <p className="text-sm text-surface-400 mt-1">
+                  Non sono necessarie operazioni di ribilanciamento.
+                </p>
+              </div>
+            )}
+            
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {preview.orders_to_create.map((order, idx) => (
                 <div

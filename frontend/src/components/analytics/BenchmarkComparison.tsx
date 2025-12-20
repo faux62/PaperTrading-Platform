@@ -18,12 +18,12 @@ interface BenchmarkData {
   portfolioReturn: number;
   benchmarkReturn: number;
   excessReturn: number;
-  alpha: number;
-  beta: number;
-  trackingError: number;
-  informationRatio: number;
-  upCapture: number;
-  downCapture: number;
+  alpha: number | null;
+  beta: number | null;
+  trackingError: number | null;
+  informationRatio: number | null;
+  upCapture: number | null;
+  downCapture: number | null;
 }
 
 interface BenchmarkComparisonProps {
@@ -104,12 +104,16 @@ const ComparisonBar: React.FC<{
 // Metric row component
 const MetricRow: React.FC<{
   label: string;
-  value: number;
+  value: number | null;
   format?: 'percent' | 'number' | 'ratio';
   description?: string;
   showTrend?: boolean;
-}> = ({ label, value, format = 'number', description, showTrend = false }) => {
+  insufficientDataLabel?: string;
+}> = ({ label, value, format = 'number', description, showTrend = false, insufficientDataLabel = 'Dati insufficienti' }) => {
+  const isInsufficientData = value === null;
+  
   const formatValue = () => {
+    if (isInsufficientData) return insufficientDataLabel;
     switch (format) {
       case 'percent':
         return `${(value * 100).toFixed(2)}%`;
@@ -120,31 +124,32 @@ const MetricRow: React.FC<{
     }
   };
 
-  const isPositive = value > 0;
-  const isNeutral = value === 0;
+  const isPositive = value !== null && value > 0;
+  const isNeutral = value === null || value === 0;
 
   return (
     <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-700 last:border-0">
       <div>
         <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-        {description && (
+        {description && !isInsufficientData && (
           <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
         )}
       </div>
       <div className="flex items-center gap-2">
-        {showTrend && !isNeutral && (
+        {showTrend && !isNeutral && !isInsufficientData && (
           isPositive ? (
             <ArrowUpRight className="w-4 h-4 text-green-500" />
           ) : (
             <ArrowDownRight className="w-4 h-4 text-red-500" />
           )
         )}
-        {showTrend && isNeutral && <Minus className="w-4 h-4 text-gray-400" />}
+        {showTrend && isNeutral && !isInsufficientData && <Minus className="w-4 h-4 text-gray-400" />}
         <span className={clsx(
-          'font-semibold',
-          showTrend && isPositive && 'text-green-600',
-          showTrend && !isPositive && !isNeutral && 'text-red-600',
-          (!showTrend || isNeutral) && 'text-gray-900 dark:text-white'
+          isInsufficientData && 'text-gray-400 dark:text-gray-500 italic text-sm',
+          !isInsufficientData && 'font-semibold',
+          !isInsufficientData && showTrend && isPositive && 'text-green-600',
+          !isInsufficientData && showTrend && !isPositive && !isNeutral && 'text-red-600',
+          !isInsufficientData && (!showTrend || isNeutral) && 'text-gray-900 dark:text-white'
         )}>
           {formatValue()}
         </span>

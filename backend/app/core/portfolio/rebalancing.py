@@ -89,7 +89,7 @@ class RebalancingService:
     ):
         self.db = db
         self.order_manager = order_manager or OrderManager(db)
-        self.execution_engine = execution_engine or ExecutionEngine()
+        self.execution_engine = execution_engine or ExecutionEngine(db)
     
     async def analyze_portfolio(
         self,
@@ -138,6 +138,14 @@ class RebalancingService:
         Returns:
             RebalancePreview with orders to create and estimates
         """
+        # Get portfolio data to access position details
+        portfolio_data = await self._get_portfolio_data(portfolio_id, user_id)
+        if not portfolio_data:
+            raise ValueError(f"Portfolio {portfolio_id} not found")
+        
+        # Build a lookup of positions by symbol for price/quantity info
+        positions_lookup = {p["symbol"]: p for p in portfolio_data["positions"]}
+        
         analysis = await self.analyze_portfolio(portfolio_id, user_id, risk_profile)
         
         warnings = []
@@ -164,9 +172,25 @@ class RebalancingService:
             else:
                 continue
             
-            # Estimate shares (using current price approximation)
-            estimated_price = rec.current_value / max(Decimal("1"), rec.current_weight * 100)
-            estimated_shares = int(abs(rec.trade_value) / max(estimated_price, Decimal("1")))
+            # Get actual price from position data if available, otherwise estimate
+            position_info = positions_lookup.get(rec.symbol)
+            if position_info and position_info.get("current_price"):
+                estimated_price = Decimal(str(position_info["current_price"]))
+                position_quantity = Decimal(str(position_info.get("quantity", 0)))
+            else:
+                # Fallback: estimate price from value/weight ratio
+                estimated_price = rec.current_value / max(Decimal("1"), rec.current_weight) if rec.current_weight > 0 else Decimal("1")
+                position_quantity = Decimal("0")
+            
+            # Calculate shares to trade
+            if estimated_price > 0:
+                estimated_shares = int(abs(rec.trade_value) / estimated_price)
+            else:
+                estimated_shares = 0
+            
+            # For sells, cap at available quantity
+            if trade_type == TradeType.SELL and position_quantity > 0:
+                estimated_shares = min(estimated_shares, int(position_quantity))
             
             if estimated_shares <= 0:
                 warnings.append(f"Cannot calculate shares for {rec.symbol}")
@@ -348,17 +372,37 @@ class RebalancingService:
         if not portfolio:
             return None
         
-        # Calculate totals
+        # Calculate totals - converting to portfolio currency
+        from app.utils.currency import convert
+        
         positions_data = []
         positions_value = Decimal("0")
+        portfolio_currency = portfolio.currency or "EUR"
         
         for pos in portfolio.positions:
-            market_value = Decimal(str(pos.quantity * pos.current_price))
+            # Market value in native currency
+            market_value_native = Decimal(str(pos.quantity * pos.current_price))
+            native_currency = pos.native_currency or "USD"
+            
+            # Convert to portfolio currency
+            if native_currency != portfolio_currency:
+                try:
+                    market_value, _ = await convert(
+                        market_value_native, native_currency, portfolio_currency
+                    )
+                except Exception:
+                    # Fallback: assume 1:1 if conversion fails
+                    market_value = market_value_native
+            else:
+                market_value = market_value_native
+            
             positions_value += market_value
             
             positions_data.append({
                 "symbol": pos.symbol,
-                "market_value": market_value,
+                "market_value": market_value,  # In portfolio currency
+                "market_value_native": market_value_native,  # In native currency
+                "native_currency": native_currency,
                 "quantity": pos.quantity,
                 "current_price": Decimal(str(pos.current_price)),
                 "sector": getattr(pos, "sector", "Unknown"),

@@ -712,14 +712,39 @@ async def execute_batch_orders(
     
     for order_item in sorted_orders:
         try:
-            # Create order
+            symbol_upper = order_item.symbol.upper()
+            
+            # Get native currency from existing position (for sells) or determine from symbol
+            from app.db.models.position import Position
+            from sqlalchemy import select
+            position_stmt = select(Position).where(
+                Position.portfolio_id == request.portfolio_id,
+                Position.symbol == symbol_upper
+            )
+            position_result = await db.execute(position_stmt)
+            position = position_result.scalar_one_or_none()
+            
+            # Determine native currency
+            if position and position.native_currency:
+                native_currency = position.native_currency
+            elif symbol_upper.endswith('.T'):
+                native_currency = 'JPY'
+            elif symbol_upper.endswith('.MI'):
+                native_currency = 'EUR'
+            elif symbol_upper.endswith('.L'):
+                native_currency = 'GBP'
+            else:
+                native_currency = 'USD'
+            
+            # Create order with correct native currency
             order_request = OrderRequest(
                 portfolio_id=request.portfolio_id,
-                symbol=order_item.symbol.upper(),
+                symbol=symbol_upper,
                 trade_type=TradeType(order_item.trade_type),
                 quantity=Decimal(str(order_item.quantity)),
                 order_type=OrderType(order_item.order_type),
                 limit_price=Decimal(str(order_item.limit_price)) if order_item.limit_price else None,
+                native_currency=native_currency,
             )
             
             order_result = await order_manager.create_order(order_request)
@@ -733,9 +758,60 @@ async def execute_batch_orders(
                 failed += 1
                 continue
             
+            # Get current price for execution (reuse position from above)
+            current_price = None
+            
+            # 1. First, try to get price from existing position (fastest)
+            if position and position.current_price:
+                current_price = Decimal(str(position.current_price))
+            
+            # 2. Try orchestrator with different market types
+            if current_price is None:
+                from app.data_providers import orchestrator
+                from app.data_providers.adapters.base import MarketType
+                
+                # Determine market types based on symbol suffix
+                if symbol_upper.endswith('.T'):
+                    market_types = [MarketType.ASIA_STOCK, MarketType.US_STOCK]
+                elif symbol_upper.endswith('.MI') or symbol_upper.endswith('.L'):
+                    market_types = [MarketType.EU_STOCK, MarketType.US_STOCK]
+                else:
+                    market_types = [MarketType.US_STOCK]
+                
+                for market_type in market_types:
+                    try:
+                        quote = await orchestrator.get_quote(symbol_upper, market_type=market_type)
+                        if quote and quote.price:
+                            current_price = Decimal(str(quote.price))
+                            break
+                    except Exception:
+                        continue
+            
+            # 3. Final fallback: yfinance directly
+            if current_price is None:
+                try:
+                    import yfinance as yf
+                    ticker = yf.Ticker(symbol_upper)
+                    hist = ticker.history(period="1d")
+                    if not hist.empty:
+                        current_price = Decimal(str(hist.iloc[-1]["Close"]))
+                except Exception:
+                    pass
+            
+            if current_price is None:
+                results.append(BatchOrderResultItem(
+                    symbol=order_item.symbol,
+                    success=False,
+                    order_id=order_result.order_id,
+                    error="Could not get current price"
+                ))
+                failed += 1
+                continue
+            
             # Execute order immediately (paper trading)
             exec_result = await executor.execute_order(
-                trade_id=order_result.trade_id,
+                trade=order_result.trade,
+                current_price=Decimal(str(current_price)),
                 market_condition=MarketCondition.NORMAL
             )
             
@@ -743,7 +819,7 @@ async def execute_batch_orders(
                 results.append(BatchOrderResultItem(
                     symbol=order_item.symbol,
                     success=True,
-                    order_id=order_result.trade_id,
+                    order_id=order_result.order_id,
                     executed_price=float(exec_result.executed_price) if exec_result.executed_price else None,
                     executed_quantity=int(exec_result.executed_quantity) if exec_result.executed_quantity else None
                 ))
@@ -752,7 +828,7 @@ async def execute_batch_orders(
                 results.append(BatchOrderResultItem(
                     symbol=order_item.symbol,
                     success=False,
-                    order_id=order_result.trade_id,
+                    order_id=order_result.order_id,
                     error=exec_result.message
                 ))
                 failed += 1

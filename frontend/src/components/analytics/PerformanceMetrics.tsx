@@ -18,12 +18,12 @@ import { MetricsCard } from './MetricsCard';
 interface PerformanceData {
   totalReturn: number;
   annualizedReturn: number;
-  volatility: number;
-  sharpeRatio: number;
-  sortinoRatio: number;
-  calmarRatio?: number;
+  volatility: number | null;
+  sharpeRatio: number | null;
+  sortinoRatio: number | null;
+  calmarRatio?: number | null;
   maxDrawdown: number;
-  winRate?: number;
+  winRate?: number | null;
   profitFactor?: number;
 }
 
@@ -62,7 +62,17 @@ export const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({
     );
   }
 
-  const metrics = [
+  interface MetricItem {
+    label: string;
+    value: number | null;
+    format: 'number' | 'percent';
+    change?: number;
+    icon: JSX.Element;
+    trend?: 'up' | 'down' | 'neutral';
+    description?: string;
+  }
+
+  const metrics: MetricItem[] = [
     {
       label: 'Total Return',
       value: data.totalReturn,
@@ -82,24 +92,28 @@ export const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({
       label: 'Volatility',
       value: data.volatility,
       format: 'percent' as const,
-      change: calculateChange(data.volatility, previousPeriodData?.volatility),
+      change: data.volatility !== null ? calculateChange(data.volatility, previousPeriodData?.volatility ?? undefined) : undefined,
       icon: <Activity className="w-5 h-5 text-orange-600" />,
       // Lower volatility is better
-      trend: data.volatility <= (previousPeriodData?.volatility ?? data.volatility) ? 'up' : 'down' as const,
+      trend: data.volatility !== null && previousPeriodData?.volatility !== undefined && previousPeriodData.volatility !== null
+        ? (data.volatility <= previousPeriodData.volatility ? 'up' : 'down' as const) 
+        : undefined,
     },
     {
       label: 'Sharpe Ratio',
       value: data.sharpeRatio,
       format: 'number' as const,
-      change: calculateChange(data.sharpeRatio, previousPeriodData?.sharpeRatio),
+      change: data.sharpeRatio !== null ? calculateChange(data.sharpeRatio, previousPeriodData?.sharpeRatio ?? undefined) : undefined,
       icon: <Award className="w-5 h-5 text-purple-600" />,
-      description: data.sharpeRatio >= 1 ? 'Good' : data.sharpeRatio >= 2 ? 'Excellent' : 'Below average',
+      description: data.sharpeRatio !== null 
+        ? (data.sharpeRatio >= 2 ? 'Excellent' : data.sharpeRatio >= 1 ? 'Good' : 'Below average')
+        : undefined,
     },
     {
       label: 'Sortino Ratio',
       value: data.sortinoRatio,
       format: 'number' as const,
-      change: calculateChange(data.sortinoRatio, previousPeriodData?.sortinoRatio),
+      change: data.sortinoRatio !== null ? calculateChange(data.sortinoRatio, previousPeriodData?.sortinoRatio ?? undefined) : undefined,
       icon: <Target className="w-5 h-5 text-indigo-600" />,
     },
     {
@@ -112,12 +126,12 @@ export const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({
   ];
 
   // Add optional metrics
-  if (data.calmarRatio !== undefined) {
+  if (data.calmarRatio !== undefined && data.calmarRatio !== null) {
     metrics.push({
       label: 'Calmar Ratio',
       value: data.calmarRatio,
       format: 'number' as const,
-      change: calculateChange(data.calmarRatio, previousPeriodData?.calmarRatio),
+      change: calculateChange(data.calmarRatio, previousPeriodData?.calmarRatio ?? undefined),
       icon: <BarChart3 className="w-5 h-5 text-cyan-600" />,
     });
   }
@@ -127,7 +141,7 @@ export const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({
       label: 'Win Rate',
       value: data.winRate,
       format: 'percent' as const,
-      change: calculateChange(data.winRate, previousPeriodData?.winRate),
+      change: data.winRate !== null ? calculateChange(data.winRate, previousPeriodData?.winRate ?? undefined) : undefined,
       icon: <Award className="w-5 h-5 text-emerald-600" />,
     });
   }

@@ -9,7 +9,7 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface MetricsCardProps {
   label: string;
-  value: string | number;
+  value: string | number | null;
   change?: number;
   changeLabel?: string;
   format?: 'number' | 'currency' | 'percent';
@@ -18,6 +18,7 @@ interface MetricsCardProps {
   description?: string;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
+  insufficientDataLabel?: string;
 }
 
 export const MetricsCard: React.FC<MetricsCardProps> = ({
@@ -31,9 +32,14 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
   description,
   className,
   size = 'md',
+  insufficientDataLabel = 'Dati insufficienti',
 }) => {
+  // Check if value is null/undefined (insufficient data)
+  const isInsufficientData = value === null || value === undefined;
+
   // Format the main value
   const formattedValue = React.useMemo(() => {
+    if (isInsufficientData) return insufficientDataLabel;
     if (typeof value === 'string') return value;
 
     switch (format) {
@@ -52,10 +58,10 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
           maximumFractionDigits: 2,
         });
     }
-  }, [value, format]);
+  }, [value, format, isInsufficientData, insufficientDataLabel]);
 
-  // Determine trend from change value if not provided
-  const actualTrend = trend ?? (change !== undefined ? (change > 0 ? 'up' : change < 0 ? 'down' : 'neutral') : undefined);
+  // Determine trend from change value if not provided (only if we have sufficient data)
+  const actualTrend = isInsufficientData ? undefined : (trend ?? (change !== undefined ? (change > 0 ? 'up' : change < 0 ? 'down' : 'neutral') : undefined));
 
   // Trend colors
   const trendColors = {
@@ -101,21 +107,32 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
           <p className={clsx('font-medium text-gray-500 dark:text-gray-400', sizeClasses.label)}>
             {label}
           </p>
-          <p className={clsx('font-bold text-gray-900 dark:text-white mt-1', sizeClasses.value)}>
+          <p className={clsx(
+            'font-bold mt-1', 
+            sizeClasses.value,
+            isInsufficientData 
+              ? 'text-gray-400 dark:text-gray-500 italic text-base' 
+              : 'text-gray-900 dark:text-white'
+          )}>
             {formattedValue}
           </p>
-          {description && (
+          {description && !isInsufficientData && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{description}</p>
           )}
         </div>
         {icon && (
-          <div className="flex-shrink-0 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+          <div className={clsx(
+            "flex-shrink-0 p-2 rounded-lg",
+            isInsufficientData 
+              ? "bg-gray-100 dark:bg-gray-700/50 opacity-50" 
+              : "bg-gray-50 dark:bg-gray-700"
+          )}>
             {icon}
           </div>
         )}
       </div>
 
-      {change !== undefined && (
+      {change !== undefined && !isInsufficientData && (
         <div className="mt-3 flex items-center gap-2">
           <span
             className={clsx(

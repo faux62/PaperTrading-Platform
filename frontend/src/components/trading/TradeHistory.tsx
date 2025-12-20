@@ -36,10 +36,26 @@ interface Trade {
   created_at: string;
   executed_at: string | null;
   notes: string | null;
+  native_currency?: string;
+  exchange_rate?: number;
 }
+
+// Currency symbol mapping
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  CHF: 'CHF ',
+  CAD: 'C$',
+  AUD: 'A$',
+  HKD: 'HK$',
+  CNY: '¥',
+};
 
 interface TradeHistoryProps {
   portfolioId: number | string;
+  portfolioCurrency?: string;
   onTradeClick?: (trade: Trade) => void;
 }
 
@@ -51,7 +67,7 @@ const STATUS_CONFIG = {
   rejected: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10' },
 };
 
-export function TradeHistory({ portfolioId, onTradeClick }: TradeHistoryProps) {
+export function TradeHistory({ portfolioId, portfolioCurrency = 'EUR', onTradeClick }: TradeHistoryProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
@@ -132,12 +148,21 @@ export function TradeHistory({ portfolioId, onTradeClick }: TradeHistoryProps) {
     }
   };
 
-  const formatCurrency = (value: number | null) => {
+  const formatCurrency = (value: number | null, currency: string = 'USD') => {
     if (value === null) return '-';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(value);
+    // Use Intl for proper formatting
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: currency === 'JPY' ? 0 : 2,
+        maximumFractionDigits: currency === 'JPY' ? 0 : 2,
+      }).format(value);
+    } catch {
+      // Fallback for unknown currencies
+      const symbol = CURRENCY_SYMBOLS[currency] || currency + ' ';
+      return `${symbol}${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -267,20 +292,20 @@ export function TradeHistory({ portfolioId, onTradeClick }: TradeHistoryProps) {
                         </div>
                         <p className="text-sm text-surface-400">
                           {trade.trade_type.toUpperCase()} {trade.quantity} shares
-                          {trade.executed_price && ` @ ${formatCurrency(trade.executed_price)}`}
+                          {trade.executed_price && ` @ ${formatCurrency(trade.executed_price, trade.native_currency || 'USD')}`}
                         </p>
                       </div>
                     </div>
                     
                     <div className="text-right">
                       <p className="font-mono text-white">
-                        {formatCurrency(trade.total_value)}
+                        {formatCurrency(trade.total_value, portfolioCurrency)}
                       </p>
                       {trade.realized_pnl !== null && trade.realized_pnl !== 0 && (
                         <p className={`text-sm ${
                           trade.realized_pnl >= 0 ? 'text-green-500' : 'text-red-500'
                         }`}>
-                          P&L: {formatCurrency(trade.realized_pnl)}
+                          P&L: {formatCurrency(trade.realized_pnl, portfolioCurrency)}
                         </p>
                       )}
                       <p className="text-xs text-surface-500">

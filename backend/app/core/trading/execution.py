@@ -317,7 +317,7 @@ class ExecutionEngine:
             logger.info(
                 f"Executed market order {trade.id}: {trade.trade_type.value} "
                 f"{trade.quantity} {trade.symbol} @ ${executed_price:.4f} "
-                f"(spread: {spread_pct:.4%}, slippage: {slippage:.4%}, commission: ${commission:.2f})"
+                f"(spread: {spread_pct:.4%}, slippage: {slippage:.4%}, commission: ${commission_portfolio:.2f})"
             )
             
             return ExecutionResult(

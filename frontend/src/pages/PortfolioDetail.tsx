@@ -587,7 +587,7 @@ const PortfolioDetail = () => {
         )}
 
         {activeTab === 'history' && (
-          <TradeHistory portfolioId={portfolioId} />
+          <TradeHistory portfolioId={portfolioId} portfolioCurrency={portfolioCurrency} />
         )}
       </div>
 
