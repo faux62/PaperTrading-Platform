@@ -20,6 +20,43 @@ def _has_providers() -> bool:
     return len(failover_manager._providers) > 0
 
 
+def _detect_market_type(symbol: str) -> MarketType:
+    """
+    Detect market type from symbol format.
+    
+    Args:
+        symbol: Ticker symbol (e.g., AAPL, ENI.MI, ^GSPC, BTC-USD)
+        
+    Returns:
+        Appropriate MarketType enum value
+    """
+    symbol = symbol.upper()
+    
+    # Index
+    if symbol.startswith("^"):
+        return MarketType.INDEX
+    
+    # Crypto
+    if "-USD" in symbol or "-EUR" in symbol or "-BTC" in symbol:
+        return MarketType.CRYPTO
+    
+    # European markets
+    if any(symbol.endswith(suffix) for suffix in [".L", ".MI", ".PA", ".DE", ".AS", ".BR", ".MC", ".SW"]):
+        return MarketType.EU_STOCK
+    
+    # Asian markets  
+    if any(symbol.endswith(suffix) for suffix in [".T", ".HK", ".SS", ".SZ", ".KS", ".TW", ".SI"]):
+        return MarketType.ASIA_STOCK
+    
+    # ETF (common US ETFs)
+    etf_symbols = {"SPY", "QQQ", "IWM", "DIA", "VOO", "VTI", "GLD", "SLV", "TLT", "XLF", "XLE", "XLK"}
+    if symbol in etf_symbols:
+        return MarketType.ETF
+    
+    # Default to US stock
+    return MarketType.US_STOCK
+
+
 # Market indices configuration - Global coverage
 MARKET_INDICES = {
     # US Indices
@@ -57,8 +94,6 @@ async def get_market_indices(
     
     Regions: US, EU, Asia, Crypto, Commodities
     """
-    import yfinance as yf
-    
     # Filter indices by region if specified
     if region:
         indices_to_fetch = [k for k, v in MARKET_INDICES.items() if v["region"].lower() == region.lower()]
@@ -68,39 +103,27 @@ async def get_market_indices(
     
     results = {}
     
-    # Use yfinance directly for indices (orchestrator doesn't support them well)
+    # Use orchestrator for indices
     for symbol in indices_to_fetch:
         info = MARKET_INDICES.get(symbol, {})
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="2d")
+            market_type = _detect_market_type(symbol)
+            quote = await orchestrator.get_quote(
+                symbol=symbol,
+                market_type=market_type
+            )
             
-            if not hist.empty and len(hist) >= 1:
-                latest = hist.iloc[-1]
-                price = float(latest["Close"])
-                
-                # Calculate change from previous day or open
-                if len(hist) >= 2:
-                    prev_close = float(hist.iloc[-2]["Close"])
-                else:
-                    prev_close = float(latest.get("Open", price))
-                
-                change = price - prev_close
-                change_pct = (change / prev_close * 100) if prev_close else 0
-                
-                results[symbol] = {
-                    "symbol": symbol,
-                    "name": info.get("name", symbol),
-                    "region": info.get("region", "Other"),
-                    "type": info.get("type", "index"),
-                    "price": price,
-                    "change": change,
-                    "change_percent": round(change_pct, 2),
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "source": "yfinance",
-                }
-            else:
-                raise ValueError("No data")
+            results[symbol] = {
+                "symbol": symbol,
+                "name": info.get("name", quote.name or symbol),
+                "region": info.get("region", "Other"),
+                "type": info.get("type", "index"),
+                "price": float(quote.price),
+                "change": float(quote.change) if quote.change else 0,
+                "change_percent": round(float(quote.change_percent), 2) if quote.change_percent else 0,
+                "timestamp": quote.timestamp.isoformat(),
+                "source": quote.provider,
+            }
         except Exception as e:
             logger.warning(f"Failed to fetch index {symbol}: {e}")
             results[symbol] = {
@@ -127,79 +150,47 @@ async def get_quote(
     """
     Get current quote for symbol.
     
-    Uses real data providers when available, falls back to mock data.
+    Automatically detects market type from symbol suffix:
+    - .L = London, .MI = Milan, .PA = Paris, .DE = Frankfurt (EU)
+    - .T = Tokyo, .HK = Hong Kong (Asia)
+    - ^XXX = Index
+    - XXX-USD = Crypto
     """
     symbol = symbol.upper()
     
-    # Try real providers first
-    if _has_providers():
-        try:
-            quote = await orchestrator.get_quote(
-                symbol,
-                market_type=MarketType.US_STOCK,
-                force_refresh=force_refresh,
-            )
-            
-            return {
-                "symbol": quote.symbol,
-                "name": getattr(quote, 'name', None) or symbol,
-                "exchange": quote.exchange or "",
-                "price": float(quote.price),
-                "change": float(quote.change) if quote.change else 0,
-                "change_percent": float(quote.change_percent) if quote.change_percent else 0,
-                "volume": quote.volume or 0,
-                "bid": float(quote.bid) if quote.bid else float(quote.price) - 0.01,
-                "ask": float(quote.ask) if quote.ask else float(quote.price) + 0.01,
-                "high": float(quote.day_high) if quote.day_high else float(quote.price),
-                "low": float(quote.day_low) if quote.day_low else float(quote.price),
-                "open": float(quote.day_open) if quote.day_open else float(quote.price),
-                "previous_close": float(quote.prev_close) if quote.prev_close else float(quote.price),
-                "timestamp": quote.timestamp.isoformat(),
-                "source": quote.provider,
-            }
-        except ProviderError as e:
-            logger.warning(f"Provider error for {symbol}: {e}")
-        except Exception as e:
-            logger.error(f"Error fetching quote for {symbol}: {e}")
+    # Determine market type from symbol
+    market_type = _detect_market_type(symbol)
     
-    # Try yfinance as fallback (real data source)
     try:
-        import yfinance as yf
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="5d")
-        
-        if hist.empty:
-            raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
-        
-        latest = hist.iloc[-1]
-        price = float(latest["Close"])
-        prev_close = float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else price
-        change = price - prev_close
-        change_pct = (change / prev_close * 100) if prev_close else 0
-        
-        # Get ticker info for name
-        info = ticker.info
+        quote = await orchestrator.get_quote(
+            symbol,
+            market_type=market_type,
+            force_refresh=force_refresh,
+        )
         
         return {
-            "symbol": symbol,
-            "name": info.get("shortName") or info.get("longName") or symbol,
-            "exchange": info.get("exchange", ""),
-            "price": round(price, 2),
-            "change": round(change, 2),
-            "change_percent": round(change_pct, 2),
-            "volume": int(latest.get("Volume", 0)),
-            "bid": round(price - 0.01, 2),
-            "ask": round(price + 0.01, 2),
-            "high": round(float(latest.get("High", price)), 2),
-            "low": round(float(latest.get("Low", price)), 2),
-            "open": round(float(latest.get("Open", price)), 2),
-            "previous_close": round(prev_close, 2),
-            "timestamp": datetime.utcnow().isoformat(),
-            "source": "yfinance",
+            "symbol": quote.symbol,
+            "name": getattr(quote, 'name', None) or symbol,
+            "exchange": quote.exchange or "",
+            "price": float(quote.price),
+            "change": float(quote.change) if quote.change else 0,
+            "change_percent": float(quote.change_percent) if quote.change_percent else 0,
+            "volume": quote.volume or 0,
+            "bid": float(quote.bid) if quote.bid else float(quote.price) - 0.01,
+            "ask": float(quote.ask) if quote.ask else float(quote.price) + 0.01,
+            "high": float(quote.day_high) if quote.day_high else float(quote.price),
+            "low": float(quote.day_low) if quote.day_low else float(quote.price),
+            "open": float(quote.day_open) if quote.day_open else float(quote.price),
+            "previous_close": float(quote.prev_close) if quote.prev_close else float(quote.price),
+            "timestamp": quote.timestamp.isoformat(),
+            "source": quote.provider,
         }
-    except Exception as e:
-        logger.error(f"yfinance also failed for {symbol}: {e}")
+    except ProviderError as e:
+        logger.warning(f"Provider error for {symbol}: {e}")
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found or unavailable")
+    except Exception as e:
+        logger.error(f"Error fetching quote for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching quote: {str(e)}")
 
 
 @router.get("/quotes")
@@ -213,67 +204,29 @@ async def get_quotes(
     quotes = []
     errors = []
     
-    # Try real providers first
-    if _has_providers():
+    # Fetch quotes for each symbol, detecting market type
+    for sym in symbol_list:
         try:
-            result = await orchestrator.get_quotes(
-                symbol_list,
-                market_type=MarketType.US_STOCK,
+            market_type = _detect_market_type(sym)
+            quote = await orchestrator.get_quote(
+                sym,
+                market_type=market_type,
                 force_refresh=force_refresh,
             )
             
-            for symbol, quote in result.items():
-                quotes.append({
-                    "symbol": quote.symbol,
-                    "name": getattr(quote, 'name', None) or symbol,
-                    "exchange": quote.exchange or "",
-                    "price": float(quote.price),
-                    "change": float(quote.change) if quote.change else 0,
-                    "change_percent": float(quote.change_percent) if quote.change_percent else 0,
-                    "volume": quote.volume or 0,
-                    "timestamp": quote.timestamp.isoformat(),
-                    "source": quote.provider,
-                })
-            
-            # Check for missing symbols
-            fetched = set(result.keys())
-            for sym in symbol_list:
-                if sym not in fetched:
-                    errors.append({"symbol": sym, "error": "Not found"})
-            
-            return {"quotes": quotes, "count": len(quotes), "errors": errors}
-            
-        except Exception as e:
-            logger.error(f"Error fetching quotes: {e}")
-    
-    # yfinance fallback for missing symbols
-    import yfinance as yf
-    for sym in symbol_list:
-        try:
-            ticker = yf.Ticker(sym)
-            hist = ticker.history(period="5d")
-            if hist.empty:
-                errors.append({"symbol": sym, "error": "Not found"})
-                continue
-            
-            latest = hist.iloc[-1]
-            price = float(latest["Close"])
-            prev_close = float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else price
-            change = price - prev_close
-            change_pct = (change / prev_close * 100) if prev_close else 0
-            
             quotes.append({
-                "symbol": sym,
-                "name": ticker.info.get("shortName", sym),
-                "exchange": ticker.info.get("exchange", ""),
-                "price": round(price, 2),
-                "change": round(change, 2),
-                "change_percent": round(change_pct, 2),
-                "volume": int(latest.get("Volume", 0)),
-                "timestamp": datetime.utcnow().isoformat(),
-                "source": "yfinance",
+                "symbol": quote.symbol,
+                "name": getattr(quote, 'name', None) or sym,
+                "exchange": quote.exchange or "",
+                "price": float(quote.price),
+                "change": float(quote.change) if quote.change else 0,
+                "change_percent": float(quote.change_percent) if quote.change_percent else 0,
+                "volume": quote.volume or 0,
+                "timestamp": quote.timestamp.isoformat(),
+                "source": quote.provider,
             })
         except Exception as e:
+            logger.warning(f"Failed to get quote for {sym}: {e}")
             errors.append({"symbol": sym, "error": str(e)})
     
     return {"quotes": quotes, "count": len(quotes), "errors": errors}
@@ -286,58 +239,70 @@ async def get_history(
     timeframe: str = Query("auto", description="Timeframe: auto, 1m, 5m, 15m, 1h, 1d"),
 ):
     """Get historical OHLCV data. PUBLIC endpoint."""
-    import yfinance as yf
-    
     symbol = symbol.upper()
+    market_type = _detect_market_type(symbol)
     
-    # Intelligent period and interval mapping for good chart display
-    # yfinance: period is how far back, interval is bar size
-    period_config = {
-        "1D": {"period": "1d", "interval": "5m"},    # 1 day of 5-min bars
-        "1W": {"period": "5d", "interval": "15m"},   # 5 days of 15-min bars  
-        "1M": {"period": "1mo", "interval": "1d"},   # 1 month of daily bars
-        "3M": {"period": "3mo", "interval": "1d"},   # 3 months of daily bars
-        "1Y": {"period": "1y", "interval": "1d"},    # 1 year of daily bars
-        "5Y": {"period": "5y", "interval": "1wk"},   # 5 years of weekly bars
+    # Period mapping to days
+    period_days = {
+        "1D": 1,
+        "1W": 7,
+        "1M": 30,
+        "3M": 90,
+        "1Y": 365,
+        "5Y": 1825,
     }
+    days = period_days.get(period.upper(), 30)
     
-    config = period_config.get(period.upper(), {"period": "1mo", "interval": "1d"})
-    yf_period = config["period"]
-    yf_interval = config["interval"] if timeframe == "auto" else timeframe
+    # Timeframe/interval mapping
+    timeframe_map = {
+        "1D": "5m",    # 1 day of 5-min bars
+        "1W": "15m",   # 5 days of 15-min bars  
+        "1M": "1d",    # 1 month of daily bars
+        "3M": "1d",    # 3 months of daily bars
+        "1Y": "1d",    # 1 year of daily bars
+        "5Y": "1wk",   # 5 years of weekly bars
+    }
+    interval = timeframe_map.get(period.upper(), "1d") if timeframe == "auto" else timeframe
     
-    # Use yfinance directly for reliable data
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=yf_period, interval=yf_interval)
+        # Use orchestrator for historical data
+        bars = await orchestrator.get_historical(
+            symbol=symbol,
+            market_type=market_type,
+            days=days,
+            interval=interval
+        )
         
-        if hist.empty:
+        if not bars:
             raise HTTPException(status_code=404, detail=f"No historical data for {symbol}")
         
         data = []
-        for idx, row in hist.iterrows():
+        for bar in bars:
             # Format date based on interval
-            if yf_interval in ["1m", "5m", "15m", "1h"]:
-                date_str = idx.strftime("%Y-%m-%d %H:%M")
+            if interval in ["1m", "5m", "15m", "1h"]:
+                date_str = bar.timestamp.strftime("%Y-%m-%d %H:%M")
             else:
-                date_str = idx.strftime("%Y-%m-%d")
+                date_str = bar.timestamp.strftime("%Y-%m-%d")
             
             data.append({
                 "date": date_str,
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row["Volume"]) if row["Volume"] > 0 else 0,
+                "open": round(float(bar.open), 2),
+                "high": round(float(bar.high), 2),
+                "low": round(float(bar.low), 2),
+                "close": round(float(bar.close), 2),
+                "volume": int(bar.volume) if bar.volume else 0,
             })
         
         return {
             "symbol": symbol,
             "period": period,
-            "timeframe": yf_interval,
+            "timeframe": interval,
             "data": data,
-            "source": "yfinance",
+            "source": bars[0].provider if bars else "orchestrator",
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching history for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
@@ -354,112 +319,84 @@ async def search_symbols(
     Searches by ticker symbol and company name.
     Returns symbol, name, exchange, sector, type, and current price.
     """
-    import yfinance as yf
-    
     query = query.strip().upper()
     results = []
     
     # First, try direct symbol lookup if query looks like a ticker
     if len(query) <= 6 and query.isalpha():
         try:
-            ticker = yf.Ticker(query)
-            info = ticker.info
+            market_type = _detect_market_type(query)
+            quote = await orchestrator.get_quote(query, market_type=market_type)
+            company_info = await orchestrator.get_company_info(query)
             
-            # Check if valid ticker
-            if info.get("regularMarketPrice") or info.get("previousClose"):
-                price = info.get("regularMarketPrice") or info.get("previousClose") or 0
+            if quote and quote.price:
                 results.append({
                     "symbol": query,
-                    "name": info.get("shortName") or info.get("longName") or query,
-                    "exchange": info.get("exchange", ""),
-                    "sector": info.get("sector", ""),
-                    "type": info.get("quoteType", "EQUITY"),
-                    "price": round(float(price), 2) if price else None,
-                    "currency": info.get("currency", "USD"),
+                    "name": company_info.get("shortName") or company_info.get("longName") or getattr(quote, 'name', None) or query,
+                    "exchange": quote.exchange or company_info.get("exchange", ""),
+                    "sector": company_info.get("sector", ""),
+                    "type": company_info.get("quoteType", "EQUITY"),
+                    "price": round(float(quote.price), 2),
+                    "currency": company_info.get("currency", "USD"),
                 })
         except Exception as e:
             logger.debug(f"Direct lookup failed for {query}: {e}")
     
-    # Use yfinance search for broader results
+    # Use orchestrator search for broader results
     try:
-        # Try with .search (available in newer yfinance)
-        search_results = yf.Tickers(query)
+        search_results = await orchestrator.search_symbols(query, limit=limit)
         
-        # Also try common variations
-        variations = [query]
-        if len(query) >= 2:
-            # Try with common suffixes for international stocks
-            for suffix in ["", ".L", ".DE", ".PA", ".MI", ".T", ".HK"]:
-                if f"{query}{suffix}" not in variations:
-                    variations.append(f"{query}{suffix}")
-        
-        for sym in variations[:10]:  # Limit variations to check
-            if len(results) >= limit:
-                break
+        for item in search_results:
+            sym = item.get("symbol", "").upper()
             if any(r["symbol"] == sym for r in results):
                 continue
             
-            try:
-                ticker = yf.Ticker(sym)
-                info = ticker.info
-                
-                # Skip if no valid data
-                if not (info.get("regularMarketPrice") or info.get("previousClose")):
-                    continue
-                
-                price = info.get("regularMarketPrice") or info.get("previousClose") or 0
-                name = info.get("shortName") or info.get("longName") or sym
-                
-                # Filter: include if symbol matches or name contains query
-                if query in sym.upper() or query.lower() in name.lower():
-                    results.append({
-                        "symbol": sym.upper(),
-                        "name": name,
-                        "exchange": info.get("exchange", ""),
-                        "sector": info.get("sector", ""),
-                        "type": info.get("quoteType", "EQUITY"),
-                        "price": round(float(price), 2) if price else None,
-                        "currency": info.get("currency", "USD"),
-                    })
-            except Exception:
-                continue
+            # Get current price for each result
+            price = item.get("price")
+            if not price:
+                try:
+                    market_type = _detect_market_type(sym)
+                    quote = await orchestrator.get_quote(sym, market_type=market_type)
+                    price = float(quote.price) if quote else None
+                except Exception:
+                    price = None
+            
+            results.append({
+                "symbol": sym,
+                "name": item.get("name", sym),
+                "exchange": item.get("exchange", ""),
+                "sector": item.get("sector", ""),
+                "type": item.get("type", "EQUITY"),
+                "price": round(float(price), 2) if price else None,
+                "currency": item.get("currency", "USD"),
+            })
+            
+            if len(results) >= limit:
+                break
                 
     except Exception as e:
         logger.warning(f"Search error: {e}")
     
-    # If no results yet, try searching by name patterns in common stocks
-    if not results:
-        # Common large-cap symbols to search through
-        common_symbols = [
-            "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA",
-            "JPM", "V", "JNJ", "WMT", "MA", "PG", "HD", "DIS", "NFLX", "PYPL",
-            "INTC", "AMD", "CRM", "ORCL", "IBM", "CSCO", "ADBE", "QCOM", "TXN",
-            "BA", "GE", "CAT", "MMM", "HON", "UPS", "FDX", "RTX", "LMT",
-            "KO", "PEP", "MCD", "SBUX", "NKE", "COST", "TGT", "LOW",
-            "BAC", "WFC", "C", "GS", "MS", "AXP", "BLK", "SCHW",
-            "UNH", "PFE", "MRK", "ABBV", "LLY", "BMY", "TMO", "ABT",
-            "XOM", "CVX", "COP", "SLB", "EOG", "OXY",
-            "SPY", "QQQ", "IWM", "DIA", "VOO", "VTI", "GLD", "SLV"
-        ]
-        
-        for sym in common_symbols:
+    # If no results yet, try common variations for international stocks
+    if not results and len(query) >= 2:
+        for suffix in [".L", ".DE", ".PA", ".MI", ".T", ".HK"]:
+            sym = f"{query}{suffix}"
             if len(results) >= limit:
                 break
             try:
-                ticker = yf.Ticker(sym)
-                info = ticker.info
-                name = info.get("shortName") or info.get("longName") or sym
+                market_type = _detect_market_type(sym)
+                quote = await orchestrator.get_quote(sym, market_type=market_type)
+                company_info = await orchestrator.get_company_info(sym)
                 
-                if query in sym or query.lower() in name.lower():
-                    price = info.get("regularMarketPrice") or info.get("previousClose") or 0
+                if quote and quote.price:
                     results.append({
                         "symbol": sym,
-                        "name": name,
-                        "exchange": info.get("exchange", ""),
-                        "sector": info.get("sector", ""),
-                        "type": info.get("quoteType", "EQUITY"),
-                        "price": round(float(price), 2) if price else None,
-                        "currency": info.get("currency", "USD"),
+                        "name": company_info.get("shortName") or getattr(quote, 'name', None) or sym,
+                        "exchange": quote.exchange or company_info.get("exchange", ""),
+                        "sector": company_info.get("sector", ""),
+                        "type": company_info.get("quoteType", "EQUITY"),
+                        "price": round(float(quote.price), 2),
+                        "currency": company_info.get("currency", "USD"),
                     })
             except Exception:
                 continue

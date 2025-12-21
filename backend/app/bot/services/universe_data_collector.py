@@ -183,39 +183,8 @@ class UniverseDataCollector:
                 }
                 logger.debug(f"Fetched quote for {symbol}: ${quote.price}")
             else:
-                # FALLBACK: Try yfinance directly when orchestrator fails
-                # This bypasses rate-limited providers
-                try:
-                    import yfinance as yf
-                    ticker = yf.Ticker(symbol)
-                    hist = ticker.history(period="1d")
-                    
-                    if not hist.empty:
-                        latest = hist.iloc[-1]
-                        price = float(latest["Close"])
-                        
-                        # Get previous close for change calculation
-                        prev_close = float(latest.get("Open", price))
-                        change = price - prev_close
-                        change_pct = (change / prev_close * 100) if prev_close else 0
-                        
-                        quotes[symbol] = {
-                            "price": price,
-                            "change": change,
-                            "change_percent": change_pct,
-                            "volume": int(latest.get("Volume", 0)),
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "bid": None,
-                            "ask": None,
-                            "day_high": float(latest.get("High", price)),
-                            "day_low": float(latest.get("Low", price)),
-                            "prev_close": prev_close,
-                        }
-                        logger.debug(f"yfinance fallback for {symbol}: ${price}")
-                    else:
-                        logger.debug(f"All providers (incl. yfinance fallback) failed for {symbol}")
-                except Exception as yf_err:
-                    logger.debug(f"yfinance fallback failed for {symbol}: {yf_err}")
+                # Log failure - orchestrator already handles yfinance as internal fallback
+                logger.debug(f"All providers failed for {symbol} via orchestrator")
         
         return quotes
     
@@ -455,10 +424,10 @@ async def run_universe_eod_collection(db: AsyncSession) -> Dict:
 
 async def enrich_symbol_names(db: AsyncSession, limit: int = 50) -> Dict:
     """
-    Enrich universe symbols with company names using yfinance.
+    Enrich universe symbols with company names using orchestrator.
     
     This runs periodically to fill in missing symbol names.
-    Uses yfinance directly for best name coverage.
+    Uses orchestrator's get_company_info for centralized access.
     
     Args:
         db: Database session
@@ -467,7 +436,7 @@ async def enrich_symbol_names(db: AsyncSession, limit: int = 50) -> Dict:
     Returns:
         Stats dict with updated count
     """
-    import yfinance as yf
+    from app.data_providers import orchestrator
     
     stats = {"total": 0, "updated": 0, "failed": 0}
     
@@ -497,9 +466,8 @@ async def enrich_symbol_names(db: AsyncSession, limit: int = 50) -> Dict:
         
         for entry in batch:
             try:
-                # Use yfinance to get ticker info
-                ticker = yf.Ticker(entry.symbol)
-                info = ticker.info
+                # Use orchestrator to get company info
+                info = await orchestrator.get_company_info(entry.symbol)
                 
                 if info:
                     # Get company name

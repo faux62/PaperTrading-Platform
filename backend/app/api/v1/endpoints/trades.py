@@ -245,23 +245,28 @@ async def create_order(
                 if request.limit_price and request.limit_price > 0:
                     execution_price = request.limit_price
                 else:
-                    # Second try: fetch from orchestrator
+                    # Fetch from orchestrator with market type detection
                     try:
                         from app.data_providers import orchestrator
-                        quote = await orchestrator.get_quote(request.symbol)
+                        from app.data_providers.market_types import MarketType
+                        
+                        # Detect market type from symbol
+                        symbol_upper = request.symbol.upper()
+                        if symbol_upper.endswith('.T'):
+                            market_type = MarketType.ASIA_STOCK
+                        elif symbol_upper.endswith(('.MI', '.L', '.DE', '.PA', '.AS', '.SW')):
+                            market_type = MarketType.EU_STOCK
+                        elif symbol_upper.startswith('^'):
+                            market_type = MarketType.INDEX
+                        elif '-USD' in symbol_upper or symbol_upper in ['BTC', 'ETH', 'SOL']:
+                            market_type = MarketType.CRYPTO
+                        else:
+                            market_type = MarketType.US_STOCK
+                        
+                        quote = await orchestrator.get_quote(request.symbol, market_type=market_type)
                         execution_price = Decimal(str(quote.price))
                     except Exception as e:
-                        logger.warning(f"Orchestrator quote failed for {request.symbol}: {e}")
-                        
-                        # Third try: fetch from yfinance
-                        try:
-                            import yfinance as yf
-                            ticker = yf.Ticker(request.symbol)
-                            hist = ticker.history(period="5d")
-                            if not hist.empty:
-                                execution_price = Decimal(str(round(float(hist.iloc[-1]["Close"]), 2)))
-                        except Exception as e2:
-                            logger.error(f"yfinance also failed for {request.symbol}: {e2}")
+                        logger.error(f"Failed to get quote for {request.symbol}: {e}")
                 
                 if execution_price is None:
                     result.success = False
@@ -765,38 +770,29 @@ async def execute_batch_orders(
             if position and position.current_price:
                 current_price = Decimal(str(position.current_price))
             
-            # 2. Try orchestrator with different market types
+            # 2. Use orchestrator with market type detection
             if current_price is None:
                 from app.data_providers import orchestrator
-                from app.data_providers.adapters.base import MarketType
+                from app.data_providers.market_types import MarketType
                 
-                # Determine market types based on symbol suffix
+                # Determine market type based on symbol suffix
                 if symbol_upper.endswith('.T'):
-                    market_types = [MarketType.ASIA_STOCK, MarketType.US_STOCK]
-                elif symbol_upper.endswith('.MI') or symbol_upper.endswith('.L'):
-                    market_types = [MarketType.EU_STOCK, MarketType.US_STOCK]
+                    market_type = MarketType.ASIA_STOCK
+                elif symbol_upper.endswith(('.MI', '.L', '.DE', '.PA', '.AS', '.SW')):
+                    market_type = MarketType.EU_STOCK
+                elif symbol_upper.startswith('^'):
+                    market_type = MarketType.INDEX
+                elif '-USD' in symbol_upper:
+                    market_type = MarketType.CRYPTO
                 else:
-                    market_types = [MarketType.US_STOCK]
+                    market_type = MarketType.US_STOCK
                 
-                for market_type in market_types:
-                    try:
-                        quote = await orchestrator.get_quote(symbol_upper, market_type=market_type)
-                        if quote and quote.price:
-                            current_price = Decimal(str(quote.price))
-                            break
-                    except Exception:
-                        continue
-            
-            # 3. Final fallback: yfinance directly
-            if current_price is None:
                 try:
-                    import yfinance as yf
-                    ticker = yf.Ticker(symbol_upper)
-                    hist = ticker.history(period="1d")
-                    if not hist.empty:
-                        current_price = Decimal(str(hist.iloc[-1]["Close"]))
-                except Exception:
-                    pass
+                    quote = await orchestrator.get_quote(symbol_upper, market_type=market_type)
+                    if quote and quote.price:
+                        current_price = Decimal(str(quote.price))
+                except Exception as e:
+                    logger.warning(f"Failed to get price for {symbol_upper}: {e}")
             
             if current_price is None:
                 results.append(BatchOrderResultItem(

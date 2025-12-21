@@ -432,6 +432,129 @@ class ProviderOrchestrator:
         
         return result
     
+    # ==================== Company Info & Search Operations ====================
+    
+    async def get_company_info(self, symbol: str) -> Optional[dict[str, Any]]:
+        """
+        Get company information for a symbol.
+        
+        Uses providers that support company info (primarily yfinance).
+        
+        Args:
+            symbol: Ticker symbol
+            
+        Returns:
+            Dictionary with company info or None if not found
+        """
+        symbol = symbol.upper()
+        
+        # Try providers that support company info
+        # Currently only yfinance has this capability
+        yfinance_provider = failover_manager.get_provider("yfinance")
+        if yfinance_provider and hasattr(yfinance_provider, 'get_company_info'):
+            try:
+                info = await yfinance_provider.get_company_info(symbol)
+                if info:
+                    return info
+            except Exception as e:
+                logger.warning(f"Failed to get company info for {symbol}: {e}")
+        
+        return None
+    
+    async def search_symbols(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """
+        Search for symbols by name or ticker.
+        
+        Uses providers that support search functionality.
+        
+        Args:
+            query: Search query (symbol or company name)
+            limit: Maximum results to return
+            
+        Returns:
+            List of matching symbols with metadata
+        """
+        query = query.strip().upper()
+        results: list[dict[str, Any]] = []
+        
+        # Try yfinance provider for search
+        yfinance_provider = failover_manager.get_provider("yfinance")
+        if yfinance_provider and hasattr(yfinance_provider, 'search_symbols'):
+            try:
+                yf_results = await yfinance_provider.search_symbols(query)
+                results.extend(yf_results)
+            except Exception as e:
+                logger.warning(f"yfinance search failed: {e}")
+        
+        # If no results from search, try direct symbol lookup
+        if not results:
+            try:
+                info = await self.get_company_info(query)
+                if info and info.get("name"):
+                    results.append({
+                        "symbol": query,
+                        "name": info.get("name"),
+                        "exchange": info.get("exchange"),
+                        "sector": info.get("sector"),
+                        "type": "stock",
+                        "currency": info.get("currency"),
+                    })
+            except Exception:
+                pass
+        
+        return results[:limit]
+    
+    async def get_index_quote(self, symbol: str) -> Optional[Quote]:
+        """
+        Get quote for a market index.
+        
+        Args:
+            symbol: Index symbol (e.g., ^GSPC, ^DJI, ^IXIC)
+            
+        Returns:
+            Quote object or None
+        """
+        # Use INDEX market type
+        try:
+            quote = await self.get_quote(
+                symbol,
+                market_type=MarketType.INDEX,
+                force_refresh=True,
+            )
+            return quote
+        except Exception as e:
+            logger.warning(f"Failed to get index quote for {symbol}: {e}")
+            return None
+    
+    async def get_indices_quotes(
+        self,
+        symbols: list[str],
+    ) -> dict[str, Quote]:
+        """
+        Get quotes for multiple market indices.
+        
+        Args:
+            symbols: List of index symbols
+            
+        Returns:
+            Dictionary mapping symbols to Quote objects
+        """
+        results: dict[str, Quote] = {}
+        
+        for symbol in symbols:
+            try:
+                quote = await self.get_index_quote(symbol)
+                if quote:
+                    results[symbol] = quote
+            except Exception as e:
+                logger.warning(f"Failed to get quote for index {symbol}: {e}")
+        
+        return results
+    
     # ==================== Status & Monitoring ====================
     
     def get_status(self) -> dict[str, Any]:
