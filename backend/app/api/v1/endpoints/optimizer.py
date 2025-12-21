@@ -239,6 +239,7 @@ async def request_optimization(
         capital=float(portfolio.initial_capital),
         risk_profile=portfolio.risk_profile,
         time_horizon_weeks=portfolio.strategy_period_weeks or 12,
+        currency=portfolio.currency or "USD",  # Pass portfolio currency for universe filtering
         method=OptimizationMethod(request.method.value) if request.method else None,
         universe=request.universe,
         sectors=request.sectors,
@@ -487,15 +488,17 @@ async def execute_proposal(
     )
     current_positions = {p.symbol: p for p in result.scalars().all()}
     
-    # Fetch current market prices for all symbols in allocations
+    # Fetch current market prices for all symbols in allocations AND current positions
     allocations = proposal.get('allocations', [])
-    symbols = [alloc['symbol'] for alloc in allocations]
+    target_symbols = {alloc['symbol'] for alloc in allocations}
+    current_position_symbols = set(current_positions.keys())
+    all_symbols = list(target_symbols | current_position_symbols)
     
     market_prices = {}
     try:
-        quotes = await orchestrator.get_quotes(symbols)
+        quotes = await orchestrator.get_quotes(all_symbols)
         # quotes is a dict mapping symbol -> Quote
-        logger.info(f"Fetched {len(quotes)} quotes for {len(symbols)} symbols")
+        logger.info(f"Fetched {len(quotes)} quotes for {len(all_symbols)} symbols")
         for symbol, quote in quotes.items():
             if quote and hasattr(quote, 'price') and quote.price:
                 market_prices[symbol] = float(quote.price)
@@ -514,6 +517,70 @@ async def execute_proposal(
     
     created_trades = []
     
+    # STEP 1: Sell positions NOT in target allocation (complete rebalancing)
+    positions_to_sell = current_position_symbols - target_symbols
+    for symbol in positions_to_sell:
+        pos = current_positions[symbol]
+        quantity = float(pos.quantity)
+        if quantity <= 0:
+            continue
+            
+        # Get price for this position
+        current_price = market_prices.get(symbol, 0)
+        if current_price <= 0:
+            if pos.current_price and float(pos.current_price) > 0:
+                current_price = float(pos.current_price)
+            elif pos.avg_cost and float(pos.avg_cost) > 0:
+                current_price = float(pos.avg_cost)
+        
+        if current_price <= 0:
+            logger.warning(f"No valid price for {symbol}, skipping sell")
+            continue
+        
+        trade_value = quantity * current_price
+        
+        # Create SELL trade
+        trade = Trade(
+            portfolio_id=portfolio_id,
+            symbol=symbol,
+            trade_type=TradeType.SELL,
+            order_type=OrderType.MARKET,
+            status=TradeStatus.EXECUTED,
+            quantity=Decimal(str(quantity)),
+            price=Decimal(str(current_price)),
+            executed_price=Decimal(str(current_price)),
+            executed_quantity=Decimal(str(quantity)),
+            total_value=Decimal(str(trade_value)),
+            executed_at=datetime.now(),
+            notes=f"AI Optimizer proposal {proposal_id[:8]} - liquidate non-target position"
+        )
+        db.add(trade)
+        
+        # Remove position
+        await db.delete(pos)
+        del current_positions[symbol]
+        
+        # Add cash from sale
+        cash_balance += trade_value
+        
+        created_trades.append({
+            'symbol': symbol,
+            'trade_type': 'sell',
+            'quantity': int(quantity),
+            'price': current_price,
+            'estimated_value': trade_value,
+            'reason': 'liquidate_non_target'
+        })
+        
+        logger.info(f"Sold {quantity} shares of {symbol} @ {current_price} (not in target allocation)")
+    
+    # Recalculate total value after liquidations
+    total_value = cash_balance
+    for pos in current_positions.values():
+        price = market_prices.get(pos.symbol, float(pos.current_price or pos.avg_cost))
+        total_value += float(pos.quantity) * price
+    
+    # STEP 2: Process target allocations (buy/sell to reach target weights)
     for alloc in allocations:
         symbol = alloc['symbol']
         target_weight = alloc['weight']

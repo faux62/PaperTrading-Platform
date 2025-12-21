@@ -611,3 +611,172 @@ async def reactivate_symbols(
         "message": f"Reactivated {result.rowcount} symbols",
         "reactivated": result.rowcount,
     }
+
+
+# =============================================================================
+# HISTORICAL DATA COLLECTION ENDPOINTS
+# =============================================================================
+
+class HistoricalDataStatus(BaseModel):
+    """Response model for historical data collection status."""
+    total_bars: int
+    unique_symbols: int
+    earliest_date: Optional[str]
+    latest_date: Optional[str]
+    last_collection: Optional[str]
+
+
+class BackfillRequest(BaseModel):
+    """Request model for backfill."""
+    days: int = 365
+    currency: Optional[str] = None
+
+
+@router.get("/historical/status", response_model=HistoricalDataStatus)
+async def get_historical_data_status(db: AsyncSession = Depends(get_db)):
+    """
+    Get status of historical data collection.
+    
+    Returns statistics about data coverage in price_bars table.
+    """
+    from app.db.models.price_bar import PriceBar, TimeFrame
+    
+    # Count total bars
+    result = await db.execute(
+        select(func.count(PriceBar.id))
+        .where(PriceBar.timeframe == TimeFrame.D1)
+    )
+    total_bars = result.scalar() or 0
+    
+    # Count unique symbols
+    result = await db.execute(
+        select(func.count(func.distinct(PriceBar.symbol)))
+        .where(PriceBar.timeframe == TimeFrame.D1)
+    )
+    unique_symbols = result.scalar() or 0
+    
+    # Get date range
+    result = await db.execute(
+        select(
+            func.min(PriceBar.timestamp),
+            func.max(PriceBar.timestamp)
+        ).where(PriceBar.timeframe == TimeFrame.D1)
+    )
+    date_range = result.first()
+    
+    return HistoricalDataStatus(
+        total_bars=total_bars,
+        unique_symbols=unique_symbols,
+        earliest_date=date_range[0].isoformat() if date_range[0] else None,
+        latest_date=date_range[1].isoformat() if date_range[1] else None,
+        last_collection=date_range[1].strftime("%Y-%m-%d") if date_range[1] else None
+    )
+
+
+@router.post("/historical/backfill")
+async def trigger_backfill(
+    request: BackfillRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Trigger historical data backfill.
+    
+    This is a long-running operation that will fetch historical data
+    for all symbols in the market universe.
+    
+    Parameters:
+    - days: Number of days to backfill (default 365)
+    - currency: Optional currency filter (e.g., 'EUR', 'USD')
+    
+    Note: This operation may take several minutes depending on the
+    number of symbols and provider rate limits.
+    """
+    from app.services.historical_data_collector import get_collector
+    from app.data_providers import orchestrator
+    
+    logger.info(f"Starting backfill: days={request.days}, currency={request.currency}")
+    
+    try:
+        collector = get_collector(orchestrator)
+        stats = await collector.backfill(
+            days=request.days,
+            currency=request.currency
+        )
+        
+        return {
+            "message": "Backfill completed",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"Backfill failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/historical/collect-eod")
+async def trigger_eod_collection(
+    currency: Optional[str] = Query(None, description="Currency filter"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Trigger End-of-Day data collection for today/yesterday.
+    
+    This is the same operation that runs on schedule at 23:00 UTC.
+    Use this to manually trigger collection outside scheduled times.
+    """
+    from app.services.historical_data_collector import get_collector
+    from app.data_providers import orchestrator
+    
+    logger.info(f"Triggering manual EOD collection: currency={currency}")
+    
+    try:
+        collector = get_collector(orchestrator)
+        stats = await collector.collect_eod_data(currency=currency)
+        
+        return {
+            "message": "EOD collection completed",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"EOD collection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/historical/collect-yfinance")
+async def trigger_yfinance_collection(
+    currency: str = Query("EUR", description="Currency filter"),
+    period: str = Query("5d", description="yfinance period (1d, 5d, 1mo, 3mo, 1y)"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Collect historical data directly via yfinance.
+    
+    This is more reliable for EU stocks than the standard orchestrator
+    because yfinance has better coverage for European exchanges.
+    
+    Args:
+        currency: Currency filter (default 'EUR')
+        period: yfinance period string (default '5d' for daily updates)
+    """
+    from app.services.historical_data_collector import get_collector
+    from app.data_providers import orchestrator
+    
+    valid_periods = ["1d", "5d", "1mo", "3mo", "1y"]
+    if period not in valid_periods:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid period. Must be one of: {valid_periods}"
+        )
+    
+    logger.info(f"Triggering yfinance collection: currency={currency}, period={period}")
+    
+    try:
+        collector = get_collector(orchestrator)
+        stats = await collector.collect_via_yfinance(currency=currency, period=period)
+        
+        return {
+            "message": "yfinance collection completed",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"yfinance collection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

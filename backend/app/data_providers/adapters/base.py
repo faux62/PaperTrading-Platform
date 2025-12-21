@@ -57,6 +57,12 @@ class TimeFrame(str, Enum):
     DAY = "1day"
     WEEK = "1week"
     MONTH = "1month"
+    
+    # Legacy aliases for backward compatibility
+    MINUTE = "1min"
+    FIVE_MIN = "5min"
+    FIFTEEN_MIN = "15min"
+    HOUR = "1hour"
 
 
 @dataclass

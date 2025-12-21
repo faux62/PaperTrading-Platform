@@ -68,6 +68,7 @@ class ScreenerConfig:
     max_price: Optional[float] = None
     lookback_days: int = 252  # Historical data period
     top_n: Optional[int] = None  # Return top N assets
+    currency: Optional[str] = None  # Filter by currency (EUR, USD, GBP, etc.)
 
 
 class AssetScreener:
@@ -102,11 +103,17 @@ class AssetScreener:
         Returns:
             List of screened assets with scores and rankings
         """
+        from loguru import logger
+        
         # Get universe
         universe = config.universe
+        logger.info(f"screen() called with config.universe={len(universe) if universe else 0} items, currency={config.currency}")
+        
         if not universe:
-            # Default universe - could be expanded
-            universe = await self._get_default_universe()
+            # Load universe from market_universe table, filtered by currency
+            logger.info(f"No universe provided, loading from DB with currency={config.currency}")
+            universe = await self._get_universe_from_db(config.currency)
+            logger.info(f"Universe loaded: {len(universe)} symbols")
         
         # Fetch data for all symbols
         data = await self._fetch_screening_data(universe, config.lookback_days)
@@ -126,19 +133,97 @@ class AssetScreener:
         
         return ranked
     
-    async def _get_default_universe(self) -> List[str]:
-        """Get default universe of stocks (S&P 500 or similar)"""
-        # This would typically fetch from a database or external source
-        # For now, return a sample of major stocks
-        return [
-            "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
-            "JPM", "V", "UNH", "JNJ", "WMT", "PG", "MA", "HD",
-            "CVX", "MRK", "ABBV", "KO", "PEP", "COST", "AVGO",
-            "LLY", "MCD", "TMO", "CSCO", "DHR", "ACN", "ABT", "WFC",
-            "NEE", "VZ", "CMCSA", "ADBE", "TXN", "PM", "CRM", "NKE",
-            "BMY", "RTX", "UPS", "HON", "QCOM", "LOW", "ORCL", "INTC",
-            "AMD", "IBM", "GE", "CAT"
-        ]
+    async def _get_universe_from_db(self, currency: Optional[str] = None) -> List[str]:
+        """
+        Get universe of stocks from market_universe table.
+        
+        Args:
+            currency: Filter by currency (EUR, USD, GBP, etc.)
+            
+        Returns:
+            List of active symbols, filtered by currency if specified
+        """
+        from app.db.database import get_db_session
+        from app.db.models.market_universe import MarketUniverse
+        from sqlalchemy import select
+        from loguru import logger
+        
+        logger.info(f"Loading universe from DB with currency filter: {currency}")
+        
+        try:
+            async with get_db_session() as db:
+                # Build query for active symbols
+                query = select(MarketUniverse.symbol).where(
+                    MarketUniverse.is_active == True
+                )
+                
+                # Filter by currency if specified
+                if currency:
+                    query = query.where(MarketUniverse.currency == currency)
+                
+                # Order by priority (lower = higher priority) and market cap
+                query = query.order_by(
+                    MarketUniverse.priority,
+                    MarketUniverse.market_cap.desc().nullslast()
+                )
+                
+                result = await db.execute(query)
+                symbols = [row[0] for row in result.fetchall()]
+                
+                logger.info(f"Loaded {len(symbols)} symbols from DB for currency={currency}")
+                
+                if symbols:
+                    return symbols
+                else:
+                    logger.warning(f"No symbols found in DB for currency={currency}, using fallback")
+                    
+        except Exception as e:
+            # Log error but don't fail
+            logger.warning(
+                f"Failed to load universe from DB: {e}, using fallback"
+            )
+        
+        # Fallback to hardcoded list if DB is empty or fails
+        return self._get_fallback_universe(currency)
+    
+    def _get_fallback_universe(self, currency: Optional[str] = None) -> List[str]:
+        """
+        Fallback universe if database is unavailable.
+        Returns appropriate symbols based on currency.
+        """
+        if currency == "EUR":
+            # Major European stocks
+            return [
+                # Germany (XETRA)
+                "SAP.DE", "SIE.DE", "ALV.DE", "DTE.DE", "BAS.DE",
+                "BAYN.DE", "MRK.DE", "BMW.DE", "VOW3.DE", "ADS.DE",
+                # France (EURONEXT)
+                "MC.PA", "OR.PA", "SAN.PA", "AI.PA", "BNP.PA",
+                "TTE.PA", "AIR.PA", "SU.PA", "DG.PA", "CS.PA",
+                # Italy (BIT)
+                "ENI.MI", "ENEL.MI", "ISP.MI", "UCG.MI", "RACE.MI",
+                "STM.MI", "G.MI", "TIT.MI", "STLA.MI", "PRY.MI",
+                # Spain (BME)
+                "ITX.MC", "IBE.MC", "SAN.MC", "TEF.MC", "REP.MC"
+            ]
+        elif currency == "GBP":
+            # Major UK stocks
+            return [
+                "SHEL.L", "AZN.L", "HSBA.L", "ULVR.L", "BP.L",
+                "GSK.L", "RIO.L", "LLOY.L", "BARC.L", "VOD.L",
+                "DGE.L", "REL.L", "NG.L", "GLEN.L", "BT-A.L"
+            ]
+        else:
+            # Default: US stocks
+            return [
+                "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
+                "JPM", "V", "UNH", "JNJ", "WMT", "PG", "MA", "HD",
+                "CVX", "MRK", "ABBV", "KO", "PEP", "COST", "AVGO",
+                "LLY", "MCD", "TMO", "CSCO", "DHR", "ACN", "ABT", "WFC",
+                "NEE", "VZ", "CMCSA", "ADBE", "TXN", "PM", "CRM", "NKE",
+                "BMY", "RTX", "UPS", "HON", "QCOM", "LOW", "ORCL", "INTC",
+                "AMD", "IBM", "GE", "CAT"
+            ]
     
     async def _fetch_screening_data(
         self,
@@ -150,16 +235,26 @@ class AssetScreener:
         
         Returns dict with symbol -> data mapping.
         """
+        from loguru import logger
+        
         data = {}
+        success_count = 0
+        fail_count = 0
         
         for symbol in symbols:
             try:
                 asset_data = await self._fetch_single_asset_data(symbol, lookback_days)
                 if asset_data:
                     data[symbol] = asset_data
+                    success_count += 1
+                else:
+                    fail_count += 1
             except Exception as e:
                 # Skip assets with data issues
+                fail_count += 1
                 continue
+        
+        logger.info(f"Screening data fetch complete: {success_count} success, {fail_count} failed out of {len(symbols)} symbols")
         
         return data
     

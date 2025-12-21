@@ -507,6 +507,7 @@ class PortfolioService:
             "initial_capital": float(portfolio.initial_capital),
             "cash_balance": float(portfolio.cash_balance),
             "currency": portfolio.currency,
+            "strategy_period_weeks": portfolio.strategy_period_weeks,
             "is_active": portfolio.is_active,
             "created_at": portfolio.created_at.isoformat(),
             "updated_at": portfolio.updated_at.isoformat() if portfolio.updated_at else None,

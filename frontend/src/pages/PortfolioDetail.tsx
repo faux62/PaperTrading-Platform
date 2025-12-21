@@ -534,6 +534,7 @@ const PortfolioDetail = () => {
             portfolioName={portfolio.name}
             riskProfile={(portfolio as any).risk_profile || 'balanced'}
             capital={(portfolio as any).initial_capital || 100000}
+            currency={(portfolio as any).currency || 'USD'}
             strategyPeriodWeeks={(portfolio as any).strategy_period_weeks || 12}
             onTradesExecuted={() => {
               // Refresh portfolio data after trades are executed

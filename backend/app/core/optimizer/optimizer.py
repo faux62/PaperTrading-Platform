@@ -45,9 +45,7 @@ from .proposal import (
     ProposalType,
     AllocationItem
 )
-
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class OptimizationMethod(str, Enum):
@@ -67,6 +65,7 @@ class OptimizationRequest:
     capital: float
     risk_profile: str  # 'prudent', 'balanced', 'aggressive'
     time_horizon_weeks: int
+    currency: str = "USD"  # Portfolio currency for filtering universe
     
     # Optional overrides
     method: Optional[OptimizationMethod] = None
@@ -231,11 +230,17 @@ class PortfolioOptimizer:
         request: OptimizationRequest
     ) -> List[ScreenedAsset]:
         """Screen assets based on request parameters"""
+        logger.info(f"Screening assets for currency={request.currency}, risk_profile={request.risk_profile}")
+        
         # Get base config for risk profile
         config = get_screener_for_risk_profile(
             request.risk_profile,
             request.time_horizon_weeks
         )
+        
+        # Apply currency filter for universe selection
+        config.currency = request.currency
+        logger.info(f"ScreenerConfig: currency={config.currency}, universe_len={len(config.universe)}, top_n={config.top_n}")
         
         # Apply request overrides
         if request.universe:

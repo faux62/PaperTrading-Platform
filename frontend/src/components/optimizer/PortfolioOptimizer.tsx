@@ -26,11 +26,18 @@ import ProposalCard from './ProposalCard';
 import OptimizationModal from './OptimizationModal';
 import ProposalDetailModal from './ProposalDetailModal';
 
+// Currency symbols mapping
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF',
+  CAD: 'C$', AUD: 'A$', HKD: 'HK$', SGD: 'S$', CNY: '¥',
+};
+
 interface Props {
   portfolioId: string;
   portfolioName: string;
   riskProfile: string;
   capital: number;
+  currency: string;
   strategyPeriodWeeks: number;
   onTradesExecuted?: () => void;  // Callback when trades are executed
 }
@@ -49,6 +56,7 @@ const PortfolioOptimizer: React.FC<Props> = ({
   portfolioName,
   riskProfile,
   capital,
+  currency,
   strategyPeriodWeeks,
   onTradesExecuted,
 }) => {
@@ -257,7 +265,7 @@ const PortfolioOptimizer: React.FC<Props> = ({
           <div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Capital</p>
             <p className="text-lg font-semibold text-gray-900 dark:text-white">
-              ${capital.toLocaleString()}
+              {CURRENCY_SYMBOLS[currency] || currency}{capital.toLocaleString()}
             </p>
           </div>
           <div>
