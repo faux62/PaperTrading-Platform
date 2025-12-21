@@ -260,6 +260,64 @@ const Markets = () => {
     return vol.toString();
   };
 
+  // Get currency symbol and format price based on stock ticker suffix
+  const getCurrencyInfo = (symbol: string): { symbol: string; code: string; decimals: number } => {
+    if (!symbol) return { symbol: '$', code: 'USD', decimals: 2 };
+    
+    const upperSymbol = symbol.toUpperCase();
+    
+    // London Stock Exchange - prices in GBX (pence)
+    if (upperSymbol.endsWith('.L')) {
+      return { symbol: 'GBX ', code: 'GBX', decimals: 2 };
+    }
+    // Hong Kong Stock Exchange
+    if (upperSymbol.endsWith('.HK')) {
+      return { symbol: 'HK$', code: 'HKD', decimals: 2 };
+    }
+    // Tokyo Stock Exchange
+    if (upperSymbol.endsWith('.T')) {
+      return { symbol: '¥', code: 'JPY', decimals: 0 };
+    }
+    // Euronext exchanges (Milan, Paris, Amsterdam, Brussels, etc.)
+    if (upperSymbol.endsWith('.MI') || upperSymbol.endsWith('.PA') || 
+        upperSymbol.endsWith('.AS') || upperSymbol.endsWith('.BR')) {
+      return { symbol: '€', code: 'EUR', decimals: 2 };
+    }
+    // German exchanges (XETRA, Frankfurt)
+    if (upperSymbol.endsWith('.DE') || upperSymbol.endsWith('.F')) {
+      return { symbol: '€', code: 'EUR', decimals: 2 };
+    }
+    // Swiss Exchange
+    if (upperSymbol.endsWith('.SW')) {
+      return { symbol: 'CHF ', code: 'CHF', decimals: 2 };
+    }
+    // Toronto Stock Exchange
+    if (upperSymbol.endsWith('.TO')) {
+      return { symbol: 'C$', code: 'CAD', decimals: 2 };
+    }
+    // Australian Stock Exchange
+    if (upperSymbol.endsWith('.AX')) {
+      return { symbol: 'A$', code: 'AUD', decimals: 2 };
+    }
+    // Singapore Exchange
+    if (upperSymbol.endsWith('.SI')) {
+      return { symbol: 'S$', code: 'SGD', decimals: 2 };
+    }
+    // India NSE/BSE
+    if (upperSymbol.endsWith('.NS') || upperSymbol.endsWith('.BO')) {
+      return { symbol: '₹', code: 'INR', decimals: 2 };
+    }
+    // Default US market
+    return { symbol: '$', code: 'USD', decimals: 2 };
+  };
+
+  const formatPrice = (price: number | undefined, symbol: string): string => {
+    if (price === undefined || price === null) return '-';
+    const currencyInfo = getCurrencyInfo(symbol);
+    const formatted = price.toFixed(currencyInfo.decimals);
+    return `${currencyInfo.symbol}${formatted}`;
+  };
+
   const getMoversTabIcon = (tab: MoverTab) => {
     switch (tab) {
       case 'most-active': return <Activity className="w-4 h-4" />;
@@ -392,7 +450,7 @@ const Markets = () => {
                           <p className="text-surface-400 text-sm">{selectedQuote.name}</p>
                         </div>
                         <div className="text-right">
-                          <span className="text-2xl font-bold text-white">${selectedQuote.price?.toFixed(2)}</span>
+                          <span className="text-2xl font-bold text-white">{formatPrice(selectedQuote.price, selectedQuote.symbol)}</span>
                           <p className={`text-sm font-medium ${selectedQuote.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                             {selectedQuote.change >= 0 ? '+' : ''}{selectedQuote.change?.toFixed(2)} ({selectedQuote.change_percent?.toFixed(2)}%)
                           </p>
@@ -401,15 +459,15 @@ const Markets = () => {
                       <div className="grid grid-cols-4 gap-4 text-sm">
                         <div>
                           <p className="text-surface-400">Open</p>
-                          <p className="text-white font-medium">${selectedQuote.open?.toFixed(2)}</p>
+                          <p className="text-white font-medium">{formatPrice(selectedQuote.open, selectedQuote.symbol)}</p>
                         </div>
                         <div>
                           <p className="text-surface-400">High</p>
-                          <p className="text-white font-medium">${selectedQuote.high?.toFixed(2)}</p>
+                          <p className="text-white font-medium">{formatPrice(selectedQuote.high, selectedQuote.symbol)}</p>
                         </div>
                         <div>
                           <p className="text-surface-400">Low</p>
-                          <p className="text-white font-medium">${selectedQuote.low?.toFixed(2)}</p>
+                          <p className="text-white font-medium">{formatPrice(selectedQuote.low, selectedQuote.symbol)}</p>
                         </div>
                         <div>
                           <p className="text-surface-400">Volume</p>
@@ -533,7 +591,7 @@ const Markets = () => {
                           </div>
                         </div>
                         <div className="col-span-2 text-right">
-                          <span className="text-white font-medium">${mover.price?.toFixed(2)}</span>
+                          <span className="text-white font-medium">{formatPrice(mover.price, mover.symbol)}</span>
                         </div>
                         <div className="col-span-3 text-right">
                           <div className={`flex items-center justify-end gap-1 ${mover.change_percent >= 0 ? 'text-green-500' : 'text-red-500'}`}>

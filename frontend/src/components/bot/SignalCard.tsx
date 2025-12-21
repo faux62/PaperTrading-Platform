@@ -81,7 +81,25 @@ export const SignalCard: React.FC<SignalCardProps> = ({
   const priorityColor = priorityColors[signal.priority as keyof typeof priorityColors] || priorityColors.medium;
   const badgeColor = priorityBadgeColors[signal.priority as keyof typeof priorityBadgeColors] || priorityBadgeColors.medium;
 
-  const formatPrice = (price?: number) => price ? `$${price.toFixed(2)}` : '-';
+  // Get currency prefix based on stock ticker suffix
+  const getCurrencyPrefix = (sym?: string): string => {
+    if (!sym) return '$';
+    const upperSymbol = sym.toUpperCase();
+    if (upperSymbol.endsWith('.L')) return 'GBX ';
+    if (upperSymbol.endsWith('.HK')) return 'HK$';
+    if (upperSymbol.endsWith('.T')) return '¥';
+    if (upperSymbol.endsWith('.MI') || upperSymbol.endsWith('.PA') || 
+        upperSymbol.endsWith('.AS') || upperSymbol.endsWith('.BR') ||
+        upperSymbol.endsWith('.DE') || upperSymbol.endsWith('.F')) return '€';
+    if (upperSymbol.endsWith('.SW')) return 'CHF ';
+    if (upperSymbol.endsWith('.TO')) return 'C$';
+    if (upperSymbol.endsWith('.AX')) return 'A$';
+    if (upperSymbol.endsWith('.SI')) return 'S$';
+    if (upperSymbol.endsWith('.NS') || upperSymbol.endsWith('.BO')) return '₹';
+    return '$';
+  };
+
+  const formatPrice = (price?: number) => price ? `${getCurrencyPrefix(signal.symbol)}${price.toFixed(2)}` : '-';
   
   const timeAgo = (dateString: string) => {
     const date = new Date(dateString);

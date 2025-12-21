@@ -37,13 +37,62 @@ export function RealTimeQuote({
     }
   }, [quote?.price, prevPrice]);
 
+  // Get currency info based on stock ticker suffix
+  const getCurrencyInfo = (sym: string): { code: string; decimals: number; prefix: string } => {
+    if (!sym) return { code: 'USD', decimals: 2, prefix: '$' };
+    
+    const upperSymbol = sym.toUpperCase();
+    
+    // London Stock Exchange - prices in GBX (pence)
+    if (upperSymbol.endsWith('.L')) {
+      return { code: 'GBX', decimals: 2, prefix: 'GBX ' };
+    }
+    // Hong Kong Stock Exchange
+    if (upperSymbol.endsWith('.HK')) {
+      return { code: 'HKD', decimals: 2, prefix: 'HK$' };
+    }
+    // Tokyo Stock Exchange
+    if (upperSymbol.endsWith('.T')) {
+      return { code: 'JPY', decimals: 0, prefix: '¥' };
+    }
+    // Euronext exchanges
+    if (upperSymbol.endsWith('.MI') || upperSymbol.endsWith('.PA') || 
+        upperSymbol.endsWith('.AS') || upperSymbol.endsWith('.BR')) {
+      return { code: 'EUR', decimals: 2, prefix: '€' };
+    }
+    // German exchanges
+    if (upperSymbol.endsWith('.DE') || upperSymbol.endsWith('.F')) {
+      return { code: 'EUR', decimals: 2, prefix: '€' };
+    }
+    // Swiss Exchange
+    if (upperSymbol.endsWith('.SW')) {
+      return { code: 'CHF', decimals: 2, prefix: 'CHF ' };
+    }
+    // Toronto Stock Exchange
+    if (upperSymbol.endsWith('.TO')) {
+      return { code: 'CAD', decimals: 2, prefix: 'C$' };
+    }
+    // Australian Stock Exchange
+    if (upperSymbol.endsWith('.AX')) {
+      return { code: 'AUD', decimals: 2, prefix: 'A$' };
+    }
+    // Singapore Exchange
+    if (upperSymbol.endsWith('.SI')) {
+      return { code: 'SGD', decimals: 2, prefix: 'S$' };
+    }
+    // India NSE/BSE
+    if (upperSymbol.endsWith('.NS') || upperSymbol.endsWith('.BO')) {
+      return { code: 'INR', decimals: 2, prefix: '₹' };
+    }
+    // Default US market
+    return { code: 'USD', decimals: 2, prefix: '$' };
+  };
+
+  const currencyInfo = getCurrencyInfo(symbol);
+
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(price);
+    const formatted = price.toFixed(currencyInfo.decimals);
+    return `${currencyInfo.prefix}${formatted}`;
   };
 
   const formatVolume = (volume: number) => {

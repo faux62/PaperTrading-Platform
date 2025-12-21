@@ -225,11 +225,33 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
     }
   };
 
-  const formatValue = (alertType: AlertType, value: number) => {
+  // Get currency prefix based on stock ticker suffix
+  const getCurrencyPrefix = (sym: string): string => {
+    if (!sym) return '$';
+    
+    const upperSymbol = sym.toUpperCase();
+    
+    if (upperSymbol.endsWith('.L')) return 'GBX ';
+    if (upperSymbol.endsWith('.HK')) return 'HK$';
+    if (upperSymbol.endsWith('.T')) return '¥';
+    if (upperSymbol.endsWith('.MI') || upperSymbol.endsWith('.PA') || 
+        upperSymbol.endsWith('.AS') || upperSymbol.endsWith('.BR') ||
+        upperSymbol.endsWith('.DE') || upperSymbol.endsWith('.F')) return '€';
+    if (upperSymbol.endsWith('.SW')) return 'CHF ';
+    if (upperSymbol.endsWith('.TO')) return 'C$';
+    if (upperSymbol.endsWith('.AX')) return 'A$';
+    if (upperSymbol.endsWith('.SI')) return 'S$';
+    if (upperSymbol.endsWith('.NS') || upperSymbol.endsWith('.BO')) return '₹';
+    
+    return '$';
+  };
+
+  const formatValue = (alertType: AlertType, value: number, sym: string = '') => {
     if (alertType.includes('percent')) {
       return `${value.toFixed(2)}%`;
     }
-    return `$${value.toFixed(2)}`;
+    const prefix = getCurrencyPrefix(sym);
+    return `${prefix}${value.toFixed(2)}`;
   };
 
   if (loading) {
@@ -371,7 +393,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
                         {ALERT_TYPE_LABELS[alert.alert_type]}
                       </span>
                       <span className="font-mono text-sm text-white">
-                        {formatValue(alert.alert_type, alert.target_value)}
+                        {formatValue(alert.alert_type, alert.target_value, alert.symbol)}
                       </span>
                     </div>
                     {alert.note && (
@@ -379,7 +401,7 @@ export function PriceAlerts({ symbol }: PriceAlertsProps) {
                     )}
                     {alert.triggered_at && (
                       <p className="text-xs text-blue-400">
-                        Triggered at ${alert.triggered_price?.toFixed(2)} on{' '}
+                        Triggered at {getCurrencyPrefix(alert.symbol)}{alert.triggered_price?.toFixed(2)} on{' '}
                         {new Date(alert.triggered_at).toLocaleDateString()}
                       </p>
                     )}
