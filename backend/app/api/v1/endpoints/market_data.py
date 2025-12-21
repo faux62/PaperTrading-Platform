@@ -103,40 +103,51 @@ async def get_market_indices(
     
     results = {}
     
-    # Use orchestrator for indices
+    # Group indices by market type for batch fetching
+    from collections import defaultdict
+    by_market_type = defaultdict(list)
     for symbol in indices_to_fetch:
-        info = MARKET_INDICES.get(symbol, {})
+        market_type = _detect_market_type(symbol)
+        by_market_type[market_type].append(symbol)
+    
+    # Fetch each group in batch
+    for market_type, symbols in by_market_type.items():
         try:
-            market_type = _detect_market_type(symbol)
-            quote = await orchestrator.get_quote(
-                symbol=symbol,
+            quotes = await orchestrator.get_quotes(
+                symbols=symbols,
                 market_type=market_type
             )
             
-            results[symbol] = {
-                "symbol": symbol,
-                "name": info.get("name", quote.name or symbol),
-                "region": info.get("region", "Other"),
-                "type": info.get("type", "index"),
-                "price": float(quote.price),
-                "change": float(quote.change) if quote.change else 0,
-                "change_percent": round(float(quote.change_percent), 2) if quote.change_percent else 0,
-                "timestamp": quote.timestamp.isoformat(),
-                "source": quote.provider,
-            }
+            for symbol, quote in quotes.items():
+                info = MARKET_INDICES.get(symbol, {})
+                results[symbol] = {
+                    "symbol": symbol,
+                    "name": info.get("name", quote.name or symbol),
+                    "region": info.get("region", "Other"),
+                    "type": info.get("type", "index"),
+                    "price": float(quote.price),
+                    "change": float(quote.change) if quote.change else 0,
+                    "change_percent": round(float(quote.change_percent), 2) if quote.change_percent else 0,
+                    "timestamp": quote.timestamp.isoformat(),
+                    "source": quote.provider,
+                }
         except Exception as e:
-            logger.warning(f"Failed to fetch index {symbol}: {e}")
-            results[symbol] = {
-                "symbol": symbol,
-                "name": info.get("name", symbol),
-                "region": info.get("region", "Other"),
-                "type": info.get("type", "index"),
-                "price": 0,
-                "change": 0,
-                "change_percent": 0,
-                "timestamp": datetime.utcnow().isoformat(),
-                "source": "unavailable",
-            }
+            logger.warning(f"Failed to fetch batch for {market_type}: {e}")
+            # Fallback: mark failed symbols as unavailable
+            for symbol in symbols:
+                if symbol not in results:
+                    info = MARKET_INDICES.get(symbol, {})
+                    results[symbol] = {
+                        "symbol": symbol,
+                        "name": info.get("name", symbol),
+                        "region": info.get("region", "Other"),
+                        "type": info.get("type", "index"),
+                        "price": 0,
+                        "change": 0,
+                        "change_percent": 0,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "source": "unavailable",
+                    }
     
     return results
 
@@ -204,30 +215,45 @@ async def get_quotes(
     quotes = []
     errors = []
     
-    # Fetch quotes for each symbol, detecting market type
+    # Group symbols by market type for efficient batch fetching
+    from collections import defaultdict
+    by_market_type = defaultdict(list)
     for sym in symbol_list:
+        market_type = _detect_market_type(sym)
+        by_market_type[market_type].append(sym)
+    
+    # Fetch each group in batch
+    for market_type, syms in by_market_type.items():
         try:
-            market_type = _detect_market_type(sym)
-            quote = await orchestrator.get_quote(
-                sym,
+            batch_quotes = await orchestrator.get_quotes(
+                symbols=syms,
                 market_type=market_type,
                 force_refresh=force_refresh,
             )
             
-            quotes.append({
-                "symbol": quote.symbol,
-                "name": getattr(quote, 'name', None) or sym,
-                "exchange": quote.exchange or "",
-                "price": float(quote.price),
-                "change": float(quote.change) if quote.change else 0,
-                "change_percent": float(quote.change_percent) if quote.change_percent else 0,
-                "volume": quote.volume or 0,
-                "timestamp": quote.timestamp.isoformat(),
-                "source": quote.provider,
-            })
+            for sym, quote in batch_quotes.items():
+                quotes.append({
+                    "symbol": quote.symbol,
+                    "name": getattr(quote, 'name', None) or sym,
+                    "exchange": quote.exchange or "",
+                    "price": float(quote.price),
+                    "change": float(quote.change) if quote.change else 0,
+                    "change_percent": float(quote.change_percent) if quote.change_percent else 0,
+                    "volume": quote.volume or 0,
+                    "timestamp": quote.timestamp.isoformat(),
+                    "source": quote.provider,
+                })
+            
+            # Check for missing symbols in this batch
+            for sym in syms:
+                if sym not in batch_quotes:
+                    errors.append({"symbol": sym, "error": "Not found"})
+                    
         except Exception as e:
-            logger.warning(f"Failed to get quote for {sym}: {e}")
-            errors.append({"symbol": sym, "error": str(e)})
+            logger.warning(f"Batch fetch failed for {market_type}: {e}")
+            # Mark all symbols in failed batch as errors
+            for sym in syms:
+                errors.append({"symbol": sym, "error": str(e)})
     
     return {"quotes": quotes, "count": len(quotes), "errors": errors}
 

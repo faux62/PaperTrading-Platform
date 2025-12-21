@@ -136,55 +136,61 @@ class UniverseDataCollector:
             Dict mapping symbol -> quote data
         """
         from app.data_providers.adapters.base import MarketType
+        from collections import defaultdict
         
         quotes = {}
         
-        # Map region to preferred market types (in order of preference)
-        # This allows fallback to US_STOCK routing which has more provider support
-        region_to_market_types = {
-            MarketRegion.US: [MarketType.US_STOCK],
-            MarketRegion.UK: [MarketType.EU_STOCK, MarketType.US_STOCK],
-            MarketRegion.EU: [MarketType.EU_STOCK, MarketType.US_STOCK],
-            MarketRegion.ASIA: [MarketType.ASIA_STOCK, MarketType.US_STOCK],
-            MarketRegion.GLOBAL: [MarketType.US_STOCK],
+        # Map region to market type
+        region_to_market_type = {
+            MarketRegion.US: MarketType.US_STOCK,
+            MarketRegion.UK: MarketType.EU_STOCK,
+            MarketRegion.EU: MarketType.EU_STOCK,
+            MarketRegion.ASIA: MarketType.ASIA_STOCK,
+            MarketRegion.GLOBAL: MarketType.US_STOCK,
         }
         
+        # Group symbols by market type for batch fetching
+        by_market_type = defaultdict(list)
         for entry in symbol_entries:
-            symbol = entry.symbol
-            market_types = region_to_market_types.get(entry.region, [MarketType.US_STOCK])
-            
             # Handle ETFs separately
             if entry.asset_type and entry.asset_type.value == "etf":
-                market_types = [MarketType.ETF, MarketType.US_STOCK]
-            
-            # Try each market type until one succeeds
-            quote = None
-            for market_type in market_types:
-                try:
-                    quote = await self.orchestrator.get_quote(symbol, market_type=market_type)
-                    if quote and quote.price:
-                        break  # Success, stop trying
-                except Exception as e:
-                    logger.debug(f"Quote fetch for {symbol} with {market_type.value} failed: {e}")
-                    continue
-            
-            if quote and quote.price:
-                quotes[symbol] = {
-                    "price": float(quote.price),
-                    "change": float(quote.change) if quote.change else None,
-                    "change_percent": float(quote.change_percent) if quote.change_percent else None,
-                    "volume": quote.volume,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "bid": float(quote.bid) if quote.bid else None,
-                    "ask": float(quote.ask) if quote.ask else None,
-                    "day_high": float(quote.day_high) if quote.day_high else None,
-                    "day_low": float(quote.day_low) if quote.day_low else None,
-                    "prev_close": float(quote.prev_close) if quote.prev_close else None,
-                }
-                logger.debug(f"Fetched quote for {symbol}: ${quote.price}")
+                market_type = MarketType.ETF
             else:
-                # Log failure - orchestrator already handles yfinance as internal fallback
-                logger.debug(f"All providers failed for {symbol} via orchestrator")
+                market_type = region_to_market_type.get(entry.region, MarketType.US_STOCK)
+            by_market_type[market_type].append(entry.symbol)
+        
+        # Fetch each group in batch
+        for market_type, symbols in by_market_type.items():
+            try:
+                batch_quotes = await self.orchestrator.get_quotes(
+                    symbols=symbols,
+                    market_type=market_type
+                )
+                
+                for symbol, quote in batch_quotes.items():
+                    if quote and quote.price:
+                        quotes[symbol] = {
+                            "price": float(quote.price),
+                            "change": float(quote.change) if quote.change else None,
+                            "change_percent": float(quote.change_percent) if quote.change_percent else None,
+                            "volume": quote.volume,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "bid": float(quote.bid) if quote.bid else None,
+                            "ask": float(quote.ask) if quote.ask else None,
+                            "day_high": float(quote.day_high) if quote.day_high else None,
+                            "day_low": float(quote.day_low) if quote.day_low else None,
+                            "prev_close": float(quote.prev_close) if quote.prev_close else None,
+                        }
+                        logger.debug(f"Fetched quote for {symbol}: ${quote.price}")
+                
+                # Log missing symbols
+                for symbol in symbols:
+                    if symbol not in batch_quotes:
+                        logger.debug(f"No quote returned for {symbol} via orchestrator")
+                        
+            except Exception as e:
+                logger.warning(f"Batch fetch failed for {market_type}: {e}")
+                # Symbols in this batch will not have quotes
         
         return quotes
     
