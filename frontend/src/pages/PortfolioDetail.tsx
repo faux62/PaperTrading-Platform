@@ -23,7 +23,6 @@ import {
 import { Layout } from '../components/layout';
 import { Card, CardContent, CardHeader, CardTitle, Spinner, Badge } from '../components/common';
 import { RebalancingWizard, TradeHistory } from '../components/trading';
-import { CurrencyBalances } from '../components/portfolio';
 import { PortfolioOptimizer } from '../components/optimizer';
 import { Position, Portfolio, Trade } from '../types';
 import { tokenStorage } from '../services/tokenStorage';
@@ -282,13 +281,6 @@ const PortfolioDetail = () => {
             </Card>
           </div>
         )}
-
-        {/* Multi-Currency Cash Balances (IBKR-style) */}
-        <CurrencyBalances 
-          portfolioId={parseInt(portfolioId)} 
-          baseCurrency={(portfolio as any).currency || 'USD'}
-          onBalanceChange={fetchPortfolioData}
-        />
 
         {/* Tabs */}
         <div className="flex gap-2 border-b border-surface-700">
