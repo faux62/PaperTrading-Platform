@@ -394,7 +394,14 @@ async def run_universe_eod_collection(db: AsyncSession) -> Dict:
     Scheduled job: Collect EOD data for all universe symbols.
     
     Runs once daily after all markets close.
+    
+    Strategy:
+    - EU/UK markets: Use yfinance directly (more reliable for European symbols)
+    - Other markets (US, ASIA): Use orchestrator with provider failover chain
     """
+    from app.services.historical_data_collector import get_collector
+    from app.data_providers import orchestrator as provider_orchestrator
+    
     collector = get_universe_collector()
     
     # Collect for all regions
@@ -405,10 +412,35 @@ async def run_universe_eod_collection(db: AsyncSession) -> Dict:
         "failed": 0,
     }
     
-    for region in MarketRegion:
-        if region == MarketRegion.GLOBAL:
-            continue
+    # EU and UK markets: use yfinance directly (more reliable)
+    eu_regions = {MarketRegion.EU, MarketRegion.UK}
+    
+    for region in eu_regions:
+        logger.info(f"Collecting {region.value} EOD data via yfinance...")
+        try:
+            # Get currency for region
+            currency = "EUR" if region == MarketRegion.EU else "GBP"
             
+            # Use the historical_data_collector with yfinance
+            hist_collector = get_collector(provider_orchestrator)
+            stats = await hist_collector.collect_via_yfinance(
+                currency=currency,
+                period="5d"  # Last 5 days to catch any missed days
+            )
+            
+            total_stats["total"] += stats["total_symbols"]
+            total_stats["updated"] += stats["successful"]
+            total_stats["bars_inserted"] += stats["bars_inserted"]
+            total_stats["failed"] += stats["failed"]
+            
+        except Exception as e:
+            logger.error(f"Failed to collect {region.value} via yfinance: {e}")
+    
+    # Other markets (US, ASIA): use orchestrator with provider chain
+    non_eu_regions = [r for r in MarketRegion if r not in eu_regions and r != MarketRegion.GLOBAL]
+    
+    for region in non_eu_regions:
+        logger.info(f"Collecting {region.value} EOD data via orchestrator...")
         stats = await collector.collect_eod_data(
             db=db,
             region=region,
