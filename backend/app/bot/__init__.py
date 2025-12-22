@@ -251,6 +251,41 @@ async def initialize_bot() -> BotScheduler:
         minute=0
     )
     
+    # Check EOD data freshness at startup - run backfill if stale (>24h)
+    async def eod_data_startup_check():
+        from datetime import datetime, timedelta
+        from sqlalchemy import select, func
+        from app.db.models.price_bar import PriceBar
+        
+        async for db in get_db():
+            # Check last EOD bar timestamp
+            result = await db.execute(
+                select(func.max(PriceBar.timestamp)).where(PriceBar.timeframe == "D1")
+            )
+            last_bar = result.scalar()
+            
+            if last_bar is None:
+                logger.info("No EOD data found - running initial backfill...")
+                await universe_eod_collection_job()
+                return
+            
+            # If last bar is older than 24 hours, run EOD collection
+            hours_since_update = (datetime.utcnow() - last_bar).total_seconds() / 3600
+            
+            if hours_since_update > 36:  # 36h to account for weekends
+                logger.info(f"EOD data is stale (last: {last_bar}, {hours_since_update:.1f}h ago) - running update...")
+                await universe_eod_collection_job()
+            else:
+                logger.info(f"EOD data is fresh (last: {last_bar}, {hours_since_update:.1f}h ago) - skipping startup update")
+            break
+    
+    # Schedule EOD startup check (delay 30s to let other systems initialize)
+    async def delayed_eod_check():
+        await asyncio.sleep(30)
+        await eod_data_startup_check()
+    
+    asyncio.create_task(delayed_eod_check())
+    
     # Symbol enrichment (daily at 1 AM UTC - fill in missing names)
     async def symbol_enrichment_job():
         from app.bot.services.universe_data_collector import run_symbol_enrichment
