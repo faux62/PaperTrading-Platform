@@ -181,38 +181,6 @@ async def initialize_bot() -> BotScheduler:
         hours=1
     )
     
-    # Run FX update at startup if table is empty or data is stale (>1 hour)
-    async def fx_rate_startup_check():
-        from datetime import datetime, timedelta
-        from sqlalchemy import select, func
-        from app.db.models.exchange_rate import ExchangeRate
-        
-        async for db in get_db():
-            # Check if table is empty
-            result = await db.execute(select(func.count(ExchangeRate.id)))
-            count = result.scalar()
-            
-            if count == 0:
-                logger.info("FX rates table is empty - running initial update...")
-                await fx_rate_update_job()
-                return
-            
-            # Check if data is stale (last update > 1 hour ago)
-            result = await db.execute(
-                select(func.max(ExchangeRate.fetched_at))
-            )
-            last_fetch = result.scalar()
-            
-            if last_fetch is None or datetime.utcnow() - last_fetch > timedelta(hours=1):
-                logger.info(f"FX rates are stale (last: {last_fetch}) - running update...")
-                await fx_rate_update_job()
-            else:
-                logger.info(f"FX rates are fresh (last: {last_fetch}) - skipping startup update")
-            break
-    
-    # Schedule startup check
-    asyncio.create_task(fx_rate_startup_check())
-    
     # ==========================================================
     # UNIVERSE DATA COLLECTION - ~900 symbols from major indices
     # ==========================================================
@@ -251,41 +219,6 @@ async def initialize_bot() -> BotScheduler:
         minute=0
     )
     
-    # Check EOD data freshness at startup - run backfill if stale (>24h)
-    async def eod_data_startup_check():
-        from datetime import datetime, timedelta
-        from sqlalchemy import select, func
-        from app.db.models.price_bar import PriceBar
-        
-        async for db in get_db():
-            # Check last EOD bar timestamp
-            result = await db.execute(
-                select(func.max(PriceBar.timestamp)).where(PriceBar.timeframe == "D1")
-            )
-            last_bar = result.scalar()
-            
-            if last_bar is None:
-                logger.info("No EOD data found - running initial backfill...")
-                await universe_eod_collection_job()
-                return
-            
-            # If last bar is older than 24 hours, run EOD collection
-            hours_since_update = (datetime.utcnow() - last_bar).total_seconds() / 3600
-            
-            if hours_since_update > 36:  # 36h to account for weekends
-                logger.info(f"EOD data is stale (last: {last_bar}, {hours_since_update:.1f}h ago) - running update...")
-                await universe_eod_collection_job()
-            else:
-                logger.info(f"EOD data is fresh (last: {last_bar}, {hours_since_update:.1f}h ago) - skipping startup update")
-            break
-    
-    # Schedule EOD startup check (delay 30s to let other systems initialize)
-    async def delayed_eod_check():
-        await asyncio.sleep(30)
-        await eod_data_startup_check()
-    
-    asyncio.create_task(delayed_eod_check())
-    
     # Symbol enrichment (daily at 1 AM UTC - fill in missing names)
     async def symbol_enrichment_job():
         from app.bot.services.universe_data_collector import run_symbol_enrichment
@@ -309,6 +242,116 @@ async def initialize_bot() -> BotScheduler:
     
     logger.info("Trading Assistant Bot initialized and running")
     logger.info(f"Jobs scheduled: {list(scheduler._registered_jobs.keys())}")
+    
+    # ==========================================================
+    # STARTUP DATA ORCHESTRATOR
+    # ==========================================================
+    # Run startup tasks sequentially to avoid rate limiting and system overload
+    # Tasks are executed in priority order with delays between them
+    
+    from app.bot.startup_orchestrator import (
+        get_startup_orchestrator,
+        TaskPriority
+    )
+    
+    startup_orch = get_startup_orchestrator()
+    
+    # Task 1: FX Rates (CRITICAL - needed for portfolio value calculations)
+    async def startup_fx_rates():
+        from datetime import datetime, timedelta
+        from sqlalchemy import select, func
+        from app.db.models.exchange_rate import ExchangeRate
+        
+        async for db in get_db():
+            result = await db.execute(select(func.count(ExchangeRate.id)))
+            count = result.scalar()
+            
+            if count == 0:
+                logger.info("FX rates table is empty - running initial update...")
+                await fx_rate_update_job()
+                return {"action": "initial_update", "reason": "table_empty"}
+            
+            result = await db.execute(select(func.max(ExchangeRate.fetched_at)))
+            last_fetch = result.scalar()
+            
+            if last_fetch is None or datetime.utcnow() - last_fetch > timedelta(hours=1):
+                logger.info(f"FX rates are stale (last: {last_fetch}) - running update...")
+                await fx_rate_update_job()
+                return {"action": "update", "reason": "stale", "last_fetch": str(last_fetch)}
+            
+            logger.info(f"FX rates are fresh (last: {last_fetch}) - skipping")
+            return {"action": "skip", "reason": "fresh", "last_fetch": str(last_fetch)}
+    
+    startup_orch.register_task(
+        name="fx_rates",
+        func=startup_fx_rates,
+        priority=TaskPriority.CRITICAL,
+        delay_after_seconds=5  # Short delay - FX is quick
+    )
+    
+    # Task 2: EOD Data (HIGH - needed for optimizer)
+    async def startup_eod_data():
+        from datetime import datetime
+        from sqlalchemy import select, func
+        from app.db.models.price_bar import PriceBar
+        
+        async for db in get_db():
+            result = await db.execute(
+                select(func.max(PriceBar.timestamp)).where(PriceBar.timeframe == "D1")
+            )
+            last_bar = result.scalar()
+            
+            if last_bar is None:
+                logger.info("No EOD data found - running initial collection...")
+                await universe_eod_collection_job()
+                return {"action": "initial_collection", "reason": "no_data"}
+            
+            hours_since_update = (datetime.utcnow() - last_bar).total_seconds() / 3600
+            
+            if hours_since_update > 36:  # 36h to account for weekends
+                logger.info(f"EOD data is stale ({hours_since_update:.1f}h) - running update...")
+                await universe_eod_collection_job()
+                return {"action": "update", "reason": "stale", "hours_since": hours_since_update}
+            
+            logger.info(f"EOD data is fresh ({hours_since_update:.1f}h ago) - skipping")
+            return {"action": "skip", "reason": "fresh", "hours_since": hours_since_update}
+    
+    startup_orch.register_task(
+        name="eod_data",
+        func=startup_eod_data,
+        priority=TaskPriority.HIGH,
+        max_duration_seconds=600,  # 10 min max for EOD (can be slow)
+        delay_after_seconds=30     # Longer delay after heavy task
+    )
+    
+    # Task 3: Initial Quote Update (NORMAL - only if markets are open)
+    async def startup_quote_update():
+        from app.scheduler.market_hours import is_us_market_open, is_eu_market_open
+        
+        if not (is_us_market_open() or is_eu_market_open()):
+            logger.info("Markets closed - skipping startup quote update")
+            return {"action": "skip", "reason": "markets_closed"}
+        
+        logger.info("Markets open - running initial quote update...")
+        await universe_quote_update_job()
+        return {"action": "update", "reason": "markets_open"}
+    
+    startup_orch.register_task(
+        name="quote_update",
+        func=startup_quote_update,
+        priority=TaskPriority.NORMAL,
+        skip_if_markets_closed=True,
+        delay_after_seconds=10
+    )
+    
+    # Run startup sequence in background (with initial delay to let API routes be ready)
+    async def run_startup_sequence():
+        await asyncio.sleep(15)  # Wait for server to be fully ready
+        logger.info("Starting data initialization sequence...")
+        result = await startup_orch.run_startup_sequence()
+        logger.info(f"Startup sequence completed: {len(result.get('tasks', {}))} tasks processed")
+    
+    asyncio.create_task(run_startup_sequence())
     
     return scheduler
 
