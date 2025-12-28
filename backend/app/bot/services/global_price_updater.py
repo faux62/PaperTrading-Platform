@@ -10,10 +10,16 @@ APPROACH B - Dynamic FX:
 - current_price stored in NATIVE currency
 - market_value and unrealized_pnl in PORTFOLIO currency
 - Uses current FX rate from exchange_rates table
+
+OPTIMIZATION (Dec 2024):
+- Batch quote fetching: Single HTTP request for all positions
+- Redis cache integration: Check cache before API calls
+- Group by market type: Efficient routing to correct providers
 """
 from datetime import datetime, date, timedelta
 from typing import Optional, Dict, Set, List, Tuple
 from decimal import Decimal
+from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from loguru import logger
@@ -25,6 +31,7 @@ from app.scheduler.market_hours import (
     EXCHANGE_HOURS,
 )
 from app.data_providers import orchestrator
+from app.data_providers.adapters.base import MarketType
 from app.db.redis_client import redis_client
 
 
@@ -78,6 +85,34 @@ class GlobalPriceUpdater:
         
         # Default to NYSE for US stocks (no suffix)
         return "NYSE"
+    
+    def _get_market_type_for_symbol(self, symbol: str) -> MarketType:
+        """
+        Determine the MarketType for routing to correct provider.
+        Maps to available MarketType enum values.
+        """
+        symbol_upper = symbol.upper()
+        
+        # UK stocks -> EU_STOCK (same routing)
+        if symbol_upper.endswith(".L"):
+            return MarketType.EU_STOCK
+        
+        # Japanese stocks -> ASIA_STOCK
+        if symbol_upper.endswith(".T") or symbol_upper.endswith(".TYO"):
+            return MarketType.ASIA_STOCK
+        
+        # Hong Kong stocks -> ASIA_STOCK
+        if symbol_upper.endswith(".HK"):
+            return MarketType.ASIA_STOCK
+        
+        # European stocks
+        eu_suffixes = {".DE", ".PA", ".MI", ".MC", ".SW", ".AS", ".BR"}
+        for suffix in eu_suffixes:
+            if symbol_upper.endswith(suffix):
+                return MarketType.EU_STOCK
+        
+        # Default to US stock
+        return MarketType.US_STOCK
     
     def _get_market_status(self, exchange: str) -> Tuple[bool, MarketSession]:
         """
@@ -244,7 +279,16 @@ class GlobalPriceUpdater:
     
     async def update_portfolio_prices(self, portfolio: Portfolio) -> Dict[str, any]:
         """
-        Update prices for all positions in a portfolio.
+        Update prices for all positions in a portfolio using BATCH fetching.
+        
+        OPTIMIZED: Single batch request per market type instead of individual calls.
+        
+        Strategy:
+        1. Collect all position symbols
+        2. Check Redis cache first for recent quotes
+        3. Group uncached symbols by market type
+        4. Fetch each group in single batch request
+        5. Apply prices and FX conversions
         
         Returns:
             Dict with update statistics
@@ -260,34 +304,137 @@ class GlobalPriceUpdater:
         positions = result.scalars().all()
         
         if not positions:
-            return {"updated": 0, "skipped": 0, "failed": 0}
+            return {"updated": 0, "skipped": 0, "failed": 0, "cached": 0, "fetched": 0}
         
         # Get portfolio currency for FX conversions
         portfolio_currency = portfolio.currency or "EUR"
         
-        stats = {"updated": 0, "skipped": 0, "failed": 0, "by_exchange": {}}
+        stats = {
+            "updated": 0,
+            "skipped": 0,
+            "failed": 0,
+            "cached": 0,      # Prices from Redis cache
+            "fetched": 0,     # Prices from API
+            "http_requests": 0,  # Actual HTTP requests made
+        }
         
-        for position in positions:
-            exchange = self._get_exchange_for_symbol(position.symbol)
+        # ==================== STEP 1: Collect all symbols ====================
+        position_map = {p.symbol.upper(): p for p in positions}
+        all_symbols = list(position_map.keys())
+        
+        # ==================== STEP 2: Check Redis cache ====================
+        prices: Dict[str, float] = {}
+        symbols_to_fetch: List[str] = []
+        
+        for symbol in all_symbols:
+            try:
+                # Check if redis client is initialized
+                if redis_client._client is None:
+                    symbols_to_fetch.append(symbol)
+                    continue
+                    
+                cached_quote = await redis_client.get_quote(symbol)
+                if cached_quote and cached_quote.get("price"):
+                    prices[symbol] = float(cached_quote["price"])
+                    stats["cached"] += 1
+                    logger.debug(f"Cache hit for {symbol}: ${cached_quote['price']}")
+                else:
+                    symbols_to_fetch.append(symbol)
+            except Exception as e:
+                logger.debug(f"Cache check failed for {symbol}: {e}")
+                symbols_to_fetch.append(symbol)
+        
+        # ==================== STEP 3: Group by market type ====================
+        if symbols_to_fetch:
+            by_market_type: Dict[MarketType, List[str]] = defaultdict(list)
             
-            if exchange not in stats["by_exchange"]:
-                stats["by_exchange"][exchange] = {"updated": 0, "skipped": 0}
+            for symbol in symbols_to_fetch:
+                market_type = self._get_market_type_for_symbol(symbol)
+                by_market_type[market_type].append(symbol)
+            
+            # ==================== STEP 4: Batch fetch per market type ====================
+            for market_type, symbols in by_market_type.items():
+                try:
+                    logger.debug(f"Batch fetching {len(symbols)} {market_type.value} symbols")
+                    
+                    # Single batch request for all symbols of this market type
+                    quotes = await orchestrator.get_quotes(
+                        symbols=symbols,
+                        market_type=market_type
+                    )
+                    stats["http_requests"] += 1  # One request per market type
+                    
+                    for symbol, quote in quotes.items():
+                        if quote and quote.price:
+                            prices[symbol.upper()] = float(quote.price)
+                            stats["fetched"] += 1
+                            
+                            # Cache in Redis for next time (if available)
+                            try:
+                                if redis_client._client is not None:
+                                    await redis_client.set_quote(symbol, {
+                                        "price": float(quote.price),
+                                        "change": float(quote.change) if quote.change else None,
+                                        "change_percent": float(quote.change_percent) if quote.change_percent else None,
+                                        "timestamp": datetime.utcnow().isoformat(),
+                                    })
+                            except Exception:
+                                pass  # Cache write failure is not critical
+                            
+                except Exception as e:
+                    logger.warning(f"Batch fetch failed for {market_type.value}: {e}")
+                    # Individual symbols in this batch won't have prices
+        
+        # ==================== STEP 5: Apply prices to positions ====================
+        for symbol, position in position_map.items():
+            price = prices.get(symbol)
+            
+            if price is None:
+                stats["failed"] += 1
+                continue
             
             try:
-                # Always force FX recalc to ensure market_value/unrealized_pnl are in portfolio currency
-                updated = await self.update_position_price(position, portfolio_currency, force_fx_recalc=True)
-                if updated:
-                    stats["updated"] += 1
-                    stats["by_exchange"][exchange]["updated"] += 1
-                else:
-                    stats["skipped"] += 1
-                    stats["by_exchange"][exchange]["skipped"] += 1
+                # Update position price in NATIVE currency
+                position.current_price = Decimal(str(price))
+                
+                # Get current FX rate from database
+                native_currency = position.native_currency or "USD"
+                fx_rate = Decimal("1.0")
+                
+                if native_currency != portfolio_currency:
+                    from app.utils.currency import get_exchange_rate
+                    fx_rate = await get_exchange_rate(native_currency, portfolio_currency)
+                
+                # Calculate market_value and unrealized_pnl in PORTFOLIO currency
+                market_value_native = position.quantity * position.current_price
+                position.market_value = market_value_native * fx_rate
+                
+                # P&L = (current_price - avg_cost) × quantity × fx_rate
+                pnl_native = (position.current_price - position.avg_cost) * position.quantity
+                position.unrealized_pnl = pnl_native * fx_rate
+                
+                # P&L percent is currency-agnostic (calculated in native)
+                if position.avg_cost > 0:
+                    position.unrealized_pnl_percent = float(
+                        (position.current_price - position.avg_cost) / position.avg_cost * 100
+                    )
+                position.updated_at = datetime.utcnow()
+                
+                stats["updated"] += 1
+                logger.debug(f"Updated {symbol}: ${price}, FX={fx_rate}")
+                
             except Exception as e:
-                logger.error(f"Failed to update {position.symbol}: {e}")
+                logger.error(f"Failed to apply price for {symbol}: {e}")
                 stats["failed"] += 1
         
         if stats["updated"] > 0:
             await self.db.commit()
+        
+        logger.info(
+            f"Portfolio price update: {stats['updated']} updated "
+            f"({stats['cached']} cached, {stats['fetched']} fetched), "
+            f"{stats['http_requests']} HTTP requests"
+        )
         
         return stats
     
@@ -321,6 +468,9 @@ async def run_global_price_update(db: AsyncSession) -> Dict[str, any]:
     Run global price update for all users' portfolios.
     
     This is the main entry point called by the scheduler.
+    
+    OPTIMIZED: Uses batch fetching to minimize HTTP requests.
+    Example: 10 positions across 2 market types = 2 HTTP requests (was 10)
     """
     from app.db.models import User
     
@@ -334,6 +484,9 @@ async def run_global_price_update(db: AsyncSession) -> Dict[str, any]:
         "positions_updated": 0,
         "positions_skipped": 0,
         "positions_failed": 0,
+        "positions_cached": 0,
+        "positions_fetched": 0,
+        "http_requests": 0,
     }
     
     for user in users:
@@ -354,8 +507,11 @@ async def run_global_price_update(db: AsyncSession) -> Dict[str, any]:
             for portfolio in portfolios:
                 stats = await updater.update_portfolio_prices(portfolio)
                 total_stats["positions_updated"] += stats["updated"]
-                total_stats["positions_skipped"] += stats["skipped"]
+                total_stats["positions_skipped"] += stats.get("skipped", 0)
                 total_stats["positions_failed"] += stats["failed"]
+                total_stats["positions_cached"] += stats.get("cached", 0)
+                total_stats["positions_fetched"] += stats.get("fetched", 0)
+                total_stats["http_requests"] += stats.get("http_requests", 0)
             
             total_stats["users_processed"] += 1
             
@@ -364,9 +520,9 @@ async def run_global_price_update(db: AsyncSession) -> Dict[str, any]:
     
     if total_stats["positions_updated"] > 0:
         logger.info(
-            f"Global price update: {total_stats['positions_updated']} updated, "
-            f"{total_stats['positions_skipped']} skipped, "
-            f"{total_stats['positions_failed']} failed"
+            f"Global price update: {total_stats['positions_updated']} updated "
+            f"({total_stats['positions_cached']} cached, {total_stats['positions_fetched']} fetched), "
+            f"{total_stats['http_requests']} HTTP requests"
         )
     
     return total_stats

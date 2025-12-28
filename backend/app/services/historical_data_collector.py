@@ -418,9 +418,10 @@ class HistoricalDataCollector:
         period: str = "5d"
     ) -> Dict[str, int]:
         """
-        Collect historical data directly via yfinance.
+        Collect historical data directly via yfinance using batch download.
         
-        This is more reliable for EU stocks than going through the orchestrator.
+        Uses yf.download() for efficient batch fetching - single HTTP request
+        for multiple symbols instead of individual requests.
         
         Args:
             currency: Currency filter (e.g., 'EUR', 'USD')
@@ -442,7 +443,7 @@ class HistoricalDataCollector:
             )
             symbols = [r[0] for r in result.fetchall()]
         
-        logger.info(f"Collecting {len(symbols)} {currency} symbols via yfinance (period={period})")
+        logger.info(f"Collecting {len(symbols)} {currency} symbols via yfinance batch (period={period})")
         
         stats = {
             "total_symbols": len(symbols),
@@ -451,63 +452,137 @@ class HistoricalDataCollector:
             "bars_inserted": 0
         }
         
-        # Process in batches
-        batch_size = 20
+        if not symbols:
+            return stats
+        
+        # Process in batches using yf.download() - TRUE batch (1 HTTP request per batch)
+        batch_size = 50  # yfinance handles up to ~50 symbols well per request
+        
         for i in range(0, len(symbols), batch_size):
             batch = symbols[i:i+batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (len(symbols) + batch_size - 1) // batch_size
             
-            for sym in batch:
-                try:
-                    ticker = yf.Ticker(sym)
-                    hist = ticker.history(period=period)
+            try:
+                # yf.download() makes a SINGLE HTTP request for all symbols in batch
+                logger.debug(f"Downloading batch {batch_num}/{total_batches}: {len(batch)} symbols")
+                
+                # Run synchronous yfinance in thread pool
+                def download_batch():
+                    return yf.download(
+                        tickers=batch,
+                        period=period,
+                        group_by='ticker',
+                        auto_adjust=True,
+                        progress=False,
+                        threads=False  # Single request, no threading
+                    )
+                
+                loop = asyncio.get_event_loop()
+                data = await loop.run_in_executor(None, download_batch)
+                
+                if data.empty:
+                    logger.warning(f"Batch {batch_num} returned empty data")
+                    stats["failed"] += len(batch)
+                    continue
+                
+                # Process results - handle both single and multi-symbol DataFrames
+                async with async_session_maker() as db:
+                    symbols_processed = set()
                     
-                    if hist.empty:
-                        stats["failed"] += 1
-                        continue
+                    # For single symbol, columns are OHLCV directly
+                    # For multiple symbols, columns are MultiIndex (symbol, OHLCV)
+                    if len(batch) == 1:
+                        sym = batch[0].upper()
+                        symbols_processed.add(sym)
+                        count = await self._insert_symbol_bars(db, sym, data, stats)
+                    else:
+                        # MultiIndex columns: (Symbol, OHLCV)
+                        for sym in batch:
+                            sym_upper = sym.upper()
+                            try:
+                                if sym_upper in data.columns.get_level_values(0):
+                                    sym_data = data[sym_upper]
+                                    if not sym_data.dropna(how='all').empty:
+                                        symbols_processed.add(sym_upper)
+                                        await self._insert_symbol_bars(db, sym_upper, sym_data, stats)
+                            except Exception as e:
+                                logger.debug(f"Error processing {sym}: {e}")
                     
-                    # Insert into DB
-                    async with async_session_maker() as db:
-                        count = 0
-                        for idx, row in hist.iterrows():
-                            ts = idx.to_pydatetime().replace(tzinfo=None)
-                            
-                            stmt = insert(PriceBar).values(
-                                symbol=sym.upper(),
-                                timeframe=TimeFrame.D1,
-                                timestamp=ts,
-                                open=float(row['Open']),
-                                high=float(row['High']),
-                                low=float(row['Low']),
-                                close=float(row['Close']),
-                                volume=int(row['Volume']) if row['Volume'] else 0,
-                                source='yfinance'
-                            ).on_conflict_do_update(
-                                index_elements=['symbol', 'timeframe', 'timestamp'],
-                                set_={
-                                    'open': float(row['Open']),
-                                    'high': float(row['High']),
-                                    'low': float(row['Low']),
-                                    'close': float(row['Close']),
-                                    'volume': int(row['Volume']) if row['Volume'] else 0,
-                                    'source': 'yfinance'
-                                }
-                            )
-                            await db.execute(stmt)
-                            count += 1
-                        
-                        await db.commit()
-                        stats["bars_inserted"] += count
-                        stats["successful"] += 1
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to fetch {sym}: {e}")
-                    stats["failed"] += 1
+                    await db.commit()
+                    
+                    # Count successes and failures
+                    stats["successful"] += len(symbols_processed)
+                    stats["failed"] += len(batch) - len(symbols_processed)
+                
+            except Exception as e:
+                logger.warning(f"Batch {batch_num} download failed: {e}")
+                stats["failed"] += len(batch)
             
-            # Rate limit between batches
-            await asyncio.sleep(0.5)
+            # Small delay between batches to be nice to yfinance
+            if i + batch_size < len(symbols):
+                await asyncio.sleep(0.3)
         
-        logger.info(f"yfinance collection complete: {stats}")
+        logger.info(f"yfinance batch collection complete: {stats}")
         return stats
+    
+    async def _insert_symbol_bars(
+        self,
+        db,
+        symbol: str,
+        data,
+        stats: Dict
+    ) -> int:
+        """Insert OHLCV bars for a single symbol from DataFrame."""
+        count = 0
+        
+        for idx, row in data.iterrows():
+            try:
+                # Skip rows with NaN values
+                if row.isna().all():
+                    continue
+                    
+                ts = idx.to_pydatetime().replace(tzinfo=None)
+                
+                # Handle column names (may be lowercase or capitalized)
+                open_val = row.get('Open') or row.get('open')
+                high_val = row.get('High') or row.get('high')
+                low_val = row.get('Low') or row.get('low')
+                close_val = row.get('Close') or row.get('close')
+                volume_val = row.get('Volume') or row.get('volume') or 0
+                
+                if open_val is None or close_val is None:
+                    continue
+                
+                stmt = insert(PriceBar).values(
+                    symbol=symbol,
+                    timeframe=TimeFrame.D1,
+                    timestamp=ts,
+                    open=float(open_val),
+                    high=float(high_val),
+                    low=float(low_val),
+                    close=float(close_val),
+                    volume=int(volume_val) if volume_val else 0,
+                    source='yfinance'
+                ).on_conflict_do_update(
+                    index_elements=['symbol', 'timeframe', 'timestamp'],
+                    set_={
+                        'open': float(open_val),
+                        'high': float(high_val),
+                        'low': float(low_val),
+                        'close': float(close_val),
+                        'volume': int(volume_val) if volume_val else 0,
+                        'source': 'yfinance'
+                    }
+                )
+                await db.execute(stmt)
+                count += 1
+                
+            except Exception as e:
+                logger.debug(f"Error inserting bar for {symbol} at {idx}: {e}")
+        
+        stats["bars_inserted"] += count
+        return count
 
 
 # Singleton instance (initialized on first import with orchestrator)

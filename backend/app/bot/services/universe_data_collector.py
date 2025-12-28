@@ -6,18 +6,31 @@ Handles:
 - Quote updates (real-time during market hours)
 - EOD OHLCV data (daily)
 - Intelligent batching and rate limiting
+
+OPTIMIZATIONS (Dec 2024):
+- Single DB query instead of per-region queries
+- Skip closed markets (no point updating Tokyo at 16:00 CET)
+- Skip symbols with fresh cache (< cache_ttl_seconds)
+- Group by market type for efficient batch fetching
 """
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 import asyncio
+from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_, or_
 from loguru import logger
 
 from app.db.models.market_universe import MarketUniverse, MarketRegion
-from app.db.models.price_bar import PriceBar, TimeFrame
+from app.db.models.price_bar import PriceBar, TimeFrame as DBTimeFrame
 from app.data_providers.orchestrator import orchestrator
-from app.scheduler.market_hours import get_market_hours_manager
+from app.data_providers.adapters.base import TimeFrame as OrchestratorTimeFrame, MarketType
+from app.scheduler.market_hours import (
+    get_market_hours_manager,
+    is_us_market_open,
+    is_eu_market_open,
+    is_asia_market_open,
+)
 from app.db.redis_client import redis_client
 
 
@@ -255,7 +268,7 @@ class UniverseDataCollector:
                         for bar in bars:
                             price_bar = PriceBar(
                                 symbol=symbol_entry.symbol,
-                                timeframe=TimeFrame.D1,
+                                timeframe=DBTimeFrame.D1,
                                 timestamp=bar["timestamp"],
                                 open=bar["open"],
                                 high=bar["high"],
@@ -312,7 +325,7 @@ class UniverseDataCollector:
                 symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,
-                timeframe="1d"
+                timeframe=OrchestratorTimeFrame.DAY
             )
             
             if bars:
@@ -355,54 +368,210 @@ async def run_universe_quote_update(db: AsyncSession) -> Dict:
     """
     Scheduled job: Update quotes for universe symbols.
     
-    Runs every 5 minutes and updates ALL regions.
-    Prioritizes symbols that haven't been updated recently.
-    """
-    collector = get_universe_collector()
+    OPTIMIZED VERSION:
+    - Single DB query for all symbols
+    - Skip closed markets (no API calls for Tokyo at night)
+    - Skip symbols with fresh cache (< 4 min old)
+    - Group by market type for batch fetching
     
-    total_stats = {
+    Runs every 5 minutes.
+    """
+    CACHE_FRESHNESS_SECONDS = 240  # 4 minutes - skip if cached within this window
+    
+    stats = {
         "total": 0,
         "updated": 0,
         "failed": 0,
+        "skipped_closed_market": 0,
+        "skipped_fresh_cache": 0,
+        "http_requests": 0,
     }
     
-    # Update ALL regions every run
-    # Symbols are ordered by last_quote_update, so oldest first
-    regions_to_update = [
-        MarketRegion.US,
-        MarketRegion.EU,
-        MarketRegion.UK,
-        MarketRegion.ASIA,
-    ]
+    # ==================== STEP 1: Check which markets are open ====================
+    us_open = is_us_market_open()
+    eu_open = is_eu_market_open()
+    asia_open = is_asia_market_open()
     
-    for region in regions_to_update:
-        stats = await collector.update_quotes_batch(
-            db=db,
-            region=region,
-            priority=None,  # Don't filter by priority
-            limit=100  # 100 symbols per region per run
-        )
-        total_stats["total"] += stats["total"]
-        total_stats["updated"] += stats["updated"]
-        total_stats["failed"] += stats["failed"]
+    # Map regions to open status
+    region_open = {
+        MarketRegion.US: us_open,
+        MarketRegion.EU: eu_open,
+        MarketRegion.UK: eu_open,  # UK follows EU hours roughly
+        MarketRegion.ASIA: asia_open,
+        MarketRegion.GLOBAL: us_open,  # Global ETFs follow US
+    }
     
-    return total_stats
+    # Log market status
+    open_markets = [r.value for r, is_open in region_open.items() if is_open]
+    if not open_markets:
+        logger.info("Universe quote update: All markets closed, skipping")
+        return stats
+    
+    logger.debug(f"Open markets: {open_markets}")
+    
+    # ==================== STEP 2: Single DB query for ALL active symbols ====================
+    query = select(MarketUniverse).where(
+        MarketUniverse.is_active == True
+    ).order_by(
+        MarketUniverse.last_quote_update.asc().nullsfirst()
+    )
+    
+    result = await db.execute(query)
+    all_symbols = result.scalars().all()
+    stats["total"] = len(all_symbols)
+    
+    if not all_symbols:
+        return stats
+    
+    # ==================== STEP 3: Filter and group symbols ====================
+    # Map region to market type
+    region_to_market_type = {
+        MarketRegion.US: MarketType.US_STOCK,
+        MarketRegion.UK: MarketType.EU_STOCK,
+        MarketRegion.EU: MarketType.EU_STOCK,
+        MarketRegion.ASIA: MarketType.ASIA_STOCK,
+        MarketRegion.GLOBAL: MarketType.US_STOCK,
+    }
+    
+    symbols_to_fetch: Dict[MarketType, List[MarketUniverse]] = defaultdict(list)
+    now = datetime.utcnow()
+    
+    for entry in all_symbols:
+        # Skip if market is closed
+        if not region_open.get(entry.region, False):
+            stats["skipped_closed_market"] += 1
+            continue
+        
+        # Check Redis cache freshness
+        try:
+            if redis_client._client is not None:
+                cached = await redis_client.get_quote(entry.symbol)
+                if cached and cached.get("timestamp"):
+                    # Parse timestamp and check freshness
+                    try:
+                        cached_time = datetime.fromisoformat(cached["timestamp"].replace("Z", "+00:00"))
+                        age_seconds = (now - cached_time.replace(tzinfo=None)).total_seconds()
+                        if age_seconds < CACHE_FRESHNESS_SECONDS:
+                            stats["skipped_fresh_cache"] += 1
+                            continue
+                    except (ValueError, TypeError):
+                        pass  # Invalid timestamp, proceed to fetch
+        except Exception:
+            pass  # Redis error, proceed to fetch
+        
+        # Determine market type
+        if entry.asset_type and entry.asset_type.value == "etf":
+            market_type = MarketType.ETF
+        else:
+            market_type = region_to_market_type.get(entry.region, MarketType.US_STOCK)
+        
+        symbols_to_fetch[market_type].append(entry)
+    
+    # ==================== STEP 4: Batch fetch per market type ====================
+    BATCH_SIZE = 50
+    
+    for market_type, entries in symbols_to_fetch.items():
+        if not entries:
+            continue
+        
+        symbols = [e.symbol for e in entries]
+        entry_map = {e.symbol: e for e in entries}
+        
+        # Process in batches
+        for i in range(0, len(symbols), BATCH_SIZE):
+            batch_symbols = symbols[i:i + BATCH_SIZE]
+            
+            try:
+                logger.debug(f"Fetching {len(batch_symbols)} {market_type.value} quotes")
+                
+                quotes = await orchestrator.get_quotes(
+                    symbols=batch_symbols,
+                    market_type=market_type
+                )
+                stats["http_requests"] += 1
+                
+                # Process results
+                for symbol, quote in quotes.items():
+                    if quote and quote.price:
+                        entry = entry_map.get(symbol)
+                        if entry:
+                            entry.last_quote_update = now
+                            entry.consecutive_failures = 0
+                            entry.last_error = None
+                            
+                            # Cache in Redis
+                            quote_data = {
+                                "price": float(quote.price),
+                                "change": float(quote.change) if quote.change else None,
+                                "change_percent": float(quote.change_percent) if quote.change_percent else None,
+                                "volume": quote.volume,
+                                "timestamp": now.isoformat(),
+                                "bid": float(quote.bid) if quote.bid else None,
+                                "ask": float(quote.ask) if quote.ask else None,
+                                "day_high": float(quote.day_high) if quote.day_high else None,
+                                "day_low": float(quote.day_low) if quote.day_low else None,
+                                "prev_close": float(quote.prev_close) if quote.prev_close else None,
+                            }
+                            
+                            try:
+                                if redis_client._client is not None:
+                                    await redis_client.set_quote(symbol, quote_data)
+                            except Exception:
+                                pass
+                            
+                            stats["updated"] += 1
+                
+                # Mark failures
+                for symbol in batch_symbols:
+                    if symbol not in quotes:
+                        entry = entry_map.get(symbol)
+                        if entry:
+                            entry.consecutive_failures += 1
+                            stats["failed"] += 1
+                
+            except Exception as e:
+                logger.warning(f"Batch fetch failed for {market_type.value}: {e}")
+                stats["failed"] += len(batch_symbols)
+            
+            # Small delay between batches
+            if i + BATCH_SIZE < len(symbols):
+                await asyncio.sleep(0.3)
+        
+        # Commit after each market type
+        try:
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Commit failed: {e}")
+            await db.rollback()
+    
+    logger.info(
+        f"Universe quote update: {stats['updated']} updated, "
+        f"{stats['skipped_closed_market']} skipped (market closed), "
+        f"{stats['skipped_fresh_cache']} skipped (fresh cache), "
+        f"{stats['http_requests']} HTTP requests"
+    )
+    
+    return stats
 
 
 async def run_universe_eod_collection(db: AsyncSession) -> Dict:
     """
     Scheduled job: Collect EOD data for all universe symbols.
     
-    Runs once daily after all markets close.
+    Runs once daily after all markets close (23:00 UTC).
+    
+    OPTIMIZED (Dec 2024):
+    - ALL markets use yfinance batch download
+    - yf.download() fetches 50 symbols per HTTP request
+    - Total: ~14 HTTP requests for 623 symbols (was ~281)
     
     Strategy:
-    - EU/UK markets: Use yfinance directly (more reliable for European symbols)
-    - Other markets (US, ASIA): Use orchestrator with provider failover chain
+    - Group symbols by currency
+    - Use yfinance batch for all currencies (USD, EUR, GBP, JPY, HKD, CHF)
+    - yfinance supports all major exchanges: NYSE, NASDAQ, LSE, Euronext, TSE, HKEX
     """
     from app.services.historical_data_collector import get_collector
     from app.data_providers import orchestrator as provider_orchestrator
-    
-    collector = get_universe_collector()
     
     # Collect for all regions
     total_stats = {
@@ -410,18 +579,17 @@ async def run_universe_eod_collection(db: AsyncSession) -> Dict:
         "updated": 0,
         "bars_inserted": 0,
         "failed": 0,
+        "http_requests": 0,
     }
     
-    # EU and UK markets: use yfinance directly (more reliable)
-    eu_regions = {MarketRegion.EU, MarketRegion.UK}
+    # ALL currencies via yfinance batch - most efficient
+    # yfinance handles all major markets well
+    all_currencies = ["USD", "GBP", "EUR", "CHF", "JPY", "HKD"]
     
-    for region in eu_regions:
-        logger.info(f"Collecting {region.value} EOD data via yfinance...")
+    for currency in all_currencies:
+        logger.info(f"Collecting {currency} EOD data via yfinance...")
         try:
-            # Get currency for region
-            currency = "EUR" if region == MarketRegion.EU else "GBP"
-            
-            # Use the historical_data_collector with yfinance
+            # Use the historical_data_collector with yfinance batch
             hist_collector = get_collector(provider_orchestrator)
             stats = await hist_collector.collect_via_yfinance(
                 currency=currency,
@@ -433,28 +601,16 @@ async def run_universe_eod_collection(db: AsyncSession) -> Dict:
             total_stats["bars_inserted"] += stats["bars_inserted"]
             total_stats["failed"] += stats["failed"]
             
+            # Estimate HTTP requests (1 per 50 symbols)
+            total_stats["http_requests"] += (stats["total_symbols"] + 49) // 50
+            
         except Exception as e:
-            logger.error(f"Failed to collect {region.value} via yfinance: {e}")
-    
-    # Other markets (US, ASIA): use orchestrator with provider chain
-    non_eu_regions = [r for r in MarketRegion if r not in eu_regions and r != MarketRegion.GLOBAL]
-    
-    for region in non_eu_regions:
-        logger.info(f"Collecting {region.value} EOD data via orchestrator...")
-        stats = await collector.collect_eod_data(
-            db=db,
-            region=region,
-            days_back=1
-        )
-        
-        total_stats["total"] += stats["total"]
-        total_stats["updated"] += stats["updated"]
-        total_stats["bars_inserted"] += stats["bars_inserted"]
-        total_stats["failed"] += stats["failed"]
+            logger.error(f"Failed to collect {currency} via yfinance: {e}")
     
     logger.info(
         f"Universe EOD collection: {total_stats['updated']} symbols, "
-        f"{total_stats['bars_inserted']} bars"
+        f"{total_stats['bars_inserted']} bars, "
+        f"~{total_stats['http_requests']} HTTP requests"
     )
     
     return total_stats

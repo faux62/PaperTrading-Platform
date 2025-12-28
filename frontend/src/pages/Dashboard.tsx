@@ -48,6 +48,8 @@ interface Trade {
   trade_type: string;
   quantity: number;
   price: number;
+  executed_price?: number;
+  executed_quantity?: number;
   created_at: string;
   native_currency?: string;  // Currency the symbol is quoted in
   exchange_rate?: number;
@@ -570,9 +572,9 @@ const Dashboard = () => {
                           {trade.trade_type?.toUpperCase() || 'N/A'}
                         </Badge>
                       </td>
-                      <td className="p-4 text-right text-surface-300">{trade.quantity}</td>
+                      <td className="p-4 text-right text-surface-300">{trade.executed_quantity || trade.quantity}</td>
                       <td className="p-4 text-right font-medium text-white">
-                        {formatNativeCurrency(trade.price, trade.native_currency)}
+                        {formatNativeCurrency(trade.executed_price || trade.price, trade.native_currency)}
                       </td>
                       <td className="p-4 text-right text-surface-400">
                         {formatTime(trade.created_at)}
