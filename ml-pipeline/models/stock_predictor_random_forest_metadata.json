@@ -1,0 +1,226 @@
+{
+  "model_name": "stock_predictor_random_forest",
+  "model_type": "RandomForestClassifier",
+  "version": "20251228_190719",
+  "trained_at": "2025-12-28T19:07:19.177266",
+  "symbols_count": 598,
+  "symbols_used": [
+    "0002.HK",
+    "0003.HK",
+    "0005.HK",
+    "0006.HK",
+    "0011.HK",
+    "0012.HK",
+    "0016.HK",
+    "0017.HK",
+    "0027.HK",
+    "0066.HK",
+    "0101.HK",
+    "0175.HK",
+    "0267.HK",
+    "0288.HK",
+    "0386.HK",
+    "0388.HK",
+    "0688.HK",
+    "0700.HK",
+    "0762.HK",
+    "0883.HK",
+    "0939.HK",
+    "0941.HK",
+    "1299.HK",
+    "1398.HK",
+    "1810.HK",
+    "1928.HK",
+    "1COV.DE",
+    "2020.HK",
+    "2318.HK",
+    "2914.T",
+    "3382.T",
+    "3690.HK",
+    "4063.T",
+    "4502.T",
+    "4503.T",
+    "4507.T",
+    "4519.T",
+    "4568.T",
+    "4661.T",
+    "4901.T",
+    "4911.T",
+    "5108.T",
+    "6098.T",
+    "6273.T",
+    "6301.T",
+    "6326.T",
+    "6367.T",
+    "6501.T",
+    "6503.T",
+    "6506.T"
+  ],
+  "feature_count": 66,
+  "feature_names": [
+    "sma_5",
+    "close_sma_5_ratio",
+    "sma_10",
+    "close_sma_10_ratio",
+    "sma_20",
+    "close_sma_20_ratio",
+    "sma_50",
+    "close_sma_50_ratio",
+    "sma_200",
+    "close_sma_200_ratio",
+    "ema_12",
+    "ema_26",
+    "ema_50",
+    "macd",
+    "macd_signal",
+    "macd_histogram",
+    "adx",
+    "adx_pos",
+    "adx_neg",
+    "cci",
+    "rsi_7",
+    "rsi_14",
+    "rsi_21",
+    "stoch_k",
+    "stoch_d",
+    "williams_r",
+    "roc_5",
+    "roc_10",
+    "roc_20",
+    "bb_high",
+    "bb_low",
+    "bb_mid",
+    "bb_width",
+    "bb_pct",
+    "atr_7",
+    "atr_7_pct",
+    "atr_14",
+    "atr_14_pct",
+    "atr_21",
+    "atr_21_pct",
+    "kc_high",
+    "kc_low",
+    "kc_mid",
+    "obv",
+    "mfi",
+    "volume_sma_20",
+    "volume_ratio",
+    "return_1d",
+    "return_5d",
+    "return_10d",
+    "return_20d",
+    "volatility_5d",
+    "volatility_20d",
+    "hl_range",
+    "hl_range_avg",
+    "gap",
+    "intraday_position",
+    "high_52w",
+    "low_52w",
+    "dist_from_high",
+    "dist_from_low",
+    "above_sma_20",
+    "above_sma_50",
+    "above_sma_200",
+    "sma_20_50_cross",
+    "sma_50_200_cross"
+  ],
+  "hyperparameters": {
+    "n_estimators": 200,
+    "max_depth": 8,
+    "min_samples_split": 100,
+    "min_samples_leaf": 50,
+    "horizon_days": 5,
+    "return_threshold": 0.02
+  },
+  "metrics": {
+    "train_accuracy": 0.5760355301146509,
+    "test_accuracy": 0.5734216718679594,
+    "oob_score": 0.5711541029021545,
+    "precision": 0.3613989412479389,
+    "recall": 0.5923586811186026,
+    "f1": 0.4489144729750124
+  },
+  "top_features": [
+    [
+      "atr_7_pct",
+      0.15245274226964617
+    ],
+    [
+      "atr_14_pct",
+      0.13289721278011576
+    ],
+    [
+      "atr_21_pct",
+      0.12969309462122466
+    ],
+    [
+      "hl_range_avg",
+      0.10190985160393819
+    ],
+    [
+      "volatility_20d",
+      0.06431917541534264
+    ],
+    [
+      "hl_range",
+      0.03372171381620746
+    ],
+    [
+      "dist_from_high",
+      0.02823336106785456
+    ],
+    [
+      "volatility_5d",
+      0.026353438230641915
+    ],
+    [
+      "bb_width",
+      0.02285391124992194
+    ],
+    [
+      "close_sma_50_ratio",
+      0.0189174005310835
+    ],
+    [
+      "close_sma_200_ratio",
+      0.01621343662289942
+    ],
+    [
+      "close_sma_20_ratio",
+      0.013326152624060105
+    ],
+    [
+      "obv",
+      0.0126252916868916
+    ],
+    [
+      "roc_20",
+      0.012145803398808695
+    ],
+    [
+      "dist_from_low",
+      0.011466782436134504
+    ],
+    [
+      "volume_sma_20",
+      0.01104463864216971
+    ],
+    [
+      "rsi_21",
+      0.01040563720821814
+    ],
+    [
+      "return_20d",
+      0.010158181033123409
+    ],
+    [
+      "adx_neg",
+      0.008433920013913096
+    ],
+    [
+      "macd_signal",
+      0.008157645863572966
+    ]
+  ]
+}
