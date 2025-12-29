@@ -296,6 +296,301 @@ TEMPLATES = {
     </div>
 </body>
 </html>
+""",
+
+    "morning_briefing": """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #eee; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #16213e; border-radius: 10px; padding: 30px; }
+        .header { text-align: center; border-bottom: 2px solid #0f3460; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { color: #00d9ff; margin: 0; }
+        .section { background: #0f3460; border-radius: 8px; padding: 20px; margin: 15px 0; }
+        .section-title { color: #00d9ff; font-size: 16px; margin-bottom: 15px; font-weight: bold; }
+        .metric-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1a1a2e; }
+        .metric-row:last-child { border-bottom: none; }
+        .label { color: #888; }
+        .value { font-weight: bold; color: #fff; }
+        .signal-item { background: #1a1a2e; border-radius: 6px; padding: 10px; margin: 5px 0; display: flex; justify-content: space-between; align-items: center; }
+        .signal-buy { border-left: 3px solid #10b981; }
+        .signal-sell { border-left: 3px solid #ef4444; }
+        .confidence { background: #0f3460; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .tip-box { background: #1e3a5f; border-left: 4px solid #f59e0b; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0; }
+        .tip-box h4 { color: #f59e0b; margin: 0 0 8px 0; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌅 Good Morning!</h1>
+            <p style="color: #888;">{{ date }}</p>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">📊 Portfolio Overview</div>
+            <div class="metric-row">
+                <span class="label">Total Portfolio Value</span>
+                <span class="value">${{ "%.2f"|format(total_portfolio_value) }}</span>
+            </div>
+            {% for p in portfolios %}
+            <div class="metric-row">
+                <span class="label">{{ p.name }} ({{ p.positions_count }} positions)</span>
+                <span class="value">${{ "%.2f"|format(p.value) }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="section">
+            <div class="section-title">🤖 Top ML Signals Today</div>
+            {% for signal in top_signals %}
+            <div class="signal-item signal-{{ signal.signal|lower }}">
+                <span><strong>{{ signal.symbol }}</strong></span>
+                <span>
+                    <span style="color: {{ '#10b981' if signal.signal == 'BUY' else '#ef4444' }}">{{ signal.signal }}</span>
+                    <span class="confidence">{{ signal.confidence }}%</span>
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if market_events %}
+        <div class="section">
+            <div class="section-title">📅 Market Events Today</div>
+            {% for event in market_events %}
+            <div class="metric-row">
+                <span class="label">{{ event.time }} - {{ event.event }}</span>
+                <span class="value" style="color: {{ '#ef4444' if event.importance == 'High' else '#f59e0b' }}">{{ event.importance }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        <div class="tip-box">
+            <h4>💡 Tip of the Day</h4>
+            <p style="margin: 0; color: #ccc;">Remember: Avoid trading in the first 30 minutes after market open. Volatility is highest and spreads are widest.</p>
+        </div>
+        
+        <div class="footer">
+            <p>PaperTrading Platform - Paper Trading Made Simple</p>
+        </div>
+    </div>
+</body>
+</html>
+""",
+
+    "market_open_alert": """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #eee; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #16213e; border-radius: 10px; padding: 30px; }
+        .header { text-align: center; border-bottom: 2px solid #0f3460; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { color: #10b981; margin: 0; font-size: 28px; }
+        .info-box { background: #0f3460; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
+        .time { font-size: 36px; font-weight: bold; color: #00d9ff; }
+        .exchanges { color: #888; margin-top: 10px; }
+        .warning-box { background: #3d1f1f; border-left: 4px solid #ef4444; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0; }
+        .warning-box h4 { color: #ef4444; margin: 0 0 8px 0; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔔 Market Opening Soon!</h1>
+        </div>
+        <div class="info-box">
+            <div class="time">{{ open_time }}</div>
+            <div style="font-size: 20px; margin: 10px 0; color: #fff;">{{ market_name }}</div>
+            <div class="exchanges">{{ exchanges|join(', ') }}</div>
+        </div>
+        <div class="warning-box">
+            <h4>⚠️ Important Reminder</h4>
+            <p style="margin: 0; color: #fca5a5;">{{ tip }}</p>
+        </div>
+        <div class="footer">
+            <p>PaperTrading Platform - Paper Trading Made Simple</p>
+        </div>
+    </div>
+</body>
+</html>
+""",
+
+    "stop_loss_alert": """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #eee; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #16213e; border-radius: 10px; padding: 30px; }
+        .header { text-align: center; border-bottom: 2px solid #ef4444; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { color: #ef4444; margin: 0; }
+        .alert-box { background: #3d1f1f; border-radius: 8px; padding: 25px; margin: 20px 0; text-align: center; }
+        .symbol { font-size: 32px; font-weight: bold; color: #fff; }
+        .loss { font-size: 36px; font-weight: bold; color: #ef4444; margin: 15px 0; }
+        .details { background: #0f3460; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a1a2e; }
+        .detail-row:last-child { border-bottom: none; }
+        .label { color: #888; }
+        .value { font-weight: bold; color: #fff; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛑 Stop-Loss Triggered</h1>
+        </div>
+        <div class="alert-box">
+            <div class="symbol">{{ symbol }}</div>
+            <div class="loss">-${{ "%.2f"|format(loss_amount) }}</div>
+            <div style="color: #fca5a5;">Position automatically closed</div>
+        </div>
+        <div class="details">
+            <div class="detail-row">
+                <span class="label">Entry Price</span>
+                <span class="value">${{ "%.2f"|format(entry_price) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Stop Price</span>
+                <span class="value">${{ "%.2f"|format(stop_price) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Exit Price</span>
+                <span class="value" style="color: #ef4444;">${{ "%.2f"|format(current_price) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Quantity</span>
+                <span class="value">{{ quantity }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Portfolio</span>
+                <span class="value">{{ portfolio_name }}</span>
+            </div>
+        </div>
+        <p style="text-align: center; color: #888; font-size: 13px;">
+            💡 Stop-losses protect your capital. This is working as intended!
+        </p>
+        <div class="footer">
+            <p>PaperTrading Platform - Paper Trading Made Simple</p>
+        </div>
+    </div>
+</body>
+</html>
+""",
+
+    "take_profit_alert": """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #eee; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #16213e; border-radius: 10px; padding: 30px; }
+        .header { text-align: center; border-bottom: 2px solid #10b981; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { color: #10b981; margin: 0; }
+        .alert-box { background: #1f3d2b; border-radius: 8px; padding: 25px; margin: 20px 0; text-align: center; }
+        .symbol { font-size: 32px; font-weight: bold; color: #fff; }
+        .profit { font-size: 36px; font-weight: bold; color: #10b981; margin: 15px 0; }
+        .details { background: #0f3460; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a1a2e; }
+        .detail-row:last-child { border-bottom: none; }
+        .label { color: #888; }
+        .value { font-weight: bold; color: #fff; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Take-Profit Reached!</h1>
+        </div>
+        <div class="alert-box">
+            <div class="symbol">{{ symbol }}</div>
+            <div class="profit">+${{ "%.2f"|format(profit_amount) }}</div>
+            <div style="color: #6ee7b7;">Target price achieved! 🎉</div>
+        </div>
+        <div class="details">
+            <div class="detail-row">
+                <span class="label">Entry Price</span>
+                <span class="value">${{ "%.2f"|format(entry_price) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Target Price</span>
+                <span class="value">${{ "%.2f"|format(target_price) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Exit Price</span>
+                <span class="value" style="color: #10b981;">${{ "%.2f"|format(current_price) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Quantity</span>
+                <span class="value">{{ quantity }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Portfolio</span>
+                <span class="value">{{ portfolio_name }}</span>
+            </div>
+        </div>
+        <div class="footer">
+            <p>PaperTrading Platform - Paper Trading Made Simple</p>
+        </div>
+    </div>
+</body>
+</html>
+""",
+
+    "ml_signal_alert": """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #eee; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #16213e; border-radius: 10px; padding: 30px; }
+        .header { text-align: center; border-bottom: 2px solid #8b5cf6; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { color: #8b5cf6; margin: 0; }
+        .signal-list { margin: 20px 0; }
+        .signal-item { background: #0f3460; border-radius: 8px; padding: 15px; margin: 10px 0; display: flex; justify-content: space-between; align-items: center; }
+        .signal-buy { border-left: 4px solid #10b981; }
+        .signal-sell { border-left: 4px solid #ef4444; }
+        .signal-symbol { font-size: 18px; font-weight: bold; color: #fff; }
+        .signal-action { padding: 6px 12px; border-radius: 4px; font-weight: bold; }
+        .buy { background: #10b981; color: #fff; }
+        .sell { background: #ef4444; color: #fff; }
+        .confidence { color: #888; font-size: 14px; }
+        .disclaimer { background: #1a1a2e; border-radius: 8px; padding: 15px; margin-top: 20px; font-size: 12px; color: #666; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 ML Signal Alert</h1>
+            <p style="color: #888;">{{ generated_at }}</p>
+        </div>
+        <div class="signal-list">
+            {% for signal in signals %}
+            <div class="signal-item signal-{{ signal.signal|lower }}">
+                <div>
+                    <div class="signal-symbol">{{ signal.symbol }}</div>
+                    <div class="confidence">Confidence: {{ signal.confidence }}%</div>
+                </div>
+                <span class="signal-action {{ signal.signal|lower }}">{{ signal.signal }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="disclaimer">
+            ⚠️ <strong>Disclaimer:</strong> ML signals are predictions, not guarantees. Always use proper risk management and never invest more than you can afford to lose. Past performance does not indicate future results.
+        </div>
+        <div class="footer">
+            <p>PaperTrading Platform - Paper Trading Made Simple</p>
+        </div>
+    </div>
+</body>
+</html>
 """
 }
 
@@ -491,6 +786,163 @@ class EmailService:
         )
         
         subject = f"⚠️ System Alert: {title}"
+        return await self.send_email(to_email, subject, html)
+
+    async def send_morning_briefing(
+        self,
+        to_email: str,
+        total_portfolio_value: float,
+        portfolios: List[Dict[str, Any]],
+        top_signals: List[Dict[str, Any]],
+        market_events: Optional[List[Dict[str, Any]]] = None,
+    ) -> bool:
+        """
+        Send daily morning briefing with portfolio overview and ML signals.
+        
+        Args:
+            to_email: Recipient email address
+            total_portfolio_value: Total value across all portfolios
+            portfolios: List of portfolio summaries with name, value, positions_count
+            top_signals: Top ML signals with symbol, signal (BUY/SELL), confidence
+            market_events: Optional list of market events with time, event, importance
+        """
+        template = Template(TEMPLATES["morning_briefing"])
+        html = template.render(
+            date=datetime.now().strftime("%A, %B %d, %Y"),
+            total_portfolio_value=total_portfolio_value,
+            portfolios=portfolios,
+            top_signals=top_signals[:5] if top_signals else [],  # Limit to top 5
+            market_events=market_events or [],
+        )
+        
+        subject = f"🌅 Morning Briefing - ${total_portfolio_value:,.2f}"
+        return await self.send_email(to_email, subject, html)
+    
+    async def send_market_open_alert(
+        self,
+        to_email: str,
+        market_name: str,
+        open_time: str,
+        exchanges: List[str],
+        tip: str,
+    ) -> bool:
+        """
+        Send market opening alert 15 minutes before market opens.
+        
+        Args:
+            to_email: Recipient email address
+            market_name: Name of market (e.g., "European Markets", "US Markets")
+            open_time: Opening time string (e.g., "09:00 CET")
+            exchanges: List of exchanges opening (e.g., ["LSE", "XETRA", "Euronext"])
+            tip: Trading tip/reminder for opening
+        """
+        template = Template(TEMPLATES["market_open_alert"])
+        html = template.render(
+            market_name=market_name,
+            open_time=open_time,
+            exchanges=exchanges,
+            tip=tip,
+        )
+        
+        subject = f"🔔 {market_name} Opening Soon - {open_time}"
+        return await self.send_email(to_email, subject, html)
+    
+    async def send_stop_loss_alert(
+        self,
+        to_email: str,
+        symbol: str,
+        entry_price: float,
+        stop_price: float,
+        current_price: float,
+        quantity: int,
+        loss_amount: float,
+        portfolio_name: str,
+    ) -> bool:
+        """
+        Send alert when stop-loss is triggered.
+        
+        Args:
+            to_email: Recipient email address
+            symbol: Stock symbol
+            entry_price: Original entry price
+            stop_price: Stop-loss trigger price
+            current_price: Price at which stop was triggered
+            quantity: Number of shares
+            loss_amount: Total loss amount (positive number)
+            portfolio_name: Name of the portfolio
+        """
+        template = Template(TEMPLATES["stop_loss_alert"])
+        html = template.render(
+            symbol=symbol,
+            entry_price=entry_price,
+            stop_price=stop_price,
+            current_price=current_price,
+            quantity=quantity,
+            loss_amount=abs(loss_amount),  # Ensure positive
+            portfolio_name=portfolio_name,
+        )
+        
+        subject = f"🛑 Stop-Loss Triggered: {symbol} (-${abs(loss_amount):,.2f})"
+        return await self.send_email(to_email, subject, html)
+    
+    async def send_take_profit_alert(
+        self,
+        to_email: str,
+        symbol: str,
+        entry_price: float,
+        target_price: float,
+        current_price: float,
+        quantity: int,
+        profit_amount: float,
+        portfolio_name: str,
+    ) -> bool:
+        """
+        Send alert when take-profit target is reached.
+        
+        Args:
+            to_email: Recipient email address
+            symbol: Stock symbol
+            entry_price: Original entry price
+            target_price: Take-profit target price
+            current_price: Price at which target was reached
+            quantity: Number of shares
+            profit_amount: Total profit amount
+            portfolio_name: Name of the portfolio
+        """
+        template = Template(TEMPLATES["take_profit_alert"])
+        html = template.render(
+            symbol=symbol,
+            entry_price=entry_price,
+            target_price=target_price,
+            current_price=current_price,
+            quantity=quantity,
+            profit_amount=profit_amount,
+            portfolio_name=portfolio_name,
+        )
+        
+        subject = f"🎯 Take-Profit Reached: {symbol} (+${profit_amount:,.2f})"
+        return await self.send_email(to_email, subject, html)
+    
+    async def send_ml_signal_alert(
+        self,
+        to_email: str,
+        signals: List[Dict[str, Any]],
+    ) -> bool:
+        """
+        Send ML high-confidence signal alert.
+        
+        Args:
+            to_email: Recipient email address
+            signals: List of ML signals with symbol, signal (BUY/SELL), confidence
+        """
+        template = Template(TEMPLATES["ml_signal_alert"])
+        html = template.render(
+            signals=signals,
+            generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        
+        signal_count = len(signals)
+        subject = f"🤖 {signal_count} High-Confidence ML Signal{'s' if signal_count > 1 else ''}"
         return await self.send_email(to_email, subject, html)
 
 

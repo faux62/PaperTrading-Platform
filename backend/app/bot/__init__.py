@@ -239,6 +239,51 @@ async def initialize_bot() -> BotScheduler:
         minute=0
     )
     
+    # ==========================================================
+    # TRADING NOTIFICATIONS - Email alerts for key trading moments
+    # ==========================================================
+    # Morning Briefing (02:00 ET = 07:00 CET) - portfolio overview + top signals
+    async def morning_briefing_notification_job():
+        from app.services.trading_notifications import morning_briefing_job
+        
+        async for db in get_db():
+            await morning_briefing_job(db)
+    
+    scheduler.add_pre_market_job(
+        job_id="morning_briefing_notification",
+        func=morning_briefing_notification_job,
+        hour=2,  # 02:00 ET = 07:00 CET
+        minute=0
+    )
+    
+    # EU Market Open Alert (03:45 ET = 08:45 CET) - 15 min before EU open
+    async def eu_market_open_notification_job():
+        from app.services.trading_notifications import eu_market_open_job
+        
+        async for db in get_db():
+            await eu_market_open_job(db)
+    
+    scheduler.add_pre_market_job(
+        job_id="eu_market_open_notification",
+        func=eu_market_open_notification_job,
+        hour=3,   # 03:45 ET = 08:45 CET
+        minute=45
+    )
+    
+    # US Market Open Alert (09:15 ET = 15:15 CET) - 15 min before US open
+    async def us_market_open_notification_job():
+        from app.services.trading_notifications import us_market_open_job
+        
+        async for db in get_db():
+            await us_market_open_job(db)
+    
+    scheduler.add_pre_market_job(
+        job_id="us_market_open_notification",
+        func=us_market_open_notification_job,
+        hour=9,   # 09:15 ET = 15:15 CET
+        minute=15
+    )
+    
     # Start the scheduler
     scheduler.start()
     
