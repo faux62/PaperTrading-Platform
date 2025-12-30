@@ -17,9 +17,13 @@ import {
   RefreshCw,
   AlertCircle,
   Download,
-  Filter
+  Filter,
+  AlertTriangle
 } from 'lucide-react';
 import { clsx } from 'clsx';
+
+// Constants
+const DAILY_ORDER_LIMIT = 10; // Maximum orders per day
 
 // Currency symbols
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -65,6 +69,9 @@ const Trading = () => {
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  
+  // Daily order limit tracking
+  const [todayOrderCount, setTodayOrderCount] = useState(0);
 
   // Load portfolios on mount
   useEffect(() => {
@@ -160,6 +167,14 @@ const Trading = () => {
       }));
       console.log('loadRecentTrades: Parsed trades:', parsedTrades);
       setRecentTrades(parsedTrades);
+      
+      // Calculate today's order count
+      const today = new Date().toISOString().split('T')[0];
+      const todayTrades = data.filter((t: any) => {
+        const tradeDate = (t.executed_at || t.created_at || '').split('T')[0];
+        return tradeDate === today;
+      });
+      setTodayOrderCount(todayTrades.length);
     } catch (err) {
       console.error('Failed to load trades:', err);
     }
@@ -391,20 +406,70 @@ const Trading = () => {
           </Card>
         </div>
 
+        {/* Daily Order Limit Warning */}
+        {todayOrderCount >= DAILY_ORDER_LIMIT * 0.8 && (
+          <Card className={clsx(
+            'border-2',
+            todayOrderCount >= DAILY_ORDER_LIMIT 
+              ? 'border-red-500 bg-red-500/10' 
+              : 'border-yellow-500 bg-yellow-500/10'
+          )}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className={clsx(
+                  'w-6 h-6',
+                  todayOrderCount >= DAILY_ORDER_LIMIT ? 'text-red-500' : 'text-yellow-500'
+                )} />
+                <div className="flex-1">
+                  <p className={clsx(
+                    'font-semibold',
+                    todayOrderCount >= DAILY_ORDER_LIMIT ? 'text-red-500' : 'text-yellow-500'
+                  )}>
+                    {todayOrderCount >= DAILY_ORDER_LIMIT 
+                      ? '🛑 Daily Order Limit Reached!' 
+                      : '⚠️ Approaching Daily Order Limit'}
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {todayOrderCount >= DAILY_ORDER_LIMIT 
+                      ? `You have placed ${todayOrderCount}/${DAILY_ORDER_LIMIT} orders today. Trading is paused until tomorrow.`
+                      : `You have placed ${todayOrderCount}/${DAILY_ORDER_LIMIT} orders today. ${DAILY_ORDER_LIMIT - todayOrderCount} remaining.`}
+                  </p>
+                </div>
+                <div className="text-2xl font-bold">
+                  <span className={todayOrderCount >= DAILY_ORDER_LIMIT ? 'text-red-500' : 'text-yellow-500'}>
+                    {todayOrderCount}
+                  </span>
+                  <span className="text-gray-400">/{DAILY_ORDER_LIMIT}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Tabs */}
         <div className="border-b border-gray-200 dark:border-gray-700">
           <nav className="flex gap-4">
             <button
               onClick={() => setActiveTab('trade')}
               className={clsx(
-                'pb-3 px-1 font-medium text-sm border-b-2 transition-colors',
+                'pb-3 px-1 font-medium text-sm border-b-2 transition-colors flex items-center gap-2',
                 activeTab === 'trade'
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
               )}
             >
-              <TrendingUp className="w-4 h-4 inline mr-2" />
+              <TrendingUp className="w-4 h-4" />
               Trade
+              <span className={clsx(
+                'px-2 py-0.5 text-xs rounded-full',
+                todayOrderCount >= DAILY_ORDER_LIMIT 
+                  ? 'bg-red-500/20 text-red-500'
+                  : todayOrderCount >= DAILY_ORDER_LIMIT * 0.8
+                    ? 'bg-yellow-500/20 text-yellow-500'
+                    : 'bg-gray-500/20 text-gray-400'
+              )}>
+                {todayOrderCount}/{DAILY_ORDER_LIMIT}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('positions')}
@@ -442,13 +507,24 @@ const Trading = () => {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">New Order</h3>
               </CardHeader>
               <CardContent>
-                <OrderForm
-                  portfolioId={selectedPortfolio.id}
-                  availableCash={selectedPortfolio.cash_balance}
-                  positions={positions}
-                  currency={selectedPortfolio.currency}
-                  onSubmit={handleOrderSubmit}
-                />
+                {todayOrderCount >= DAILY_ORDER_LIMIT ? (
+                  <div className="text-center py-8">
+                    <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-red-500" />
+                    <p className="text-red-500 font-semibold mb-2">Daily Limit Reached</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      You have placed {todayOrderCount} orders today.
+                      <br />Trading will resume tomorrow.
+                    </p>
+                  </div>
+                ) : (
+                  <OrderForm
+                    portfolioId={selectedPortfolio.id}
+                    availableCash={selectedPortfolio.cash_balance}
+                    positions={positions}
+                    currency={selectedPortfolio.currency}
+                    onSubmit={handleOrderSubmit}
+                  />
+                )}
               </CardContent>
             </Card>
 
