@@ -10,6 +10,7 @@ import {
   ArrowUpDown,
   TrendingUp,
   TrendingDown,
+  Globe,
 } from 'lucide-react';
 import { SignalIndicator, SignalType } from './SignalIndicator';
 
@@ -32,7 +33,28 @@ interface SignalsListProps {
 }
 
 type FilterType = 'all' | 'buy' | 'sell' | 'hold';
+type RegionFilter = 'all' | 'US' | 'EU' | 'Asia';
 type SortField = 'symbol' | 'confidence' | 'change24h' | 'timestamp';
+
+// Helper to detect region from symbol suffix
+const getRegionFromSymbol = (symbol: string): 'US' | 'EU' | 'Asia' => {
+  const upperSymbol = symbol.toUpperCase();
+  
+  // European suffixes
+  const euSuffixes = ['.DE', '.MI', '.PA', '.MC', '.AS', '.BR', '.SW', '.L', '.IR', '.VI', '.HE', '.CO', '.ST', '.OL', '.LS'];
+  for (const suffix of euSuffixes) {
+    if (upperSymbol.endsWith(suffix)) return 'EU';
+  }
+  
+  // Asian suffixes
+  const asiaSuffixes = ['.T', '.TYO', '.HK', '.SS', '.SZ', '.KS', '.TW', '.SI', '.AX', '.NS', '.BO'];
+  for (const suffix of asiaSuffixes) {
+    if (upperSymbol.endsWith(suffix)) return 'Asia';
+  }
+  
+  // Default to US (no suffix or unknown)
+  return 'US';
+};
 
 export const SignalsList: React.FC<SignalsListProps> = ({
   signals,
@@ -41,6 +63,7 @@ export const SignalsList: React.FC<SignalsListProps> = ({
   className,
 }) => {
   const [filter, setFilter] = useState<FilterType>('all');
+  const [regionFilter, setRegionFilter] = useState<RegionFilter>('all');
   const [sortField, setSortField] = useState<SortField>('confidence');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -48,7 +71,7 @@ export const SignalsList: React.FC<SignalsListProps> = ({
   const filteredSignals = useMemo(() => {
     let result = [...signals];
 
-    // Apply filter
+    // Apply signal type filter
     if (filter !== 'all') {
       result = result.filter((s) => {
         if (filter === 'buy') return s.signal === 'buy' || s.signal === 'strong_buy';
@@ -56,6 +79,11 @@ export const SignalsList: React.FC<SignalsListProps> = ({
         if (filter === 'hold') return s.signal === 'hold';
         return true;
       });
+    }
+
+    // Apply region filter
+    if (regionFilter !== 'all') {
+      result = result.filter((s) => getRegionFromSymbol(s.symbol) === regionFilter);
     }
 
     // Apply sort
@@ -79,7 +107,7 @@ export const SignalsList: React.FC<SignalsListProps> = ({
     });
 
     return result;
-  }, [signals, filter, sortField, sortAsc]);
+  }, [signals, filter, regionFilter, sortField, sortAsc]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -106,7 +134,8 @@ export const SignalsList: React.FC<SignalsListProps> = ({
   return (
     <div className={clsx('space-y-4', className)}>
       {/* Filters */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Signal type filter */}
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-gray-500" />
           <div className="flex rounded-lg bg-gray-100 dark:bg-gray-700 p-1">
@@ -122,6 +151,27 @@ export const SignalsList: React.FC<SignalsListProps> = ({
                 )}
               >
                 {f}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Region filter */}
+        <div className="flex items-center gap-2">
+          <Globe className="w-4 h-4 text-gray-500" />
+          <div className="flex rounded-lg bg-gray-100 dark:bg-gray-700 p-1">
+            {(['all', 'US', 'EU', 'Asia'] as RegionFilter[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => setRegionFilter(r)}
+                className={clsx(
+                  'px-3 py-1 text-sm font-medium rounded-md transition-colors',
+                  regionFilter === r
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                )}
+              >
+                {r === 'all' ? '🌍 All' : r === 'US' ? '🇺🇸 US' : r === 'EU' ? '🇪🇺 EU' : '🌏 Asia'}
               </button>
             ))}
           </div>
