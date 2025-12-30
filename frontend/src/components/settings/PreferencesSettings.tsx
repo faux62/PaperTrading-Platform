@@ -113,6 +113,7 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
             priceAlerts: settingsData.notifications?.price_alerts ?? true,
             tradeConfirmations: settingsData.notifications?.trade_execution ?? true,
             dailySummary: settingsData.notifications?.market_news ?? false,
+            schedule: settingsData.notifications?.schedule ?? prev.notifications.schedule,
           },
           display: {
             compactMode: settingsData.display?.compact_mode ?? false,

@@ -15,6 +15,9 @@ import {
   Plus,
   Briefcase,
   RefreshCw,
+  AlertTriangle,
+  Bell,
+  CheckCircle,
 } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Card, CardHeader, CardContent, Badge, Button, Spinner } from '../components/common';
@@ -74,6 +77,17 @@ interface DashboardStats {
   unrealizedPLPercent: number;
   cashAvailable: number;
   buyingPower: number;
+}
+
+// Alert types for Morning Briefing
+interface MorningAlert {
+  id: string;
+  type: 'loss' | 'stop_loss' | 'profit' | 'info';
+  symbol: string;
+  message: string;
+  value?: number;
+  percent?: number;
+  priority: 'urgent' | 'high' | 'medium' | 'low';
 }
 
 // Region display order and labels
@@ -179,6 +193,120 @@ const EmptyState = ({
   </div>
 );
 
+// Morning Alerts Panel Component
+const AlertsPanel = ({ 
+  alerts, 
+  loading 
+}: { 
+  alerts: MorningAlert[];
+  loading: boolean;
+}) => {
+  const getAlertIcon = (type: MorningAlert['type']) => {
+    switch (type) {
+      case 'loss':
+      case 'stop_loss':
+        return <AlertTriangle className="w-4 h-4" />;
+      case 'profit':
+        return <TrendingUp className="w-4 h-4" />;
+      default:
+        return <Bell className="w-4 h-4" />;
+    }
+  };
+
+  const getAlertColor = (type: MorningAlert['type'], priority: MorningAlert['priority']) => {
+    if (type === 'loss' || type === 'stop_loss') {
+      return priority === 'urgent' ? 'bg-danger-500/20 border-danger-500' : 'bg-danger-500/10 border-danger-400';
+    }
+    if (type === 'profit') {
+      return 'bg-success-500/10 border-success-400';
+    }
+    return 'bg-primary-500/10 border-primary-400';
+  };
+
+  const getTextColor = (type: MorningAlert['type']) => {
+    if (type === 'loss' || type === 'stop_loss') return 'text-danger-400';
+    if (type === 'profit') return 'text-success-400';
+    return 'text-primary-400';
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Bell className="w-5 h-5 text-warning-400" />
+            <h3 className="text-lg font-semibold text-white">Morning Alerts</h3>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <Spinner size="md" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bell className="w-5 h-5 text-warning-400" />
+            <h3 className="text-lg font-semibold text-white">Morning Alerts</h3>
+          </div>
+          {alerts.length > 0 && (
+            <Badge color={alerts.some(a => a.priority === 'urgent') ? 'danger' : 'warning'}>
+              {alerts.length} alert{alerts.length !== 1 ? 's' : ''}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {alerts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-6 text-center">
+            <div className="p-3 bg-success-500/10 rounded-full mb-3">
+              <CheckCircle className="w-6 h-6 text-success-400" />
+            </div>
+            <p className="text-surface-300 text-sm">All positions healthy!</p>
+            <p className="text-surface-500 text-xs mt-1">No alerts requiring attention</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {alerts.map((alert) => (
+              <div
+                key={alert.id}
+                className={clsx(
+                  'p-3 rounded-lg border-l-4 flex items-start gap-3',
+                  getAlertColor(alert.type, alert.priority)
+                )}
+              >
+                <div className={clsx('mt-0.5', getTextColor(alert.type))}>
+                  {getAlertIcon(alert.type)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-white">{alert.symbol}</span>
+                    {alert.priority === 'urgent' && (
+                      <Badge color="danger" size="sm">URGENT</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-surface-300 mt-0.5">{alert.message}</p>
+                  {alert.percent !== undefined && (
+                    <p className={clsx('text-sm font-medium mt-1', getTextColor(alert.type))}>
+                      {alert.percent >= 0 ? '+' : ''}{alert.percent.toFixed(2)}%
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -187,6 +315,7 @@ const Dashboard = () => {
   const [positions, setPositions] = useState<Position[]>([]);
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [marketIndices, setMarketIndices] = useState<MarketIndex[]>([]);
+  const [morningAlerts, setMorningAlerts] = useState<MorningAlert[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalValue: 0,
     dailyChange: 0,
@@ -268,6 +397,50 @@ const Dashboard = () => {
 
         setPositions(allPositions);
         setRecentTrades(allTrades.slice(0, 5));
+
+        // Generate morning alerts based on position performance
+        const alerts: MorningAlert[] = [];
+        for (const position of allPositions) {
+          const pnlPercent = position.unrealized_pnl_percent || 0;
+          
+          // Alert for positions with loss > 2%
+          if (pnlPercent <= -5) {
+            alerts.push({
+              id: `loss-${position.id}`,
+              type: 'loss',
+              symbol: position.symbol,
+              message: 'Critical loss - consider closing position',
+              percent: pnlPercent,
+              priority: 'urgent',
+            });
+          } else if (pnlPercent <= -2) {
+            alerts.push({
+              id: `loss-${position.id}`,
+              type: 'loss',
+              symbol: position.symbol,
+              message: 'Position in loss overnight - monitor closely',
+              percent: pnlPercent,
+              priority: 'high',
+            });
+          }
+          
+          // Alert for positions with good profit (for trailing stop suggestion)
+          if (pnlPercent >= 5) {
+            alerts.push({
+              id: `profit-${position.id}`,
+              type: 'profit',
+              symbol: position.symbol,
+              message: 'Good profit - consider setting trailing stop',
+              percent: pnlPercent,
+              priority: 'medium',
+            });
+          }
+        }
+        
+        // Sort alerts by priority (urgent first)
+        const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
+        alerts.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+        setMorningAlerts(alerts);
 
         // Calculate stats using pre-converted values from backend
         // market_value and unrealized_pnl are already in portfolio currency (EUR)
@@ -443,6 +616,13 @@ const Dashboard = () => {
           loading={loading}
         />
       </div>
+
+      {/* Morning Alerts Panel - Only show if has positions */}
+      {hasPositions && (
+        <div className="mb-6">
+          <AlertsPanel alerts={morningAlerts} loading={loading} />
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
