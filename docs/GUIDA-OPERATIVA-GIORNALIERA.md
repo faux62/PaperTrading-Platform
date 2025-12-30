@@ -1,9 +1,9 @@
 # 📈 Guida Operativa Giornaliera - PaperTrading Platform
 
-> **Versione**: 2.0  
-> **Ultimo aggiornamento**: 29 Dicembre 2025  
+> **Versione**: 2.1  
+> **Ultimo aggiornamento**: 30 Dicembre 2025  
 > **Autore**: Sistema PaperTrading  
-> **Novità**: Sistema di notifiche automatiche via email
+> **Novità v2.1**: Filtro regionale ML, Schedule notifiche, Limite ordini giornaliero
 
 ---
 
@@ -37,6 +37,21 @@ Per attivare le notifiche, vai su **Impostazioni** → **Notifiche** e abilita l
    - ✅ Price Alerts
    - ✅ Portfolio Updates
    - ✅ Market News
+
+### 🕐 Schedule Personalizzato (Novità v2.1)
+
+Puoi ora configurare **quando** ricevere le notifiche:
+
+1. **Finestra Oraria**: Imposta l'orario di inizio e fine (es: 07:00 - 22:00)
+2. **Giorni Attivi**: Seleziona i giorni della settimana
+   - Default: Lun-Ven (giorni di mercato)
+   - Puoi aggiungere Sab/Dom per notifiche di riepilogo
+
+```
+⚙️ Settings → Preferences → Notification Schedule
+├── Time Range: [07:00] to [22:00]
+└── Active Days: [L] [M] [M] [G] [V] [ ] [ ]
+```
 
 ---
 
@@ -140,8 +155,17 @@ Prima di iniziare, familiarizza con questi termini che userai quotidianamente:
 
 **Dove guardare:**
 ```
-Dashboard → Portfolio Overview → "Overnight Change" 
+Dashboard → Stats Grid (prima riga)
+├── 📊 Daily Change    → Variazione % da apertura mercato oggi
+├── 🌙 Overnight Change → Variazione % durante la notte (chiusura ieri → apertura oggi)
+├── Total Value        → Valore totale portfolio
+└── Open P&L           → Profitto/perdita posizioni aperte
 ```
+
+**Come interpretare:**
+- **Daily Change** negativo + **Overnight Change** positivo = mercato EU/US sta vendendo oggi
+- **Daily Change** positivo + **Overnight Change** negativo = recupero intraday dopo gap down
+- Entrambi negativi = giornata difficile, considera riduzione esposizione
 
 **Domande da farti:**
 - ✅ Ci sono posizioni che hanno perso più del 2% stanotte?
@@ -152,10 +176,17 @@ Dashboard → Portfolio Overview → "Overnight Change"
 
 **Cosa fare:**
 1. Vai su **ML Insights** → Tab **"Signals"**
-2. **Filtra per mercato EU**:
-   - Cerca simboli che terminano con `.DE` (Germania)
-   - `.PA` (Francia), `.MI` (Italia), `.MC` (Spagna)
-   - `.AS` (Olanda), `.L` (Londra)
+2. **Usa il filtro regionale** (Novità v2.1):
+   - Seleziona **"EU"** dal dropdown per mercati europei
+   - Seleziona **"US"** per mercati americani
+   - Seleziona **"Asia"** per mercati asiatici
+   - Seleziona **"All"** per vedere tutto
+
+```
+ML Insights → Signals
+├── Region Filter: [All ▼] [US] [EU] [Asia]
+└── Lista segnali filtrata automaticamente
+```
 
 3. **Cerca segnali interessanti**:
    - Signal = **BUY**
@@ -233,6 +264,26 @@ Esempio:
    - Subito dopo l'acquisto
    - -3% dal prezzo di entrata
    - Esempio: comprato a €100 → stop-loss a €97
+
+### ⚠️ Limite Ordini Giornaliero (Novità v2.1)
+
+La piattaforma implementa un **limite di 10 ordini al giorno** per promuovere trading disciplinato:
+
+```
+Trading Page
+├── Counter: "Orders Today: 3/10"
+├── Warning (7-9 ordini): Banner giallo "Approaching daily limit"
+└── Blocked (10 ordini): Banner rosso "Daily limit reached"
+```
+
+**Perché questo limite:**
+- Evita l'overtrading impulsivo
+- Forza una selezione più accurata dei trade
+- Riduce i costi di commissione
+- Migliora la qualità decisionale
+
+**Suggerimento:** Se raggiungi spesso il limite, potresti star facendo troppi trade. 
+I trader professionisti raramente fanno più di 3-5 trade al giorno.
 
 #### 11:00 - Check di Metà Mattina 📊
 
