@@ -4,8 +4,22 @@
  */
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, Button } from '../common';
-import { Bell, Eye, Palette, Save, DollarSign, RefreshCw } from 'lucide-react';
+import { Bell, Eye, Palette, Save, DollarSign, RefreshCw, Clock } from 'lucide-react';
 import { authApi, currencyApi, settingsApi } from '../../services/api';
+
+interface NotificationSchedule {
+  startTime: string;  // HH:mm format
+  endTime: string;    // HH:mm format
+  days: {
+    monday: boolean;
+    tuesday: boolean;
+    wednesday: boolean;
+    thursday: boolean;
+    friday: boolean;
+    saturday: boolean;
+    sunday: boolean;
+  };
+}
 
 interface PreferencesData {
   theme: 'dark' | 'light' | 'system';
@@ -15,6 +29,7 @@ interface PreferencesData {
     priceAlerts: boolean;
     tradeConfirmations: boolean;
     dailySummary: boolean;
+    schedule: NotificationSchedule;
   };
   display: {
     compactMode: boolean;
@@ -46,6 +61,19 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
       priceAlerts: initialData.notifications?.priceAlerts ?? true,
       tradeConfirmations: initialData.notifications?.tradeConfirmations ?? true,
       dailySummary: initialData.notifications?.dailySummary ?? false,
+      schedule: initialData.notifications?.schedule ?? {
+        startTime: '08:00',
+        endTime: '22:00',
+        days: {
+          monday: true,
+          tuesday: true,
+          wednesday: true,
+          thursday: true,
+          friday: true,
+          saturday: false,
+          sunday: false,
+        },
+      },
     },
     display: {
       compactMode: initialData.display?.compactMode ?? false,
@@ -132,6 +160,35 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
       display: {
         ...prev.display,
         [key]: value,
+      },
+    }));
+  };
+
+  const handleScheduleTimeChange = (key: 'startTime' | 'endTime', value: string) => {
+    setPreferences(prev => ({
+      ...prev,
+      notifications: {
+        ...prev.notifications,
+        schedule: {
+          ...prev.notifications.schedule,
+          [key]: value,
+        },
+      },
+    }));
+  };
+
+  const handleScheduleDayChange = (day: keyof NotificationSchedule['days']) => {
+    setPreferences(prev => ({
+      ...prev,
+      notifications: {
+        ...prev.notifications,
+        schedule: {
+          ...prev.notifications.schedule,
+          days: {
+            ...prev.notifications.schedule.days,
+            [day]: !prev.notifications.schedule.days[day],
+          },
+        },
       },
     }));
   };
@@ -290,6 +347,84 @@ export const PreferencesSettings: React.FC<PreferencesSettingsProps> = ({
               onChange={() => handleNotificationChange('dailySummary')}
               label="Daily portfolio summary"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Notification Schedule */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-primary-500" />
+            <h3 className="text-lg font-semibold text-white">Notification Schedule</h3>
+          </div>
+          <p className="text-sm text-surface-400 mt-1">
+            Configure when you want to receive notifications
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            {/* Time Range */}
+            <div>
+              <label className="block text-sm font-medium text-surface-300 mb-3">
+                Active Hours
+              </label>
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs text-surface-400 mb-1">From</label>
+                  <input
+                    type="time"
+                    value={preferences.notifications.schedule.startTime}
+                    onChange={(e) => handleScheduleTimeChange('startTime', e.target.value)}
+                    className="w-full px-3 py-2 bg-surface-700 border border-surface-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <span className="text-surface-400 pt-5">to</span>
+                <div className="flex-1">
+                  <label className="block text-xs text-surface-400 mb-1">To</label>
+                  <input
+                    type="time"
+                    value={preferences.notifications.schedule.endTime}
+                    onChange={(e) => handleScheduleTimeChange('endTime', e.target.value)}
+                    className="w-full px-3 py-2 bg-surface-700 border border-surface-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Days Selection */}
+            <div>
+              <label className="block text-sm font-medium text-surface-300 mb-3">
+                Active Days
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { key: 'monday', label: 'Mon' },
+                  { key: 'tuesday', label: 'Tue' },
+                  { key: 'wednesday', label: 'Wed' },
+                  { key: 'thursday', label: 'Thu' },
+                  { key: 'friday', label: 'Fri' },
+                  { key: 'saturday', label: 'Sat' },
+                  { key: 'sunday', label: 'Sun' },
+                ] as const).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handleScheduleDayChange(key)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      preferences.notifications.schedule.days[key]
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-surface-700 text-surface-400 hover:bg-surface-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-surface-500 mt-2">
+                💡 Tip: Select weekdays only for trading-related notifications
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
