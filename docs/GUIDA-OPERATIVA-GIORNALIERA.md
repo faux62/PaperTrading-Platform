@@ -172,6 +172,25 @@ Dashboard → Stats Grid (prima riga)
 - ✅ Qualche stop-loss si è attivato?
 - ✅ Ci sono notizie importanti su titoli che possiedo?
 
+### 🔔 Morning Alerts Panel (Novità v2.1)
+
+Il pannello **Morning Alerts** nella Dashboard risponde automaticamente a queste domande:
+
+```
+Dashboard → Morning Alerts
+├── 🔴 URGENT: Posizioni con perdita > 5% (azione immediata)
+├── 🟠 HIGH: Posizioni con perdita > 2% (monitorare)
+├── 🟢 MEDIUM: Posizioni con profitto > 5% (trailing stop)
+└── ✅ "All positions healthy" se tutto ok
+```
+
+**Cosa mostra:**
+| Tipo Alert | Colore | Significato | Azione Suggerita |
+|------------|--------|-------------|------------------|
+| Critical Loss | 🔴 Rosso | Perdita > 5% | Considera chiusura immediata |
+| Loss Warning | 🟠 Arancio | Perdita > 2% | Monitorare, verifica stop-loss |
+| Profit Alert | 🟢 Verde | Profitto > 5% | Imposta trailing stop |
+
 #### 07:30 - Analisi Segnali ML 🤖
 
 **Cosa fare:**
