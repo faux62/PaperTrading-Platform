@@ -68,6 +68,8 @@ interface DashboardStats {
   totalValue: number;
   dailyChange: number;
   dailyChangePercent: number;
+  overnightChange: number;
+  overnightChangePercent: number;
   unrealizedPL: number;
   unrealizedPLPercent: number;
   cashAvailable: number;
@@ -189,6 +191,8 @@ const Dashboard = () => {
     totalValue: 0,
     dailyChange: 0,
     dailyChangePercent: 0,
+    overnightChange: 0,
+    overnightChangePercent: 0,
     unrealizedPL: 0,
     unrealizedPLPercent: 0,
     cashAvailable: 0,
@@ -275,10 +279,39 @@ const Dashboard = () => {
         // cost_basis in portfolio currency = market_value - unrealized_pnl
         const totalCostBasis = totalMarketValue - totalUnrealizedPL;
 
+        // Fetch daily stats (daily change and overnight change) from backend
+        let dailyChange = 0;
+        let dailyChangePercent = 0;
+        let overnightChange = 0;
+        let overnightChangePercent = 0;
+
+        for (const portfolio of portfoliosData) {
+          try {
+            const dailyStats = await portfolioApi.getDailyStats(portfolio.id);
+            dailyChange += dailyStats.daily_change || 0;
+            overnightChange += dailyStats.overnight_change || 0;
+          } catch (e) {
+            console.warn(`Failed to fetch daily stats for portfolio ${portfolio.id}`);
+          }
+        }
+
+        // Calculate percentages based on previous day value
+        const previousDayValue = totalValue - dailyChange;
+        if (previousDayValue > 0) {
+          dailyChangePercent = (dailyChange / previousDayValue) * 100;
+        }
+        // Overnight is typically same calculation for single-day context
+        const prevOvernightValue = totalValue - overnightChange;
+        if (prevOvernightValue > 0) {
+          overnightChangePercent = (overnightChange / prevOvernightValue) * 100;
+        }
+
         setStats({
           totalValue,
-          dailyChange: 0,
-          dailyChangePercent: 0,
+          dailyChange,
+          dailyChangePercent,
+          overnightChange,
+          overnightChangePercent,
           unrealizedPL: totalUnrealizedPL,
           unrealizedPLPercent: totalCostBasis > 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0,
           cashAvailable: totalCash,
@@ -356,24 +389,45 @@ const Dashboard = () => {
         </Button>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      {/* Stats Grid - Row 1: Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
         <StatCard
           title="Portfolio Value"
           value={hasPortfolio ? formatCurrency(stats.totalValue, portfolioCurrency) : '€0.00'}
-          changePercent={hasPortfolio && stats.dailyChangePercent !== 0 ? stats.dailyChangePercent : undefined}
           icon={DollarSign}
           iconBg="bg-primary-500/20"
+          loading={loading}
+        />
+        <StatCard
+          title="Daily Change"
+          value={hasPositions ? `${stats.dailyChange >= 0 ? '+' : ''}${formatCurrency(stats.dailyChange, portfolioCurrency)}` : '€0.00'}
+          change={hasPositions ? stats.dailyChange : undefined}
+          changePercent={hasPositions && stats.dailyChangePercent !== 0 ? stats.dailyChangePercent : undefined}
+          icon={stats.dailyChange >= 0 ? TrendingUp : TrendingDown}
+          iconBg={stats.dailyChange >= 0 ? 'bg-success-500/20' : 'bg-danger-500/20'}
+          loading={loading}
+        />
+        <StatCard
+          title="Overnight Change"
+          value={hasPositions ? `${stats.overnightChange >= 0 ? '+' : ''}${formatCurrency(stats.overnightChange, portfolioCurrency)}` : '€0.00'}
+          change={hasPositions ? stats.overnightChange : undefined}
+          changePercent={hasPositions && stats.overnightChangePercent !== 0 ? stats.overnightChangePercent : undefined}
+          icon={stats.overnightChange >= 0 ? TrendingUp : TrendingDown}
+          iconBg={stats.overnightChange >= 0 ? 'bg-success-500/20' : 'bg-danger-500/20'}
           loading={loading}
         />
         <StatCard
           title="Unrealized P&L"
           value={hasPositions ? `${stats.unrealizedPL >= 0 ? '+' : ''}${formatCurrency(stats.unrealizedPL, portfolioCurrency)}` : '€0.00'}
           changePercent={hasPositions ? stats.unrealizedPLPercent : undefined}
-          icon={TrendingUp}
-          iconBg="bg-success-500/20"
+          icon={stats.unrealizedPL >= 0 ? TrendingUp : TrendingDown}
+          iconBg={stats.unrealizedPL >= 0 ? 'bg-success-500/20' : 'bg-danger-500/20'}
           loading={loading}
         />
+      </div>
+
+      {/* Stats Grid - Row 2: Cash & Buying Power */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <StatCard
           title="Cash Available"
           value={hasPortfolio ? formatCurrency(stats.cashAvailable, portfolioCurrency) : '€0.00'}

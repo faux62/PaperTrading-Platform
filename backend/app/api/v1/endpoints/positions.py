@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger
 
 from app.db.database import get_db
 from app.core.security import get_current_user
@@ -126,6 +127,121 @@ async def get_portfolio_positions(
         "count": len(positions),
         "total_market_value": total_market_value,
         "total_unrealized_pnl": total_unrealized_pnl,
+    }
+
+
+@router.get("/portfolio/{portfolio_id}/daily-stats")
+async def get_portfolio_daily_stats(
+    portfolio_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get portfolio daily change statistics.
+    
+    Returns:
+    - daily_change: $ change today (from prev_close to current)
+    - daily_change_pct: % change today
+    - overnight_change: $ change from yesterday close to today open
+    - overnight_change_pct: % overnight change
+    
+    Uses prev_close from real-time quotes when available.
+    """
+    from app.data_providers import orchestrator
+    from app.data_providers.adapters.base import MarketType
+    from app.services.historical_data_collector import get_market_type_from_symbol
+    
+    await verify_portfolio_ownership(portfolio_id, current_user.id, db)
+    
+    repo = PositionRepository(db)
+    positions = await repo.get_all_by_portfolio(portfolio_id)
+    
+    if not positions:
+        return {
+            "portfolio_id": portfolio_id,
+            "daily_change": 0.0,
+            "daily_change_pct": 0.0,
+            "overnight_change": 0.0,
+            "overnight_change_pct": 0.0,
+            "positions_with_data": 0,
+            "total_positions": 0,
+        }
+    
+    # Group symbols by market type
+    symbols_by_market: dict[MarketType, list[str]] = {}
+    for pos in positions:
+        market_type = get_market_type_from_symbol(pos.symbol)
+        if market_type not in symbols_by_market:
+            symbols_by_market[market_type] = []
+        symbols_by_market[market_type].append(pos.symbol)
+    
+    # Fetch quotes per market type
+    quotes_dict: dict[str, any] = {}
+    for market_type, symbols in symbols_by_market.items():
+        try:
+            logger.debug(f"Fetching {len(symbols)} quotes for market {market_type.value}")
+            market_quotes = await orchestrator.get_quotes(symbols, market_type=market_type)
+            # get_quotes returns dict[str, Quote]
+            quotes_dict.update(market_quotes)
+        except Exception as e:
+            logger.warning(f"Failed to fetch quotes for {market_type.value}: {e}")
+    
+    # Calculate daily changes
+    total_daily_change = Decimal("0")
+    total_prev_close_value = Decimal("0")
+    positions_with_data = 0
+    
+    logger.debug(f"Daily stats: got {len(quotes_dict)} quotes for {len(positions)} positions")
+    
+    for pos in positions:
+        quote = quotes_dict.get(pos.symbol)
+        
+        if quote:
+            logger.debug(f"Quote for {pos.symbol}: price={quote.price}, prev_close={quote.prev_close}")
+        else:
+            logger.debug(f"No quote found for {pos.symbol}")
+        
+        if quote and quote.prev_close and quote.prev_close > 0:
+            # Calculate position's daily change in native currency
+            # daily_change = (current_price - prev_close) × quantity
+            prev_close = Decimal(str(quote.prev_close))
+            current = pos.current_price
+            
+            pos_daily_change = (current - prev_close) * pos.quantity
+            pos_prev_value = prev_close * pos.quantity
+            
+            # Apply FX conversion to portfolio currency
+            native_currency = pos.native_currency or "USD"
+            from sqlalchemy import select as sql_select
+            from app.db.models.portfolio import Portfolio
+            
+            result = await db.execute(
+                sql_select(Portfolio.currency).where(Portfolio.id == portfolio_id)
+            )
+            portfolio_currency = result.scalar() or "EUR"
+            
+            fx_rate = Decimal("1.0")
+            if native_currency != portfolio_currency:
+                from app.utils.currency import get_exchange_rate
+                fx_rate = await get_exchange_rate(native_currency, portfolio_currency)
+            
+            total_daily_change += pos_daily_change * fx_rate
+            total_prev_close_value += pos_prev_value * fx_rate
+            positions_with_data += 1
+    
+    # Calculate percentages
+    daily_change_pct = Decimal("0")
+    if total_prev_close_value > 0:
+        daily_change_pct = (total_daily_change / total_prev_close_value) * 100
+    
+    return {
+        "portfolio_id": portfolio_id,
+        "daily_change": float(total_daily_change),
+        "daily_change_pct": float(daily_change_pct),
+        "overnight_change": 0.0,  # TODO: Requires storing yesterday's close
+        "overnight_change_pct": 0.0,
+        "positions_with_data": positions_with_data,
+        "total_positions": len(positions),
     }
 
 

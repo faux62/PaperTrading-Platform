@@ -209,6 +209,11 @@ export const portfolioApi = {
       })),
     };
   },
+
+  getDailyStats: async (portfolioId: number) => {
+    const response = await api.get(`/positions/portfolio/${portfolioId}/daily-stats`);
+    return response.data;
+  },
 };
 
 // ============================================
