@@ -4,6 +4,7 @@
  * Main trading interface with order form and position table.
  */
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Layout } from '../components/layout';
 import { Card, CardContent, CardHeader } from '../components/common';
 import { OrderForm, PositionTable } from '../components/trading';
@@ -18,7 +19,8 @@ import {
   AlertCircle,
   Download,
   Filter,
-  AlertTriangle
+  AlertTriangle,
+  Target
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -54,7 +56,20 @@ interface Trade {
   created_at: string;
 }
 
+// Interface for pre-filled order from Trade Candidates
+interface PrefilledOrder {
+  symbol?: string;
+  side?: 'BUY' | 'SELL';
+  price?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  quantity?: number;
+}
+
 const Trading = () => {
+  const location = useLocation();
+  const prefilledOrder = (location.state as PrefilledOrder) || {};
+  
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -507,6 +522,21 @@ const Trading = () => {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">New Order</h3>
               </CardHeader>
               <CardContent>
+                {/* Pre-filled order banner */}
+                {prefilledOrder.symbol && (
+                  <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+                      <Target className="w-4 h-4" />
+                      <span className="text-sm font-medium">
+                        Ordine pre-impostato da Trade Candidates
+                      </span>
+                    </div>
+                    <p className="text-xs text-blue-600 dark:text-blue-500 mt-1">
+                      {prefilledOrder.symbol} • Entry: €{prefilledOrder.price?.toFixed(2)} • 
+                      SL: €{prefilledOrder.stopLoss?.toFixed(2)} • Qty: {prefilledOrder.quantity}
+                    </p>
+                  </div>
+                )}
                 {todayOrderCount >= DAILY_ORDER_LIMIT ? (
                   <div className="text-center py-8">
                     <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-red-500" />
@@ -523,6 +553,11 @@ const Trading = () => {
                     positions={positions}
                     currency={selectedPortfolio.currency}
                     onSubmit={handleOrderSubmit}
+                    // Pre-filled values from Trade Candidates panel
+                    symbol={prefilledOrder.symbol}
+                    initialLimitPrice={prefilledOrder.price}
+                    initialStopPrice={prefilledOrder.stopLoss}
+                    initialQuantity={prefilledOrder.quantity}
                   />
                 )}
               </CardContent>

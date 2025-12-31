@@ -239,7 +239,9 @@ export const TradeCandidatesPanel: React.FC<TradeCandidatesPanelProps> = ({
           candidates.map((candidate) => (
             <div
               key={candidate.symbol}
-              className="p-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors cursor-pointer"
+              className="p-4 border-l-4 border-l-transparent hover:border-l-blue-500 
+                         hover:bg-blue-50/20 dark:hover:bg-blue-900/10 cursor-pointer
+                         [transition:border-color_0s,background-color_0.15s]"
               onClick={() => onSelectCandidate?.(candidate)}
             >
               {/* Top Row: Symbol, Signal, Confidence */}

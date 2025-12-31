@@ -41,12 +41,10 @@ const REGION_INFO: Record<string, { name: string; flag: string }> = {
 
 export function LayeredSymbolSelector({
   onSelect,
-  initialSymbol: _initialSymbol = '',
+  initialSymbol = '',
   className,
   disabled = false
 }: LayeredSymbolSelectorProps) {
-  // Note: _initialSymbol could be used for pre-selection in future
-  
   // Data from API
   const [allSymbols, setAllSymbols] = useState<UniverseSymbol[]>([]);
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
@@ -56,6 +54,9 @@ export function LayeredSymbolSelector({
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [selectedStock, setSelectedStock] = useState<UniverseSymbol | null>(null);
+  
+  // Track if initial symbol has been processed
+  const [initialSymbolProcessed, setInitialSymbolProcessed] = useState(false);
   
   // UI state
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
@@ -85,6 +86,22 @@ export function LayeredSymbolSelector({
     };
     loadSymbols();
   }, []);
+
+  // Pre-select symbol when initialSymbol is provided and symbols are loaded
+  useEffect(() => {
+    if (initialSymbol && allSymbols.length > 0 && !initialSymbolProcessed) {
+      const stock = allSymbols.find(
+        s => s.symbol.toUpperCase() === initialSymbol.toUpperCase()
+      );
+      if (stock) {
+        setSelectedRegion(stock.region);
+        setSelectedSector(stock.sector || null);
+        setSelectedStock(stock);
+        setInitialSymbolProcessed(true);
+        // Note: price will be fetched by OrderForm, no need to call onSelect here
+      }
+    }
+  }, [initialSymbol, allSymbols, initialSymbolProcessed]);
 
   // Get available regions from loaded data
   const availableRegions = useMemo(() => {

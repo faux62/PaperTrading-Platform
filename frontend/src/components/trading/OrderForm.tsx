@@ -34,6 +34,9 @@ interface OrderFormProps {
   portfolioId: number;
   symbol?: string;
   currentPrice?: number;
+  initialQuantity?: number;    // Pre-filled quantity from Trade Candidates
+  initialLimitPrice?: number;  // Pre-filled limit price (entry price)
+  initialStopPrice?: number;   // Pre-filled stop price
   availableCash?: number;
   positions?: PositionInfo[];  // All positions to lookup shares by symbol
   currency?: string;
@@ -83,6 +86,9 @@ export function OrderForm({
   portfolioId,
   symbol: initialSymbol = '',
   currentPrice: initialPrice,
+  initialQuantity,
+  initialLimitPrice,
+  initialStopPrice,
   availableCash = 0,
   positions = [],
   currency = 'USD',
@@ -92,16 +98,17 @@ export function OrderForm({
 }: OrderFormProps) {
   const portfolioCurrencySymbol = CURRENCY_SYMBOLS[currency] || currency;
   const [tradeType, setTradeType] = useState<TradeType>('buy');
-  const [orderType, setOrderType] = useState<OrderType>('market');
+  // Default to limit order if we have a prefilled limit price
+  const [orderType, setOrderType] = useState<OrderType>(initialLimitPrice ? 'limit' : 'market');
   const [symbol, setSymbol] = useState(initialSymbol);
   const [selectedPrice, setSelectedPrice] = useState<number | null>(initialPrice || null);
   const [symbolCurrency, setSymbolCurrency] = useState<string>('USD'); // Currency of the selected stock
   const [exchangeRate, setExchangeRate] = useState<number>(1); // Rate from symbolCurrency to portfolio currency
   const [isLoadingRate, setIsLoadingRate] = useState(false);
-  const [quantity, setQuantity] = useState<string>('');
+  const [quantity, setQuantity] = useState<string>(initialQuantity ? initialQuantity.toString() : '');
   const [marketPrice, setMarketPrice] = useState<string>('');  // For market orders without live data
-  const [limitPrice, setLimitPrice] = useState<string>('');
-  const [stopPrice, setStopPrice] = useState<string>('');
+  const [limitPrice, setLimitPrice] = useState<string>(initialLimitPrice ? initialLimitPrice.toString() : '');
+  const [stopPrice, setStopPrice] = useState<string>(initialStopPrice ? initialStopPrice.toString() : '');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
