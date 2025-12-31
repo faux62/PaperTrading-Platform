@@ -12,6 +12,7 @@
  * - ConfusionMatrix: Confusion matrix visualization
  * - ROCCurve: ROC curve chart
  * - BacktestResults: Backtest performance results
+ * - TradeCandidatesPanel: Daily trade candidates with trading parameters
  */
 
 export { PredictionCard } from './PredictionCard';
@@ -26,3 +27,4 @@ export { MLInsightsPanel } from './MLInsightsPanel';
 export { ConfusionMatrix } from './ConfusionMatrix';
 export { ROCCurve } from './ROCCurve';
 export { BacktestResults } from './BacktestResults';
+export { TradeCandidatesPanel } from './TradeCandidatesPanel';

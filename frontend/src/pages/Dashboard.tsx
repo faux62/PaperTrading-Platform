@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Layout } from '../components/layout';
 import { Card, CardHeader, CardContent, Badge, Button, Spinner } from '../components/common';
+import { TradeCandidatesPanel } from '../components/ml';
 import { portfolioApi, tradingApi, marketApi } from '../services/api';
 
 // Types
@@ -621,6 +622,28 @@ const Dashboard = () => {
       {hasPositions && (
         <div className="mb-6">
           <AlertsPanel alerts={morningAlerts} loading={loading} />
+        </div>
+      )}
+
+      {/* Trade Candidates Panel - Show if has portfolio */}
+      {hasPortfolio && portfolios.length > 0 && (
+        <div className="mb-6">
+          <TradeCandidatesPanel 
+            portfolioId={portfolios[0].id}
+            onSelectCandidate={(candidate) => {
+              // Navigate to trading page with pre-filled order
+              navigate('/trading', { 
+                state: { 
+                  symbol: candidate.symbol,
+                  side: 'BUY',
+                  price: candidate.entry_price,
+                  stopLoss: candidate.stop_loss,
+                  takeProfit: candidate.take_profit,
+                  quantity: candidate.suggested_shares
+                }
+              });
+            }}
+          />
         </div>
       )}
 

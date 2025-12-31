@@ -4,7 +4,7 @@ ML Predictions API Endpoints
 REST API endpoints for ML predictions and signals.
 """
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -116,6 +116,42 @@ class AggregatedSignalResponse(BaseModel):
     recommended_action: str
     position_size_suggestion: float
     individual_signals: List[Dict[str, Any]]
+
+
+class TradeCandidateModel(BaseModel):
+    """A trade candidate with full trading parameters."""
+    symbol: str
+    region: str  # US, EU, Asia
+    signal: str  # BUY, SELL, HOLD
+    confidence: float
+    current_price: float
+    currency: str
+    # Trading parameters
+    entry_price: float  # Suggested entry (limit order price)
+    stop_loss: float  # -3% for EU, -4% for US
+    stop_loss_percent: float
+    take_profit: float  # +5% to +10%
+    take_profit_percent: float
+    # Position sizing
+    max_position_value: float  # 5% of portfolio
+    suggested_shares: int
+    risk_reward_ratio: float
+    # Additional info
+    trend: str
+    volatility: Optional[str] = None
+    ranking: int  # 1 = best candidate
+
+
+class TradeCandidatesResponse(BaseModel):
+    """Response with daily trade candidates."""
+    date: str
+    portfolio_value: float
+    portfolio_currency: str
+    max_position_percent: float
+    candidates: List[TradeCandidateModel]
+    eu_candidates: int
+    us_candidates: int
+    generated_at: str
 
 
 class PortfolioResponse(BaseModel):
@@ -887,4 +923,233 @@ async def get_portfolio_predictions(
         
     except Exception as e:
         logger.error(f"Portfolio predictions error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/trade-candidates/{portfolio_id}", response_model=TradeCandidatesResponse)
+async def get_trade_candidates(
+    portfolio_id: int,
+    region: Optional[str] = Query("all", description="Filter by region: 'us', 'eu', 'asia', 'all'"),
+    min_confidence: float = Query(60.0, description="Minimum confidence threshold (%)"),
+    max_candidates: int = Query(5, description="Maximum number of candidates to return"),
+    signals: SignalGenerator = Depends(get_signals)
+):
+    """
+    Automatically identify top trade candidates for the day.
+    
+    Generates ML predictions for universe symbols and filters for:
+    - BUY signals with confidence >= min_confidence
+    
+    For each candidate, calculates:
+    - Entry price (limit order at current price - 0.5%)
+    - Stop-Loss (EU: -3%, US: -4%, Asia: -3.5%)
+    - Take-Profit (+6% to +10% based on volatility)
+    - Position sizing (max 5% of portfolio value)
+    - Risk/Reward ratio
+    """
+    from app.db.database import async_session_maker
+    from app.core.portfolio.service import PortfolioService
+    from app.data_providers import orchestrator
+    from app.ml.trained_service import get_trained_model_service
+    from datetime import timedelta
+    import pandas as pd
+    
+    try:
+        # Get portfolio info
+        async with async_session_maker() as db:
+            service = PortfolioService(db)
+            portfolio_summary = await service.get_portfolio_summary(portfolio_id)
+            
+            if not portfolio_summary:
+                raise HTTPException(status_code=404, detail="Portfolio not found")
+            
+            portfolio_value = float(portfolio_summary.get("total_value", 100000))
+            portfolio_currency = portfolio_summary.get("currency", "USD")
+        
+        # Configuration based on region
+        region_config = {
+            "us": {"stop_loss_pct": 4.0, "take_profit_base": 8.0},
+            "eu": {"stop_loss_pct": 3.0, "take_profit_base": 6.0},
+            "asia": {"stop_loss_pct": 3.5, "take_profit_base": 7.0}
+        }
+        
+        # Symbol suffixes to region mapping
+        suffix_to_region = {
+            ".DE": "eu", ".PA": "eu", ".MI": "eu", ".AS": "eu", ".MC": "eu",
+            ".L": "eu", ".SW": "eu", ".BR": "eu", ".VI": "eu", ".HE": "eu",
+            ".T": "asia", ".HK": "asia", ".SS": "asia", ".SZ": "asia",
+            ".KS": "asia", ".TW": "asia", ".SI": "asia",
+        }
+        
+        def get_region_from_symbol(sym: str) -> str:
+            """Determine region from symbol suffix."""
+            for suffix, reg in suffix_to_region.items():
+                if sym.endswith(suffix):
+                    return reg
+            return "us"  # Default to US (no suffix)
+        
+        # Get universe symbols from database
+        from sqlalchemy import select
+        from app.db.models.market_universe import MarketUniverse
+        
+        async with async_session_maker() as db:
+            query = select(MarketUniverse.symbol, MarketUniverse.name).where(
+                MarketUniverse.is_active == True
+            ).limit(50)  # Limit for performance
+            
+            result = await db.execute(query)
+            universe_entries = result.fetchall()
+        
+        # Load trained model service
+        trained_service = get_trained_model_service()
+        
+        candidates = []
+        
+        for entry in universe_entries:
+            symbol = entry.symbol
+            symbol_region = get_region_from_symbol(symbol)
+            
+            # Filter by region if specified
+            if region.lower() != "all" and symbol_region != region.lower():
+                continue
+            
+            try:
+                # Get current quote
+                quote_obj = await orchestrator.get_quote(symbol)
+                if not quote_obj:
+                    continue
+                
+                quote = quote_obj.to_dict() if hasattr(quote_obj, 'to_dict') else quote_obj
+                current_price = float(quote.get("price", 0))
+                if current_price <= 0:
+                    continue
+                
+                # Generate ML prediction
+                signal_type = "HOLD"
+                confidence = 50.0
+                trend = "NEUTRAL"
+                
+                if trained_service.is_loaded:
+                    # Fetch historical data for ML prediction
+                    end_date = datetime.utcnow().date()
+                    start_date = end_date - timedelta(days=365)
+                    
+                    hist_data = await orchestrator.get_historical(
+                        symbol=symbol,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+                    
+                    if hist_data and len(hist_data) >= 50:
+                        df = pd.DataFrame([{
+                            'open': float(bar.open),
+                            'high': float(bar.high),
+                            'low': float(bar.low),
+                            'close': float(bar.close),
+                            'volume': int(bar.volume)
+                        } for bar in hist_data])
+                        df.index = pd.to_datetime([bar.timestamp for bar in hist_data])
+                        
+                        prediction = await trained_service.predict(df, symbol, current_price)
+                        if prediction:
+                            signal_type = prediction.signal
+                            confidence = prediction.confidence * 100
+                            # Determine trend from price change
+                            if len(hist_data) >= 5:
+                                recent_close = float(hist_data[-1].close)
+                                past_close = float(hist_data[-5].close)
+                                if recent_close > past_close * 1.01:
+                                    trend = "UP"
+                                elif recent_close < past_close * 0.99:
+                                    trend = "DOWN"
+                
+                # Only BUY signals with sufficient confidence
+                is_buy = signal_type in ["BUY", "STRONG_BUY"]
+                if not is_buy or confidence < min_confidence:
+                    continue
+            
+            except Exception as e:
+                logger.debug(f"Error processing {symbol}: {e}")
+                continue
+            
+            # Get config for this symbol's region
+            config = region_config.get(symbol_region, region_config["us"])
+            
+            # Calculate entry price (limit order slightly below market)
+            entry_price = round(current_price * 0.995, 2)  # -0.5%
+            
+            # Calculate stop-loss
+            stop_loss_pct = config["stop_loss_pct"]
+            stop_loss = round(entry_price * (1 - stop_loss_pct / 100), 2)
+            
+            # Calculate take-profit (base + confidence bonus)
+            confidence_bonus = (confidence - 60) / 40 * 4  # 0-4% bonus based on confidence
+            take_profit_pct = config["take_profit_base"] + confidence_bonus
+            take_profit = round(entry_price * (1 + take_profit_pct / 100), 2)
+            
+            # Position sizing (max 5% of portfolio)
+            max_position_pct = 5.0
+            max_position_value = portfolio_value * max_position_pct / 100
+            suggested_shares = int(max_position_value / entry_price)
+            actual_position_value = suggested_shares * entry_price
+            
+            # Risk/Reward ratio
+            risk_per_share = entry_price - stop_loss
+            reward_per_share = take_profit - entry_price
+            risk_reward = round(reward_per_share / risk_per_share, 2) if risk_per_share > 0 else 0
+            
+            # Volatility estimate based on config
+            volatility = "HIGH" if config["stop_loss_pct"] > 3.5 else "MEDIUM"
+            
+            # Determine currency from region
+            symbol_currency = "EUR" if symbol_region == "eu" else ("USD" if symbol_region == "us" else "JPY")
+            
+            candidate = TradeCandidateModel(
+                symbol=symbol,
+                region=symbol_region.upper(),
+                signal=signal_type,
+                confidence=confidence,
+                current_price=current_price,
+                currency=symbol_currency,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                stop_loss_percent=stop_loss_pct,
+                take_profit=take_profit,
+                take_profit_percent=round(take_profit_pct, 2),
+                max_position_value=round(actual_position_value, 2),
+                suggested_shares=suggested_shares,
+                risk_reward_ratio=risk_reward,
+                trend=trend,
+                volatility=volatility,
+                ranking=0  # Will be set after sorting
+            )
+            candidates.append(candidate)
+        
+        # Sort by confidence and assign ranking
+        candidates.sort(key=lambda x: x.confidence, reverse=True)
+        for i, c in enumerate(candidates[:max_candidates]):
+            c.ranking = i + 1
+        
+        # Limit to max_candidates
+        final_candidates = candidates[:max_candidates]
+        
+        # Count by region
+        eu_count = sum(1 for c in final_candidates if c.region == "EU")
+        us_count = sum(1 for c in final_candidates if c.region == "US")
+        
+        return TradeCandidatesResponse(
+            date=date.today().isoformat(),
+            portfolio_value=portfolio_value,
+            portfolio_currency=portfolio_currency,
+            max_position_percent=5.0,
+            candidates=final_candidates,
+            eu_candidates=eu_count,
+            us_candidates=us_count,
+            generated_at=datetime.utcnow().isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Trade candidates error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
