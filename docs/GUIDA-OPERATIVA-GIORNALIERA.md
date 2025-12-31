@@ -1,8 +1,9 @@
 # 📈 Guida Operativa Giornaliera - PaperTrading Platform
 
-> **Versione**: 2.1  
-> **Ultimo aggiornamento**: 30 Dicembre 2025  
+> **Versione**: 2.2  
+> **Ultimo aggiornamento**: 31 Dicembre 2025  
 > **Autore**: Sistema PaperTrading  
+> **Novità v2.2**: Trade Candidates Panel (automazione FASE 1)  
 > **Novità v2.1**: Filtro regionale ML, Schedule notifiche, Limite ordini giornaliero
 
 ---
@@ -191,7 +192,43 @@ Dashboard → Morning Alerts
 | Loss Warning | 🟠 Arancio | Perdita > 2% | Monitorare, verifica stop-loss |
 | Profit Alert | 🟢 Verde | Profitto > 5% | Imposta trailing stop |
 
-#### 07:30 - Analisi Segnali ML 🤖
+### 🎯 Trade Candidates Panel (Novità v2.2)
+
+Il pannello **Trade Candidates** automatizza completamente la preparazione degli ordini!
+
+```
+Dashboard → Trade Candidates
+├── 🎯 3-5 candidati selezionati automaticamente dal ML
+├── 📊 Entry Price, Stop-Loss, Take-Profit pre-calcolati
+├── 📦 Quantità suggerita (5% del portfolio)
+└── ⚖️ Risk/Reward Ratio
+```
+
+**Come funziona:**
+1. Il sistema analizza tutti i simboli nel Market Universe
+2. Genera previsioni ML per ciascuno
+3. Seleziona i top 3-5 candidati con confidence > 60%
+4. Calcola automaticamente tutti i parametri di trading
+
+**Cosa mostra ogni candidato:**
+| Campo | Descrizione |
+|-------|-------------|
+| Symbol | Titolo con regione (es: SAP.DE) |
+| Confidence | Sicurezza ML (60-100%) |
+| Entry Price | Prezzo suggerito per entrare |
+| Stop-Loss | Prezzo di uscita in perdita (-3% EU, -4% US) |
+| Take-Profit | Prezzo obiettivo (+6% EU, +8% US) |
+| Shares | Numero azioni da comprare |
+| R:R Ratio | Risk/Reward (es: 1:2 = rischi 1 per guadagnare 2) |
+
+**Come usarlo:**
+1. **Clicca sul candidato** → Vai automaticamente alla pagina Trading
+2. **Verifica i parametri** → Form già compilato con tutti i valori
+3. **Conferma l'ordine** → Click su "Place Buy Order"
+
+> 💡 **Tip**: Il pannello mostra un filtro EU/US per concentrarti sul mercato che sta per aprire!
+
+#### 07:30 - Analisi Segnali ML 🤖 (Opzionale)
 
 **Cosa fare:**
 1. Vai su **ML Insights** → Tab **"Signals"**
@@ -229,9 +266,18 @@ Esempio:
 3. LVMH.PA - BUY 68% - Lusso forte in Asia
 ```
 
-#### 08:30 - Preparazione Ordini 📋
+> 💡 **Nota v2.2**: Il pannello Trade Candidates fa già questo lavoro automaticamente!
+> Usa ML Insights solo se vuoi esplorare segnali aggiuntivi.
 
-**Cosa fare:**
+#### 08:30 - Preparazione Ordini 📋 (Automatizzata v2.2)
+
+**Con Trade Candidates (consigliato):**
+1. Vai su **Dashboard** → **Trade Candidates**
+2. Clicca sul candidato che ti interessa
+3. Verifica i parametri pre-compilati nella pagina Trading
+4. Conferma l'ordine
+
+**Manualmente (se preferisci):**
 1. Per ogni candidato, definisci:
    - **Prezzo di entrata** (usa Limit Order, non Market!)
    - **Stop-Loss** (massimo -3% dal prezzo di entrata)
@@ -246,6 +292,8 @@ Esempio:
 - Max per singolo trade: €5.000
 - Se azione costa €50, compra max 100 azioni
 ```
+
+> 💡 **Nota v2.2**: Il Trade Candidates Panel calcola tutto questo automaticamente!
 
 ---
 
@@ -484,11 +532,12 @@ Il modello non sta funzionando bene. Evita di seguire i segnali finché non migl
 
 ### ✅ Checklist Mattina (07:00)
 - [ ] Controllato P&L overnight
+- [ ] Verificato Morning Alerts
 - [ ] Verificato stop-loss ancora attivi
-- [ ] Analizzato segnali ML per EU
-- [ ] Preparato lista candidati (max 5)
-- [ ] Calcolato position sizing
-- [ ] Definito prezzi entrata/stop/target
+- [ ] Controllato Trade Candidates Panel
+- [ ] (Opzionale) Analizzato segnali ML aggiuntivi
+
+> 💡 **v2.2**: Il Trade Candidates Panel prepara automaticamente candidati con position sizing e prezzi!
 
 ### ✅ Checklist Apertura EU (09:30)
 - [ ] Aspettato 30 minuti dopo apertura
